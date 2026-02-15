@@ -1,6 +1,10 @@
 package config
 
-import "github.com/spf13/viper"
+import (
+	"strings"
+
+	"github.com/spf13/viper"
+)
 
 type Config struct {
 	Server   ServerConfig   `mapstructure:"server"`
@@ -10,13 +14,13 @@ type Config struct {
 
 type ServerConfig struct {
 	Name string `mapstructure:"name"`
-	Port string `mapstructure:"port"`
+	Port int `mapstructure:"port"`
 	Mode string `mapstructure:"mode"`
 }
 
 type DatabaseConfig struct {
 	Host            string `mapstructure:"host"`
-	Port            string `mapstructure:"port"`
+	Port            int    `mapstructure:"port"`
 	User            string `mapstructure:"user"`
 	Password        string `mapstructure:"password"`
 	DBName          string `mapstructure:"dbname"`
@@ -28,7 +32,7 @@ type DatabaseConfig struct {
 
 type RedisConfig struct {
 	Host     string `mapstructure:"host"`
-	Port     string `mapstructure:"port"`
+	Port     int    `mapstructure:"port"`
 	Password string `mapstructure:"password"`
 	DB       int    `mapstructure:"db"`
 }
@@ -43,6 +47,9 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, err
 	}
 
+	v.AutomaticEnv()
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	
 	var cfg Config
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, err

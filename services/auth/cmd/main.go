@@ -1,10 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"go-judge-system/pkg/cache"
 	"go-judge-system/pkg/config"
 	"go-judge-system/pkg/database"
 	"go-judge-system/pkg/logger"
+
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
@@ -20,7 +22,7 @@ func main() {
 		panic(err)
 	}
 
-	logger.Info("Auth service started", zap.String("port", cfg.Server.Port))
+	logger.Info("Auth service started", zap.Int("port", cfg.Server.Port))
 
 	db, err := database.ConnectDatabase(cfg.Database)
 	if err != nil {
@@ -43,5 +45,5 @@ func main() {
 		})
 	})
 
-	r.Run(":" + cfg.Server.Port)
+	r.Run(fmt.Sprintf(":%d", cfg.Server.Port))
 }

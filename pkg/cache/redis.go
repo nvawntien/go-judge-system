@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"fmt"
 	"go-judge-system/pkg/config"
 
 	"github.com/redis/go-redis/v9"
@@ -9,7 +10,7 @@ import (
 
 func ConnectRedis(cfg config.RedisConfig) (*redis.Client, error) {
 	rdb := redis.NewClient(&redis.Options{
-		Addr:     cfg.Host + ":" + cfg.Port,
+		Addr:     fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
 		Password: cfg.Password,
 		DB:       cfg.DB,
 	})

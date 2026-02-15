@@ -1,0 +1,20 @@
+server:
+  name: auth-service
+  port: 8081
+  mode: debug
+database:
+  host: judge_postgres
+  port: 5432
+  # user -> DATABASE_USER
+  # password -> DATABASE_PASSWORD
+  dbname: auth_db
+  sslmode: disable
+  max_open_conns: 30
+  max_idle_conns: 10
+  conn_max_lifetime: 3600
+redis:
+  host: judge_redis
+  port: 6379
+  # password -> REDIS_PASSWORD
+  db: 0
+  pool_size: 10

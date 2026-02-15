@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  postgres:
+    container_name: judge_postgres
+    image: postgres:15-alpine
+    restart: unless-stopped
+    env_file:
+      - ./environment/postgres.env
+    volumes:
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - judge_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d auth_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+  redis:
+    container_name: judge_redis
+    image: redis:7-alpine
+    restart: unless-stopped
+    env_file:
+      - ./environment/redis.env
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
+    networks:
+      - judge_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+  auth-service:
+    container_name: judge_auth
+    build:
+      context: .
+      dockerfile: services/auth/Dockerfile
+    ports:
+      - "8081:8081"
+    env_file:
+      - ./environment/postgres.env
+      - ./environment/service.env
+    volumes:
+      - ./services/auth/config:/app/config:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks:
+      - judge_net
+
+networks:
+  judge_net:
+
+volumes:
+  postgres_data:
