@@ -13,6 +13,7 @@ func ConnectRedis(cfg config.RedisConfig) (*redis.Client, error) {
 		Addr:     fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
 		Password: cfg.Password,
 		DB:       cfg.DB,
+		PoolSize: cfg.PoolSize,
 	})
 
 	_, err := rdb.Ping(context.Background()).Result()
