@@ -1,0 +1,5 @@
+2026-02-24T23:08:39.651+0700	[34mINFO[0m	container/app.go:28	Starting Auth Service	{"port": "8081"}
+2026-02-24T23:08:43.661+0700	[31mERROR[0m	usecase/register.go:32	failed to check existing user	{"email": "ngvantien1526@gmail.com", "error": "invalid field found for struct go-judge-system/services/auth/internal/domain/entity.User's field Email: define a valid foreign key for relations or implement the Valuer/Scanner interface"}
+2026-02-24T23:14:18.156+0700	[34mINFO[0m	container/app.go:28	Starting Auth Service	{"port": "8081"}
+2026-02-24T23:14:21.283+0700	[34mINFO[0m	mail/smtp_provider.go:102	sending OTP email	{"to": "ngvantien1526@gmail.com"}
+2026-02-24T23:14:21.326+0700	[34mINFO[0m	usecase/otp.go:84	OTP requested successfully	{"identifier": "ngvantien1526@gmail.com"}

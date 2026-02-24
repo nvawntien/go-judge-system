@@ -35,12 +35,14 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 		return nil, err
 	}
 	cacheRepository := redis.NewCacheRepository(client)
-	mailProvider := mail.NewSMTPProvider()
+	smtpConfig := cfg.SMTP
 	loggerConfig := cfg.Logger
 	serverConfig := cfg.Server
 	string2 := provideServerMode(serverConfig)
 	zapLogger := logger.NewLogger(loggerConfig, string2)
-	registerUseCase := usecase.NewRegisterUseCase(userRepository, cacheRepository, mailProvider, zapLogger)
+	mailProvider := mail.NewSMTPProvider(smtpConfig, zapLogger)
+	otpUseCase := usecase.NewOTPUseCase(cacheRepository, mailProvider, zapLogger)
+	registerUseCase := usecase.NewRegisterUseCase(userRepository, otpUseCase, zapLogger)
 	registerHandler := handler.NewRegisterHandler(registerUseCase)
 	authHandler := handler.NewAuthHandler(registerHandler)
 	router := http.NewRouter(authHandler)
@@ -50,8 +52,6 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 
 // wire.go:
 
-// Hàm helper để trích xuất "mode string" từ config.ServerConfig
-// Wire sẽ tự động dùng hàm này để cung cấp tham số thứ 2 (mode string) cho logger.NewLogger
 func provideServerMode(cfg config.ServerConfig) string {
 	return cfg.Mode
 }

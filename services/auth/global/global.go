@@ -1,6 +1,0 @@
-package global
-
-
-var (
-	
-)
