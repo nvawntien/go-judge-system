@@ -44,7 +44,11 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	otpUseCase := usecase.NewOTPUseCase(cacheRepository, mailProvider, zapLogger)
 	registerUseCase := usecase.NewRegisterUseCase(userRepository, otpUseCase, zapLogger)
 	registerHandler := handler.NewRegisterHandler(registerUseCase)
-	authHandler := handler.NewAuthHandler(registerHandler)
+	verifyOTPUseCase := usecase.NewVerifyOTPUseCase(otpUseCase, userRepository, zapLogger)
+	verifyOTPHandler := handler.NewVerifyOTPHandler(verifyOTPUseCase)
+	resendOTPUseCase := usecase.NewResendOTPUseCase(userRepository, otpUseCase, zapLogger)
+	resendOTPHandler := handler.NewResendOTPHandler(resendOTPUseCase)
+	authHandler := handler.NewAuthHandler(registerHandler, verifyOTPHandler, resendOTPHandler)
 	router := http.NewRouter(authHandler)
 	app := container.NewApp(cfg, router, zapLogger)
 	return app, nil

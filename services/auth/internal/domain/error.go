@@ -3,6 +3,8 @@ package domain
 import "errors"
 
 var (
+	ErrUserInactive      = errors.New("user is not active")
+	ErrUserAlreadyActive = errors.New("user is already active")
 	ErrUserNotFound      = errors.New("user not found")
 	ErrInvalidEmail      = errors.New("invalid email format")
 	ErrPasswordTooShort  = errors.New("password must be at least 8 characters")

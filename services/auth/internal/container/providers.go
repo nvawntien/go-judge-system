@@ -23,10 +23,14 @@ var OutboundProviderSet = wire.NewSet(
 var UseCaseProviderSet = wire.NewSet(
 	usecase.NewOTPUseCase,
 	usecase.NewRegisterUseCase,
+	usecase.NewVerifyOTPUseCase,
+	usecase.NewResendOTPUseCase,
 )
 
 var InboundProviderSet = wire.NewSet(
 	handler.NewRegisterHandler,
+	handler.NewVerifyOTPHandler,
+	handler.NewResendOTPHandler,
 	handler.NewAuthHandler,
 	http.NewRouter,
 )

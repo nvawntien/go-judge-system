@@ -23,6 +23,8 @@ func (r *Router) SetupRoutes() {
 	v1 := r.engine.Group("/api/v1/auth")
 	{
 		v1.POST("/register", r.authHandler.RegisterHandler.Handle)
+		v1.POST("/verify-otp", r.authHandler.VerifyOTPHandler.Handle)
+		v1.POST("/resend-otp", r.authHandler.ResendOTPHandler.Handle)
 	}
 }
 

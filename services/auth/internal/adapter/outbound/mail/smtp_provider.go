@@ -78,7 +78,7 @@ func (s *smtpProvider) SendOTP(ctx context.Context, toEmail string, otp string) 
 
 	var body bytes.Buffer
 	if err := s.tmpl.Execute(&body, data); err != nil {
-		s.logger.Error("failed to render email template", zap.Error(err))
+		//s.logger.Error("failed to render email template", zap.Error(err))
 		return err
 	}
 
@@ -99,11 +99,11 @@ func (s *smtpProvider) SendOTP(ctx context.Context, toEmail string, otp string) 
 	auth := smtp.PlainAuth("", s.cfg.Username, s.cfg.Password, s.cfg.Host)
 	addr := fmt.Sprintf("%s:%d", s.cfg.Host, s.cfg.Port)
 
-	s.logger.Info("sending OTP email", zap.String("to", toEmail))
+	//s.logger.Info("sending OTP email", zap.String("to", toEmail))
 	
 	err := smtp.SendMail(addr, auth, s.cfg.From, []string{toEmail}, msg.Bytes())
 	if err != nil {
-		s.logger.Error("failed to send SMTP email", zap.Error(err))
+		//s.logger.Error("failed to send SMTP email", zap.Error(err))
 		return err
 	}
 

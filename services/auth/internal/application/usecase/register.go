@@ -55,7 +55,7 @@ func (uc *registerUseCase) Execute(ctx context.Context, req dto.RegisterRequest)
 		return domain.ErrInternalServer
 	}
 
-	if err := uc.otpUC.RequestOTP(ctx, req.Email); err != nil {
+	if err := uc.otpUC.RequestOTP(ctx, "activation", req.Email); err != nil {
 		uc.logger.Error("failed to request OTP after registration", zap.String("email", req.Email), zap.Error(err))
 		return err
 	}

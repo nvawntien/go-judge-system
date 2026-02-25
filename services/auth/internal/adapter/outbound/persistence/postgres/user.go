@@ -39,19 +39,7 @@ func NewUserRepository(db *gorm.DB) outbound.UserRepository {
 }
 
 func (r *userRepository) CreateUser(ctx context.Context, user *entity.User) error {
-	dao := &UserDAO{
-		ID:        user.ID,
-		Username:  user.Username,
-		Email:     user.Email.String(),
-		Password:  user.Password,
-		Role:      user.Role,
-		Rating:    user.Rating,
-		IsActive:  user.IsActive,
-		CreatedAt: user.CreatedAt,
-		UpdatedAt: user.UpdatedAt,
-	}
-
-	return r.db.WithContext(ctx).Create(dao).Error
+	return r.db.WithContext(ctx).Create(toUserDAO(user)).Error
 }
 
 func (r *userRepository) GetUserByEmail(ctx context.Context, email string) (*entity.User, error) {
@@ -63,7 +51,39 @@ func (r *userRepository) GetUserByEmail(ctx context.Context, email string) (*ent
 		return nil, err
 	}
 
-	emailVO, _ := valueobject.NewEmail(dao.Email)
+	return toUserEntity(&dao)
+}
+
+func (r *userRepository) UpdateUser(ctx context.Context, user *entity.User) error {
+	return r.db.WithContext(ctx).Model(&UserDAO{}).
+		Where("id = ?", user.ID).
+		Updates(map[string]interface{}{
+			"is_active":  user.IsActive,
+			"updated_at": time.Now(),
+		}).Error
+}
+
+// mapping entity to dao
+func toUserDAO(user *entity.User) *UserDAO {
+	return &UserDAO{
+		ID:        user.ID,
+		Username:  user.Username,
+		Email:     user.Email.String(),
+		Password:  user.Password,
+		Role:      user.Role,
+		Rating:    user.Rating,
+		IsActive:  user.IsActive,
+		CreatedAt: user.CreatedAt,
+		UpdatedAt: user.UpdatedAt,
+	}
+}
+
+// mapping dao to entity
+func toUserEntity(dao *UserDAO) (*entity.User, error) {
+	emailVO, err := valueobject.NewEmail(dao.Email)
+	if err != nil {
+		return nil, err
+	}
 
 	return &entity.User{
 		ID:        dao.ID,
