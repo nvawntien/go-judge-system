@@ -15,14 +15,16 @@ type resetPasswordUseCase struct {
 	userRepo  outbound.UserRepository
 	tokenRepo outbound.ResetTokenRepository
 	tokenGen  outbound.TokenGenerator
+	passwordHasher outbound.PasswordHasher
 	logger    *zap.Logger
 }
 
-func NewResetPasswordUseCase(userRepo outbound.UserRepository, tokenRepo outbound.ResetTokenRepository, tokenGen outbound.TokenGenerator, logger *zap.Logger) inbound.ResetPasswordUseCase {
+func NewResetPasswordUseCase(userRepo outbound.UserRepository, tokenRepo outbound.ResetTokenRepository, tokenGen outbound.TokenGenerator, passwordHasher outbound.PasswordHasher, logger *zap.Logger) inbound.ResetPasswordUseCase {
 	return &resetPasswordUseCase{
 		userRepo:  userRepo,
 		tokenRepo: tokenRepo,
 		tokenGen:  tokenGen,
+		passwordHasher: passwordHasher,
 		logger:    logger,
 	}
 }
@@ -36,11 +38,21 @@ func (uc *resetPasswordUseCase) Execute(ctx context.Context, req dto.ResetPasswo
 		return domain.ErrInvalidOrExpiredToken
 	}
 
-	passwordVO, err := valueobject.NewPasswordFromPlain(req.NewPassword)
-	if err != nil {
-		uc.logger.Error("invalid new password format", zap.String("email", email), zap.Error(err))
+	if err := valueobject.ValidatePlainPassword(req.NewPassword); err != nil {
 		return err
 	}
+
+	hashedPassword, err := uc.passwordHasher.Hash(req.NewPassword)
+	if err != nil {
+		uc.logger.Error(
+			"failed to hash password",
+			zap.String("email", email),
+			zap.Error(err),
+		)
+		return domain.ErrInternalServer
+	}
+
+	passwordVO := valueobject.NewPasswordFromHash(hashedPassword)
 
 	user, err := uc.userRepo.GetUserByEmail(ctx, email)
 	if err != nil {
@@ -48,7 +60,8 @@ func (uc *resetPasswordUseCase) Execute(ctx context.Context, req dto.ResetPasswo
 		return err
 	}
 
-	user.Password = passwordVO.Hash()
+	user.UpdatePassword(passwordVO)
+	
 	err = uc.userRepo.UpdateUser(ctx, user)
 	if err != nil {
 		uc.logger.Error("failed to update user password", zap.String("email", email), zap.Error(err))

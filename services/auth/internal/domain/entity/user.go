@@ -32,3 +32,13 @@ func NewUser(username string, email valueobject.Email, password valueobject.Pass
 		UpdatedAt: time.Now(),
 	}
 }
+
+func (u *User) Activate() {
+	u.IsActive = true
+	u.UpdatedAt = time.Now()
+}
+
+func (u *User) UpdatePassword(newPassword valueobject.Password) {
+	u.Password = newPassword.Hash()
+	u.UpdatedAt = time.Now()
+}
