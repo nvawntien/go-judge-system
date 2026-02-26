@@ -10,17 +10,17 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type VerifyOTPHandler struct {
-	uc inbound.VerifyOTPUseCase
+type VerifyActivationHandler struct {
+	uc inbound.VerifyActivationUseCase
 }
 
-func NewVerifyOTPHandler(uc inbound.VerifyOTPUseCase) *VerifyOTPHandler {
-	return &VerifyOTPHandler{
+func NewVerifyActivationHandler(uc inbound.VerifyActivationUseCase) *VerifyActivationHandler {
+	return &VerifyActivationHandler{
 		uc: uc,
 	}
 }
 
-func (h *VerifyOTPHandler) Handle(c *gin.Context) {
+func (h *VerifyActivationHandler) Handle(c *gin.Context) {
 	var req dto.VerifyOTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Error(c, http.StatusBadRequest, "invalid request payload")

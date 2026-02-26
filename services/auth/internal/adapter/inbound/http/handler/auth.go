@@ -2,14 +2,18 @@ package handler
 
 type AuthHandler struct {
 	RegisterHandler *RegisterHandler
-	VerifyOTPHandler   *VerifyOTPHandler
+	VerifyActivationHandler *VerifyActivationHandler
 	ResendOTPHandler   *ResendOTPHandler
+	ForgotPasswordHandler *ForgotPasswordHandler
+	VerifyForgotPasswordHandler *VerifyForgotPasswordHandler
 }
 
-func NewAuthHandler(registerHandler *RegisterHandler, verifyOTPHandler *VerifyOTPHandler, resendOTPHandler *ResendOTPHandler) *AuthHandler {
+func NewAuthHandler(registerHandler *RegisterHandler, verifyActivationHandler *VerifyActivationHandler, resendOTPHandler *ResendOTPHandler, forgotPasswordHandler *ForgotPasswordHandler, verifyForgotPasswordHandler *VerifyForgotPasswordHandler) *AuthHandler {
 	return &AuthHandler{
 		RegisterHandler:  registerHandler,
-		VerifyOTPHandler: verifyOTPHandler,
+		VerifyActivationHandler: verifyActivationHandler,
 		ResendOTPHandler: resendOTPHandler,
+		ForgotPasswordHandler: forgotPasswordHandler,
+		VerifyForgotPasswordHandler: verifyForgotPasswordHandler,
 	}
 }

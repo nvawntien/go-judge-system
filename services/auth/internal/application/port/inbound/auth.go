@@ -9,12 +9,20 @@ type RegisterUseCase interface {
 	Execute(ctx context.Context, req dto.RegisterRequest) error
 }
 
-type VerifyOTPUseCase interface {
+type VerifyActivationUseCase interface {
 	Execute(ctx context.Context, req dto.VerifyOTPRequest) error
+}
+
+type VerifyForgotPasswordUseCase interface {
+	Execute(ctx context.Context, req dto.VerifyOTPRequest) (string, error)
 }
 
 type ResendOTPUseCase interface {
 	Execute(ctx context.Context, req dto.ResendOTPRequest) error
+}
+
+type ForgotPasswordUseCase interface {
+	Execute(ctx context.Context, req dto.ForgotPasswordRequest) error
 }
 
 type OTPUseCase interface {
