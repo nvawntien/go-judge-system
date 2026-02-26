@@ -42,7 +42,8 @@ func (uc *verifyActivationUseCase) Execute(ctx context.Context, req dto.VerifyOT
 		return domain.ErrUserAlreadyActive
 	}
 
-	user.IsActive = true
+	user.Activate()
+	
 	if err := uc.userRepo.UpdateUser(ctx, user); err != nil {
 		uc.logger.Error("failed to update user status to active", zap.String("email", req.Email), zap.Error(err))
 		return domain.ErrInternalServer
