@@ -14,6 +14,7 @@ import (
 	"go-judge-system/services/auth/internal/adapter/inbound/http"
 	"go-judge-system/services/auth/internal/adapter/inbound/http/handler"
 	"go-judge-system/services/auth/internal/adapter/outbound/cache/redis"
+	"go-judge-system/services/auth/internal/adapter/outbound/crypto"
 	"go-judge-system/services/auth/internal/adapter/outbound/mail"
 	"go-judge-system/services/auth/internal/adapter/outbound/persistence/postgres"
 	"go-judge-system/services/auth/internal/application/usecase"
@@ -44,11 +45,17 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	otpUseCase := usecase.NewOTPUseCase(cacheRepository, mailProvider, zapLogger)
 	registerUseCase := usecase.NewRegisterUseCase(userRepository, otpUseCase, zapLogger)
 	registerHandler := handler.NewRegisterHandler(registerUseCase)
-	verifyOTPUseCase := usecase.NewVerifyOTPUseCase(otpUseCase, userRepository, zapLogger)
-	verifyOTPHandler := handler.NewVerifyOTPHandler(verifyOTPUseCase)
+	verifyActivationUseCase := usecase.NewVerifyActivationUseCase(otpUseCase, userRepository, zapLogger)
+	verifyActivationHandler := handler.NewVerifyActivationHandler(verifyActivationUseCase)
 	resendOTPUseCase := usecase.NewResendOTPUseCase(userRepository, otpUseCase, zapLogger)
 	resendOTPHandler := handler.NewResendOTPHandler(resendOTPUseCase)
-	authHandler := handler.NewAuthHandler(registerHandler, verifyOTPHandler, resendOTPHandler)
+	forgotPasswordUseCase := usecase.NewForgotPasswordUseCase(userRepository, otpUseCase, zapLogger)
+	forgotPasswordHandler := handler.NewForgotPasswordHandler(forgotPasswordUseCase)
+	resetTokenRepository := redis.NewResetTokenRepository(client)
+	tokenGenerator := crypto.NewTokenGenerator()
+	verifyForgotPasswordUseCase := usecase.NewVerifyForgotPasswordUseCase(otpUseCase, userRepository, resetTokenRepository, tokenGenerator, zapLogger)
+	verifyForgotPasswordHandler := handler.NewVerifyForgotPasswordHandler(verifyForgotPasswordUseCase)
+	authHandler := handler.NewAuthHandler(registerHandler, verifyActivationHandler, resendOTPHandler, forgotPasswordHandler, verifyForgotPasswordHandler)
 	router := http.NewRouter(authHandler)
 	app := container.NewApp(cfg, router, zapLogger)
 	return app, nil
