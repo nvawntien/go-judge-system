@@ -58,8 +58,13 @@ func (r *userRepository) UpdateUser(ctx context.Context, user *entity.User) erro
 	return r.db.WithContext(ctx).Model(&UserDAO{}).
 		Where("id = ?", user.ID).
 		Updates(map[string]interface{}{
+			"username":   user.Username,
+			"email":      user.Email.String(),
+			"password":   user.Password,
+			"role":       user.Role,
+			"rating":     user.Rating,
 			"is_active":  user.IsActive,
-			"updated_at": time.Now(),
+			"updated_at": user.UpdatedAt,
 		}).Error
 }
 
