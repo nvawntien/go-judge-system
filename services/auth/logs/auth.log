@@ -20,3 +20,17 @@
 2026-02-25T18:40:31.276+0700	[34mINFO[0m	usecase/resend_otp.go:53	OTP resent successfully	{"email": "ngvantien1526@gmail.com", "purpose": "activation"}
 2026-02-25T18:41:00.806+0700	[34mINFO[0m	usecase/otp.go:141	OTP verified successfully	{"identifier": "ngvantien1526@gmail.com"}
 2026-02-25T18:41:00.810+0700	[34mINFO[0m	usecase/verify_otp.go:69	User verified successfully	{"email": "ngvantien1526@gmail.com"}
+2026-02-26T18:31:55.486+0700	[34mINFO[0m	container/app.go:28	Starting Auth Service	{"port": "8081"}
+2026-02-26T18:31:57.405+0700	[34mINFO[0m	usecase/otp.go:95	OTP requested successfully	{"identifier": "ngvantien1526@gmail.com"}
+2026-02-26T18:31:57.405+0700	[34mINFO[0m	usecase/forgot_password.go:46	Forgot password OTP requested successfully	{"email": "ngvantien1526@gmail.com"}
+2026-02-26T18:34:31.776+0700	[34mINFO[0m	usecase/otp.go:141	OTP verified successfully	{"identifier": "ngvantien1526@gmail.com"}
+2026-02-26T18:34:31.779+0700	[34mINFO[0m	usecase/verify_forgot_password.go:60	Forgot password OTP verified successfully, reset token generated	{"email": "ngvantien1526@gmail.com"}
+2026-02-26T21:54:42.846+0700	[34mINFO[0m	container/app.go:28	Starting Auth Service	{"port": "8081"}
+2026-02-26T21:56:07.220+0700	[33mWARN[0m	usecase/reset_password.go:35	failed to get email from reset token	{"reset_token": "39383031323032632d656564352d346261352d623738332d633835383932303830393830d0d9b98b94b5532a27b36e061d73bead97c71e2d9b118a792b054432131d94b7", "error": "invalid or expired token"}
+2026-02-26T21:56:15.228+0700	[34mINFO[0m	usecase/otp.go:95	OTP requested successfully	{"identifier": "ngvantien1526@gmail.com"}
+2026-02-26T21:56:15.228+0700	[34mINFO[0m	usecase/forgot_password.go:46	Forgot password OTP requested successfully	{"email": "ngvantien1526@gmail.com"}
+2026-02-26T21:56:54.232+0700	[34mINFO[0m	usecase/otp.go:141	OTP verified successfully	{"identifier": "ngvantien1526@gmail.com"}
+2026-02-26T21:56:54.238+0700	[34mINFO[0m	usecase/verify_forgot_password.go:60	Forgot password OTP verified successfully, reset token generated	{"email": "ngvantien1526@gmail.com"}
+2026-02-26T21:57:04.172+0700	[34mINFO[0m	usecase/reset_password.go:62	Password reset successfully	{"email": "ngvantien1526@gmail.com"}
+2026-02-26T21:58:07.389+0700	[34mINFO[0m	container/app.go:28	Starting Auth Service	{"port": "8081"}
+2026-02-26T21:58:10.960+0700	[33mWARN[0m	usecase/reset_password.go:35	failed to get email from reset token	{"reset_token": "39383031323032632d656564352d346261352d623738332d6338353839323038303938308fca3233d50d95cbecd7d0564d8894bb03bcffbaadd60a2bed064e60e6eafcca", "error": "invalid or expired token"}

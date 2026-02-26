@@ -30,11 +30,13 @@ var UseCaseProviderSet = wire.NewSet(
 	usecase.NewForgotPasswordUseCase,
 	usecase.NewVerifyActivationUseCase,
 	usecase.NewResendOTPUseCase,
+	usecase.NewResetPasswordUseCase,
 )
 
 var InboundProviderSet = wire.NewSet(
 	handler.NewRegisterHandler,
 	handler.NewVerifyActivationHandler,
+	handler.NewResetPasswordHandler,
 	handler.NewResendOTPHandler,
 	handler.NewVerifyForgotPasswordHandler,
 	handler.NewForgotPasswordHandler,

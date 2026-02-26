@@ -25,6 +25,10 @@ type ForgotPasswordUseCase interface {
 	Execute(ctx context.Context, req dto.ForgotPasswordRequest) error
 }
 
+type ResetPasswordUseCase interface {
+	Execute(ctx context.Context, req dto.ResetPasswordRequest) error
+}
+
 type OTPUseCase interface {
 	RequestOTP(ctx context.Context, purpose, identifier string) error
 	VerifyOTP(ctx context.Context, purpose, identifier string, otp string) error

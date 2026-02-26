@@ -55,7 +55,9 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	tokenGenerator := crypto.NewTokenGenerator()
 	verifyForgotPasswordUseCase := usecase.NewVerifyForgotPasswordUseCase(otpUseCase, userRepository, resetTokenRepository, tokenGenerator, zapLogger)
 	verifyForgotPasswordHandler := handler.NewVerifyForgotPasswordHandler(verifyForgotPasswordUseCase)
-	authHandler := handler.NewAuthHandler(registerHandler, verifyActivationHandler, resendOTPHandler, forgotPasswordHandler, verifyForgotPasswordHandler)
+	resetPasswordUseCase := usecase.NewResetPasswordUseCase(userRepository, resetTokenRepository, tokenGenerator, zapLogger)
+	resetPasswordHandler := handler.NewResetPasswordHandler(resetPasswordUseCase)
+	authHandler := handler.NewAuthHandler(registerHandler, verifyActivationHandler, resendOTPHandler, forgotPasswordHandler, verifyForgotPasswordHandler, resetPasswordHandler)
 	router := http.NewRouter(authHandler)
 	app := container.NewApp(cfg, router, zapLogger)
 	return app, nil
