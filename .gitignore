@@ -1,2 +1,7 @@
 environment
 services/auth/logs/
+
+# Logs
+logs/
+*.log
+*.log.*

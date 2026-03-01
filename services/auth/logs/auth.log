@@ -1,2 +1,0 @@
-2026-03-01T11:20:33.817Z	[34mINFO[0m	container/app.go:28	Starting Auth Service	{"port": "8081"}
-2026-03-01T11:21:43.538Z	[31mERROR[0m	usecase/get_profile.go:24	failed to get user by username	{"error": "user not found"}
