@@ -1,0 +1,281 @@
+{
+    "$schema": "https://www.krakend.io/schema/krakend.json",
+    "version": 3,
+    "name": "Judge Backend Gateway",
+    "port": 8080,
+    "timeout": "3000ms",
+    "cache_ttl": "300s",
+    "output_encoding": "json",
+    "endpoints": [
+        {
+            "endpoint": "/api/v1/auth/register",
+            "method": "POST",
+            "output_encoding": "no-op",
+            "input_headers": [
+                "*"
+            ],
+            "backend": [
+                {
+                    "url_pattern": "/api/v1/auth/register",
+                    "encoding": "no-op",
+                    "host": [
+                        "http://auth-service:8081"
+                    ]
+                }
+            ]
+        },
+        {
+            "endpoint": "/api/v1/auth/verify-activation",
+            "method": "POST",
+            "output_encoding": "no-op",
+            "input_headers": [
+                "*"
+            ],
+            "backend": [
+                {
+                    "url_pattern": "/api/v1/auth/verify-activation",
+                    "encoding": "no-op",
+                    "host": [
+                        "http://auth-service:8081"
+                    ]
+                }
+            ]
+        },
+        {
+            "endpoint": "/api/v1/auth/resend-otp",
+            "method": "POST",
+            "output_encoding": "no-op",
+            "input_headers": [
+                "*"
+            ],
+            "backend": [
+                {
+                    "url_pattern": "/api/v1/auth/resend-otp",
+                    "encoding": "no-op",
+                    "host": [
+                        "http://auth-service:8081"
+                    ]
+                }
+            ]
+        },
+        {
+            "endpoint": "/api/v1/auth/forgot-password",
+            "method": "POST",
+            "output_encoding": "no-op",
+            "input_headers": [
+                "*"
+            ],
+            "backend": [
+                {
+                    "url_pattern": "/api/v1/auth/forgot-password",
+                    "encoding": "no-op",
+                    "host": [
+                        "http://auth-service:8081"
+                    ]
+                }
+            ]
+        },
+        {
+            "endpoint": "/api/v1/auth/verify-forgot-password",
+            "method": "POST",
+            "output_encoding": "no-op",
+            "input_headers": [
+                "*"
+            ],
+            "backend": [
+                {
+                    "url_pattern": "/api/v1/auth/verify-forgot-password",
+                    "encoding": "no-op",
+                    "host": [
+                        "http://auth-service:8081"
+                    ]
+                }
+            ]
+        },
+        {
+            "endpoint": "/api/v1/auth/reset-password",
+            "method": "POST",
+            "output_encoding": "no-op",
+            "input_headers": [
+                "*"
+            ],
+            "backend": [
+                {
+                    "url_pattern": "/api/v1/auth/reset-password",
+                    "encoding": "no-op",
+                    "host": [
+                        "http://auth-service:8081"
+                    ]
+                }
+            ]
+        },
+        {
+            "endpoint": "/api/v1/auth/login",
+            "method": "POST",
+            "output_encoding": "no-op",
+            "input_headers": [
+                "*"
+            ],
+            "backend": [
+                {
+                    "url_pattern": "/api/v1/auth/login",
+                    "encoding": "no-op",
+                    "host": [
+                        "http://auth-service:8081"
+                    ]
+                }
+            ]
+        },
+        {
+            "endpoint": "/api/v1/auth/refresh-token",
+            "method": "POST",
+            "output_encoding": "no-op",
+            "input_headers": [
+                "*"
+            ],
+            "backend": [
+                {
+                    "url_pattern": "/api/v1/auth/refresh-token",
+                    "encoding": "no-op",
+                    "host": [
+                        "http://auth-service:8081"
+                    ]
+                }
+            ]
+        },
+        {
+            "endpoint": "/api/v1/auth/profile/{username}",
+            "method": "GET",
+            "output_encoding": "no-op",
+            "input_headers": [
+                "*"
+            ],
+            "backend": [
+                {
+                    "url_pattern": "/api/v1/auth/profile/{username}",
+                    "encoding": "no-op",
+                    "host": [
+                        "http://auth-service:8081"
+                    ]
+                }
+            ]
+        },
+        {
+            "endpoint": "/api/v1/auth/change-password",
+            "method": "PUT",
+            "output_encoding": "no-op",
+            "input_headers": [
+                "*"
+            ],
+            "extra_config": {
+                "auth/validator": {
+                    "alg": "HS256",
+                    "jwk_local_path": "/etc/krakend/symmetric.json",
+                    "disable_jwk_security": true,
+                    "cookie_key": "access_token",
+                    "propagate_claims": [
+                        [
+                            "sub",
+                            "X-User-ID"
+                        ],
+                        [
+                            "role",
+                            "X-Role"
+                        ],
+                        [
+                            "username",
+                            "X-Username"
+                        ]
+                    ]
+                }
+            },
+            "backend": [
+                {
+                    "url_pattern": "/api/v1/auth/change-password",
+                    "encoding": "no-op",
+                    "host": [
+                        "http://auth-service:8081"
+                    ]
+                }
+            ]
+        },
+        {
+            "endpoint": "/api/v1/auth/logout",
+            "method": "POST",
+            "output_encoding": "no-op",
+            "input_headers": [
+                "*"
+            ],
+            "extra_config": {
+                "auth/validator": {
+                    "alg": "HS256",
+                    "jwk_local_path": "/etc/krakend/symmetric.json",
+                    "disable_jwk_security": true,
+                    "cookie_key": "access_token",
+                    "propagate_claims": [
+                        [
+                            "sub",
+                            "X-User-ID"
+                        ],
+                        [
+                            "role",
+                            "X-Role"
+                        ],
+                        [
+                            "username",
+                            "X-Username"
+                        ]
+                    ]
+                }
+            },
+            "backend": [
+                {
+                    "url_pattern": "/api/v1/auth/logout",
+                    "encoding": "no-op",
+                    "host": [
+                        "http://auth-service:8081"
+                    ]
+                }
+            ]
+        },
+        {
+            "endpoint": "/api/v1/auth/profile",
+            "method": "GET",
+            "output_encoding": "no-op",
+            "input_headers": [
+                "*"
+            ],
+            "extra_config": {
+                "auth/validator": {
+                    "alg": "HS256",
+                    "jwk_local_path": "/etc/krakend/symmetric.json",
+                    "disable_jwk_security": true,
+                    "cookie_key": "access_token",
+                    "propagate_claims": [
+                        [
+                            "sub",
+                            "X-User-ID"
+                        ],
+                        [
+                            "role",
+                            "X-Role"
+                        ],
+                        [
+                            "username",
+                            "X-Username"
+                        ]
+                    ]
+                }
+            },
+            "backend": [
+                {
+                    "url_pattern": "/api/v1/auth/profile",
+                    "encoding": "no-op",
+                    "host": [
+                        "http://auth-service:8081"
+                    ]
+                }
+            ]
+        }
+    ]
+}

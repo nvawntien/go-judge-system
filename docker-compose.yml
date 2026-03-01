@@ -1,6 +1,19 @@
 version: '3.8'
 
 services:
+  gateway:
+    container_name: judge_gateway
+    image: devopsfaith/krakend:2.6.0
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./gateway/krakend.json:/etc/krakend/krakend.json:ro
+      - ./gateway/symmetric.json:/etc/krakend/symmetric.json:ro
+    networks:
+      - judge_net
+    depends_on:
+      - auth-service
+
   postgres:
     container_name: judge_postgres
     image: postgres:15-alpine
@@ -52,8 +65,6 @@ services:
     build:
       context: .
       dockerfile: services/auth/Dockerfile
-    ports:
-      - "8081:8081"
     env_file:
       - ./environment/service.env
     user: "1000:1000"
