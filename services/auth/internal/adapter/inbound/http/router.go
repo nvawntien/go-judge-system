@@ -33,6 +33,7 @@ func (r *Router) SetupRoutes() {
 		v1.POST("/reset-password", r.authHandler.ResetPasswordHandler.Handle)
 
 		v1.POST("/login", r.authHandler.LoginHandler.Handle)
+		v1.POST("/refresh-token", r.authHandler.RefreshTokenHandler.Handle)
 	}
 
 	// Authenticated routes
@@ -40,6 +41,7 @@ func (r *Router) SetupRoutes() {
 	authenticated.Use(r.authMiddleware)
 	{
 		authenticated.PUT("/change-password", r.authHandler.ChangePasswordHandler.Handle)
+		authenticated.POST("/logout", r.authHandler.LogoutHandler.Handle)
 	}
 }
 

@@ -36,3 +36,4 @@
 2026-02-26T21:58:10.960+0700	[33mWARN[0m	usecase/reset_password.go:35	failed to get email from reset token	{"reset_token": "39383031323032632d656564352d346261352d623738332d6338353839323038303938308fca3233d50d95cbecd7d0564d8894bb03bcffbaadd60a2bed064e60e6eafcca", "error": "invalid or expired token"}
 2026-03-01T15:21:33.576+0700	[34mINFO[0m	container/app.go:28	Starting Auth Service	{"port": "8081"}
 2026-03-01T15:51:51.963+0700	[34mINFO[0m	container/app.go:28	Starting Auth Service	{"port": "8081"}
+2026-03-01T16:17:27.423+0700	[34mINFO[0m	container/app.go:28	Starting Auth Service	{"port": "8081"}

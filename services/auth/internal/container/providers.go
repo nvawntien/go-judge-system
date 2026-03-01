@@ -42,6 +42,7 @@ var UseCaseProviderSet = wire.NewSet(
 	usecase.NewResetPasswordUseCase,
 	usecase.NewLoginUseCase,
 	usecase.NewChangePasswordUseCase,
+	usecase.NewRefreshTokenUseCase,
 )
 
 var InboundProviderSet = wire.NewSet(
@@ -53,6 +54,8 @@ var InboundProviderSet = wire.NewSet(
 	handler.NewVerifyForgotPasswordHandler,
 	handler.NewForgotPasswordHandler,
 	handler.NewChangePasswordHandler,
+	handler.NewLogoutHandler,
+	handler.NewRefreshTokenHandler,
 	handler.NewAuthHandler,
 	http.NewRouter,
 )
