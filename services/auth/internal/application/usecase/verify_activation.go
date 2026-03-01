@@ -11,21 +11,21 @@ import (
 )
 
 type verifyActivationUseCase struct {
-	otpUC    inbound.OTPUseCase
-	userRepo outbound.UserRepository
-	logger   *zap.Logger
+	otpService outbound.OTPService
+	userRepo   outbound.UserRepository
+	logger     *zap.Logger
 }
 
-func NewVerifyActivationUseCase(otpUC inbound.OTPUseCase, userRepo outbound.UserRepository, logger *zap.Logger) inbound.VerifyActivationUseCase {
+func NewVerifyActivationUseCase(otpService outbound.OTPService, userRepo outbound.UserRepository, logger *zap.Logger) inbound.VerifyActivationUseCase {
 	return &verifyActivationUseCase{
-		otpUC:    otpUC,
-		userRepo: userRepo,
-		logger:   logger,
+		otpService: otpService,
+		userRepo:   userRepo,
+		logger:     logger,
 	}
 }
 
 func (uc *verifyActivationUseCase) Execute(ctx context.Context, req dto.VerifyOTPRequest) error {
-	if err := uc.otpUC.VerifyOTP(ctx, "activation", req.Email, req.OTP); err != nil {
+	if err := uc.otpService.VerifyOTP(ctx, "activation", req.Email, req.OTP); err != nil {
 		return err
 	}
 
@@ -43,14 +43,14 @@ func (uc *verifyActivationUseCase) Execute(ctx context.Context, req dto.VerifyOT
 	}
 
 	user.Activate()
-	
+
 	if err := uc.userRepo.UpdateUser(ctx, user); err != nil {
 		uc.logger.Error("failed to update user status to active", zap.String("email", req.Email), zap.Error(err))
 		return domain.ErrInternalServer
 	}
 
-	uc.otpUC.Cleanup(ctx, "activation", req.Email)
-	
+	uc.otpService.Cleanup(ctx, "activation", req.Email)
+
 	uc.logger.Info("User account activated successfully",
 		zap.String("email", req.Email),
 	)

@@ -18,6 +18,7 @@ import (
 	"go-judge-system/services/auth/internal/adapter/outbound/crypto"
 	"go-judge-system/services/auth/internal/adapter/outbound/jwt"
 	"go-judge-system/services/auth/internal/adapter/outbound/mail"
+	"go-judge-system/services/auth/internal/adapter/outbound/otp"
 	"go-judge-system/services/auth/internal/adapter/outbound/persistence/postgres"
 	"go-judge-system/services/auth/internal/adapter/outbound/security"
 	"go-judge-system/services/auth/internal/application/usecase"
@@ -46,18 +47,18 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	string2 := provideServerMode(serverConfig)
 	zapLogger := logger.NewLogger(loggerConfig, string2)
 	mailProvider := mail.NewSMTPProvider(smtpConfig, zapLogger)
-	otpUseCase := usecase.NewOTPUseCase(cacheRepository, mailProvider, zapLogger)
-	registerUseCase := usecase.NewRegisterUseCase(userRepository, passwordHasher, otpUseCase, zapLogger)
+	otpService := otp.NewOTPService(cacheRepository, mailProvider, zapLogger)
+	registerUseCase := usecase.NewRegisterUseCase(userRepository, passwordHasher, otpService, zapLogger)
 	registerHandler := handler.NewRegisterHandler(registerUseCase)
-	verifyActivationUseCase := usecase.NewVerifyActivationUseCase(otpUseCase, userRepository, zapLogger)
+	verifyActivationUseCase := usecase.NewVerifyActivationUseCase(otpService, userRepository, zapLogger)
 	verifyActivationHandler := handler.NewVerifyActivationHandler(verifyActivationUseCase)
-	resendOTPUseCase := usecase.NewResendOTPUseCase(userRepository, otpUseCase, zapLogger)
+	resendOTPUseCase := usecase.NewResendOTPUseCase(userRepository, otpService, zapLogger)
 	resendOTPHandler := handler.NewResendOTPHandler(resendOTPUseCase)
-	forgotPasswordUseCase := usecase.NewForgotPasswordUseCase(userRepository, otpUseCase, zapLogger)
+	forgotPasswordUseCase := usecase.NewForgotPasswordUseCase(userRepository, otpService, zapLogger)
 	forgotPasswordHandler := handler.NewForgotPasswordHandler(forgotPasswordUseCase)
 	resetTokenRepository := redis.NewResetTokenRepository(client)
 	resetTokenGenerator := crypto.NewResetTokenGenerator()
-	verifyForgotPasswordUseCase := usecase.NewVerifyForgotPasswordUseCase(otpUseCase, userRepository, resetTokenRepository, resetTokenGenerator, zapLogger)
+	verifyForgotPasswordUseCase := usecase.NewVerifyForgotPasswordUseCase(otpService, userRepository, resetTokenRepository, resetTokenGenerator, zapLogger)
 	verifyForgotPasswordHandler := handler.NewVerifyForgotPasswordHandler(verifyForgotPasswordUseCase)
 	resetPasswordUseCase := usecase.NewResetPasswordUseCase(userRepository, resetTokenRepository, resetTokenGenerator, passwordHasher, zapLogger)
 	resetPasswordHandler := handler.NewResetPasswordHandler(resetPasswordUseCase)

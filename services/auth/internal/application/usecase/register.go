@@ -16,20 +16,20 @@ import (
 type registerUseCase struct {
 	userRepo       outbound.UserRepository
 	passwordHasher outbound.PasswordHasher
-	otpUC          inbound.OTPUseCase
+	otpService     outbound.OTPService
 	logger         *zap.Logger
 }
 
 func NewRegisterUseCase(
 	userRepo outbound.UserRepository,
 	passwordHasher outbound.PasswordHasher,
-	otpUC inbound.OTPUseCase,
+	otpService outbound.OTPService,
 	logger *zap.Logger,
 ) inbound.RegisterUseCase {
 	return &registerUseCase{
 		userRepo:       userRepo,
 		passwordHasher: passwordHasher,
-		otpUC:          otpUC,
+		otpService:     otpService,
 		logger:         logger,
 	}
 }
@@ -99,7 +99,7 @@ func (uc *registerUseCase) Execute(ctx context.Context, req dto.RegisterRequest)
 		return domain.ErrInternalServer
 	}
 
-	if err := uc.otpUC.RequestOTP(ctx, "activation", req.Email); err != nil {
+	if err := uc.otpService.RequestOTP(ctx, "activation", req.Email); err != nil {
 		uc.logger.Error(
 			"failed to request OTP after registration",
 			zap.String("email", req.Email),

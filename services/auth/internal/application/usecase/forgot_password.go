@@ -11,16 +11,16 @@ import (
 )
 
 type forgotPasswordUseCase struct {
-	userRepo outbound.UserRepository
-	otpUC    inbound.OTPUseCase
-	logger   *zap.Logger
+	userRepo   outbound.UserRepository
+	otpService outbound.OTPService
+	logger     *zap.Logger
 }
 
-func NewForgotPasswordUseCase(userRepo outbound.UserRepository, otpUC inbound.OTPUseCase, logger *zap.Logger) inbound.ForgotPasswordUseCase {
+func NewForgotPasswordUseCase(userRepo outbound.UserRepository, otpService outbound.OTPService, logger *zap.Logger) inbound.ForgotPasswordUseCase {
 	return &forgotPasswordUseCase{
-		userRepo: userRepo,
-		otpUC:    otpUC,
-		logger:   logger,
+		userRepo:   userRepo,
+		otpService: otpService,
+		logger:     logger,
 	}
 }
 
@@ -38,7 +38,7 @@ func (uc *forgotPasswordUseCase) Execute(ctx context.Context, req dto.ForgotPass
 		return domain.ErrUserInactive
 	}
 
-	if err := uc.otpUC.RequestOTP(ctx, "forgot_password", req.Email); err != nil {
+	if err := uc.otpService.RequestOTP(ctx, "forgot_password", req.Email); err != nil {
 		uc.logger.Error("failed to request OTP for forgot password", zap.String("email", req.Email), zap.Error(err))
 		return err
 	}

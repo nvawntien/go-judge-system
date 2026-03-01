@@ -12,16 +12,16 @@ import (
 )
 
 type verifyForgotPasswordUseCase struct {
-	otpUseCase     inbound.OTPUseCase
+	otpService     outbound.OTPService
 	userRepository outbound.UserRepository
 	resetTokenRepo outbound.ResetTokenRepository
 	tokenGen       outbound.ResetTokenGenerator
 	logger         *zap.Logger
 }
 
-func NewVerifyForgotPasswordUseCase(otpUseCase inbound.OTPUseCase, userRepository outbound.UserRepository, resetTokenRepo outbound.ResetTokenRepository, tokenGen outbound.ResetTokenGenerator, logger *zap.Logger) inbound.VerifyForgotPasswordUseCase {
+func NewVerifyForgotPasswordUseCase(otpService outbound.OTPService, userRepository outbound.UserRepository, resetTokenRepo outbound.ResetTokenRepository, tokenGen outbound.ResetTokenGenerator, logger *zap.Logger) inbound.VerifyForgotPasswordUseCase {
 	return &verifyForgotPasswordUseCase{
-		otpUseCase:     otpUseCase,
+		otpService:     otpService,
 		userRepository: userRepository,
 		resetTokenRepo: resetTokenRepo,
 		tokenGen:       tokenGen,
@@ -30,7 +30,7 @@ func NewVerifyForgotPasswordUseCase(otpUseCase inbound.OTPUseCase, userRepositor
 }
 
 func (uc *verifyForgotPasswordUseCase) Execute(ctx context.Context, req dto.VerifyOTPRequest) (string, error) {
-	if err := uc.otpUseCase.VerifyOTP(ctx, "forgot_password", req.Email, req.OTP); err != nil {
+	if err := uc.otpService.VerifyOTP(ctx, "forgot_password", req.Email, req.OTP); err != nil {
 		return "", err
 	}
 
@@ -55,7 +55,7 @@ func (uc *verifyForgotPasswordUseCase) Execute(ctx context.Context, req dto.Veri
 		return "", domain.ErrInternalServer
 	}
 
-	uc.otpUseCase.Cleanup(ctx, "forgot_password", req.Email)
+	uc.otpService.Cleanup(ctx, "forgot_password", req.Email)
 
 	uc.logger.Info("Forgot password OTP verified successfully, reset token generated",
 		zap.String("email", req.Email),

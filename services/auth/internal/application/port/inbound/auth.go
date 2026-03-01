@@ -44,9 +44,3 @@ type RefreshTokenUseCase interface {
 type GetProfileUseCase interface {
 	Execute(ctx context.Context, username string) (dto.ProfileResponse, error)
 }
-
-type OTPUseCase interface {
-	RequestOTP(ctx context.Context, purpose, identifier string) error
-	VerifyOTP(ctx context.Context, purpose, identifier string, otp string) error
-	Cleanup(ctx context.Context, purpose, identifier string)
-}

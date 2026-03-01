@@ -11,6 +11,7 @@ import (
 	"go-judge-system/services/auth/internal/adapter/outbound/crypto"
 	"go-judge-system/services/auth/internal/adapter/outbound/jwt"
 	"go-judge-system/services/auth/internal/adapter/outbound/mail"
+	"go-judge-system/services/auth/internal/adapter/outbound/otp"
 	"go-judge-system/services/auth/internal/adapter/outbound/persistence/postgres"
 	"go-judge-system/services/auth/internal/adapter/outbound/security"
 	"go-judge-system/services/auth/internal/application/usecase"
@@ -26,6 +27,7 @@ var OutboundProviderSet = wire.NewSet(
 	mail.NewSMTPProvider,
 	security.NewBcryptHasher,
 	jwt.NewJWTProvider,
+	otp.NewOTPService,
 )
 
 var MiddlewareProviderSet = wire.NewSet(
@@ -33,7 +35,6 @@ var MiddlewareProviderSet = wire.NewSet(
 )
 
 var UseCaseProviderSet = wire.NewSet(
-	usecase.NewOTPUseCase,
 	usecase.NewRegisterUseCase,
 	usecase.NewVerifyForgotPasswordUseCase,
 	usecase.NewForgotPasswordUseCase,
