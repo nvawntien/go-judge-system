@@ -13,6 +13,7 @@ import (
 	"go-judge-system/pkg/logger"
 	"go-judge-system/services/auth/internal/adapter/inbound/http"
 	"go-judge-system/services/auth/internal/adapter/inbound/http/handler"
+	"go-judge-system/services/auth/internal/adapter/inbound/http/middleware"
 	"go-judge-system/services/auth/internal/adapter/outbound/cache/redis"
 	"go-judge-system/services/auth/internal/adapter/outbound/crypto"
 	"go-judge-system/services/auth/internal/adapter/outbound/jwt"
@@ -64,8 +65,11 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	jwtProvider := jwt.NewJWTProvider(jwtConfig)
 	loginUseCase := usecase.NewLoginUseCase(userRepository, passwordHasher, jwtProvider, zapLogger)
 	loginHandler := handler.NewLoginHandler(loginUseCase)
-	authHandler := handler.NewAuthHandler(registerHandler, verifyActivationHandler, resendOTPHandler, forgotPasswordHandler, verifyForgotPasswordHandler, resetPasswordHandler, loginHandler)
-	router := http.NewRouter(authHandler)
+	changePasswordUseCase := usecase.NewChangePasswordUseCase(userRepository, passwordHasher, zapLogger)
+	changePasswordHandler := handler.NewChangePasswordHandler(changePasswordUseCase)
+	authHandler := handler.NewAuthHandler(registerHandler, verifyActivationHandler, resendOTPHandler, forgotPasswordHandler, verifyForgotPasswordHandler, resetPasswordHandler, loginHandler, changePasswordHandler)
+	handlerFunc := middleware.NewAuthMiddleware(jwtProvider)
+	router := http.NewRouter(authHandler, handlerFunc)
 	app := container.NewApp(cfg, router, zapLogger)
 	return app, nil
 }

@@ -66,6 +66,18 @@ func (r *userRepository) GetUserByUsername(ctx context.Context, username string)
 	return toUserEntity(&dao)
 }
 
+func (r *userRepository) GetUserById(ctx context.Context, id string) (*entity.User, error) {
+	var dao UserDAO
+	if err := r.db.WithContext(ctx).Where("id = ?", id).First(&dao).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, domain.ErrUserNotFound
+		}
+		return nil, err
+	}
+
+	return toUserEntity(&dao)
+}
+
 func (r *userRepository) UpdateUser(ctx context.Context, user *entity.User) error {
 	return r.db.WithContext(ctx).Model(&UserDAO{}).
 		Where("id = ?", user.ID).

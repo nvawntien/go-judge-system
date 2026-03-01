@@ -7,15 +7,17 @@ import (
 )
 
 type Router struct {
-	engine      *gin.Engine
-	authHandler *handler.AuthHandler
+	engine         *gin.Engine
+	authHandler    *handler.AuthHandler
+	authMiddleware gin.HandlerFunc
 }
 
-func NewRouter(authHandler *handler.AuthHandler) *Router {
+func NewRouter(authHandler *handler.AuthHandler, authMiddleware gin.HandlerFunc) *Router {
 	r := gin.Default()
 	return &Router{
-		engine:      r,
-		authHandler: authHandler,
+		engine:         r,
+		authHandler:    authHandler,
+		authMiddleware: authMiddleware,
 	}
 }
 
@@ -31,6 +33,13 @@ func (r *Router) SetupRoutes() {
 		v1.POST("/reset-password", r.authHandler.ResetPasswordHandler.Handle)
 
 		v1.POST("/login", r.authHandler.LoginHandler.Handle)
+	}
+
+	// Authenticated routes
+	authenticated := v1.Group("")
+	authenticated.Use(r.authMiddleware)
+	{
+		authenticated.PUT("/change-password", r.authHandler.ChangePasswordHandler.Handle)
 	}
 }
 

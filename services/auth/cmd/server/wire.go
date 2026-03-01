@@ -17,14 +17,15 @@ func provideServerMode(cfg config.ServerConfig) string {
 func InitializeApp(cfg *config.Config) (*container.App, error) {
 	wire.Build(
 		wire.FieldsOf(new(*config.Config), "Server", "Database", "Redis", "Logger", "SMTP", "JWT"),
-		
+
 		provideServerMode,
 
 		container.InfrastructureProviderSet,
 		container.OutboundProviderSet,
+		container.MiddlewareProviderSet,
 		container.UseCaseProviderSet,
 		container.InboundProviderSet,
-		
+
 		container.NewApp,
 	)
 	return &container.App{}, nil

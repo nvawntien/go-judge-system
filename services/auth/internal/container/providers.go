@@ -6,6 +6,7 @@ import (
 	"go-judge-system/pkg/logger"
 	"go-judge-system/services/auth/internal/adapter/inbound/http"
 	"go-judge-system/services/auth/internal/adapter/inbound/http/handler"
+	"go-judge-system/services/auth/internal/adapter/inbound/http/middleware"
 	"go-judge-system/services/auth/internal/adapter/outbound/cache/redis"
 	"go-judge-system/services/auth/internal/adapter/outbound/crypto"
 	"go-judge-system/services/auth/internal/adapter/outbound/jwt"
@@ -27,6 +28,10 @@ var OutboundProviderSet = wire.NewSet(
 	jwt.NewJWTProvider,
 )
 
+var MiddlewareProviderSet = wire.NewSet(
+	middleware.NewAuthMiddleware,
+)
+
 var UseCaseProviderSet = wire.NewSet(
 	usecase.NewOTPUseCase,
 	usecase.NewRegisterUseCase,
@@ -36,6 +41,7 @@ var UseCaseProviderSet = wire.NewSet(
 	usecase.NewResendOTPUseCase,
 	usecase.NewResetPasswordUseCase,
 	usecase.NewLoginUseCase,
+	usecase.NewChangePasswordUseCase,
 )
 
 var InboundProviderSet = wire.NewSet(
@@ -46,6 +52,7 @@ var InboundProviderSet = wire.NewSet(
 	handler.NewResendOTPHandler,
 	handler.NewVerifyForgotPasswordHandler,
 	handler.NewForgotPasswordHandler,
+	handler.NewChangePasswordHandler,
 	handler.NewAuthHandler,
 	http.NewRouter,
 )

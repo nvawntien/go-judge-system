@@ -17,4 +17,5 @@ var (
 	ErrInvalidPurpose        = errors.New("invalid OTP purpose")
 	ErrInvalidOrExpiredToken = errors.New("invalid or expired token")
 	ErrInvalidCredentials    = errors.New("invalid username or password")
+	ErrIncorrecOldPassword   = errors.New("incorrect old password")
 )
