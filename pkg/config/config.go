@@ -12,6 +12,8 @@ type Config struct {
 	Database DatabaseConfig `mapstructure:"database"`
 	Redis    RedisConfig    `mapstructure:"redis"`
 	Logger   LoggerConfig   `mapstructure:"logger"`
+	SMTP     SMTPConfig     `mapstructure:"smtp"`
+	JWT      JWTConfig      `mapstructure:"jwt"`
 }
 
 type ServerConfig struct {
@@ -53,6 +55,22 @@ type LoggerConfig struct {
 	Compress   bool   `mapstructure:"compress"`
 }
 
+type SMTPConfig struct {
+	Host     string `mapstructure:"host"`
+	Port     int    `mapstructure:"port"`
+	Username string `mapstructure:"username"`
+	Password string `mapstructure:"password"`
+	FromName string `mapstructure:"from_name"`
+	From     string `mapstructure:"from"`
+}
+
+type JWTConfig struct {
+	AccessSecret  string        `mapstructure:"access_secret"`
+	RefreshSecret string        `mapstructure:"refresh_secret"`
+	AccessTTL     time.Duration `mapstructure:"access_ttl"`
+	RefreshTTL    time.Duration `mapstructure:"refresh_ttl"`
+}
+
 func LoadConfig(path string) (*Config, error) {
 	v := viper.New()
 	v.AddConfigPath(path)
@@ -61,7 +79,7 @@ func LoadConfig(path string) (*Config, error) {
 
 	v.AutomaticEnv()
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
-	
+
 	if err := v.ReadInConfig(); err != nil {
 		return nil, err
 	}
