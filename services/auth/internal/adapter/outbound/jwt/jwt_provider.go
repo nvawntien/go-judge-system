@@ -27,13 +27,15 @@ func NewJWTProvider(cfg config.JWTConfig) outbound.JWTProvider {
 }
 
 type customClaims struct {
-	Role string `json:"role"`
+	Role     string `json:"role"`
+	Username string `json:"username"`
 	jwt.RegisteredClaims
 }
 
-func (p *jwtProvider) GenerateAccessToken(ctx context.Context, userID, role string) (string, int, error) {
+func (p *jwtProvider) GenerateAccessToken(ctx context.Context, userID, username, role string) (string, int, error) {
 	claims := customClaims{
-		Role: role,
+		Role:     role,
+		Username: username,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    "auth-service",
 			Subject:   userID,
@@ -50,9 +52,10 @@ func (p *jwtProvider) GenerateAccessToken(ctx context.Context, userID, role stri
 	return token, int(p.accessTokenTTL.Seconds()), nil
 }
 
-func (p *jwtProvider) GenerateRefreshToken(ctx context.Context, userID, role string) (string, int, error) {
+func (p *jwtProvider) GenerateRefreshToken(ctx context.Context, userID, username, role string) (string, int, error) {
 	claims := customClaims{
-		Role: role,
+		Role:     role,
+		Username: username,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    "auth-service",
 			Subject:   userID,
@@ -69,15 +72,15 @@ func (p *jwtProvider) GenerateRefreshToken(ctx context.Context, userID, role str
 	return token, int(p.refreshTokenTTL.Seconds()), nil
 }
 
-func (p *jwtProvider) VerifyAccessToken(ctx context.Context, tokenStr string) (string, string, error) {
+func (p *jwtProvider) VerifyAccessToken(ctx context.Context, tokenStr string) (string, string, string, error) {
 	return p.verifyToken(ctx, tokenStr, p.accessSecret)
 }
 
-func (p *jwtProvider) VerifyRefreshToken(ctx context.Context, tokenStr string) (string, string, error) {
+func (p *jwtProvider) VerifyRefreshToken(ctx context.Context, tokenStr string) (string, string, string, error) {
 	return p.verifyToken(ctx, tokenStr, p.refreshSecret)
 }
 
-func (p *jwtProvider) verifyToken(ctx context.Context, tokenStr string, secret string) (string, string, error) {
+func (p *jwtProvider) verifyToken(ctx context.Context, tokenStr string, secret string) (string, string, string, error) {
 	claims := &customClaims{}
 	token, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -87,7 +90,7 @@ func (p *jwtProvider) verifyToken(ctx context.Context, tokenStr string, secret s
 	})
 
 	if err != nil || !token.Valid {
-		return "", "", fmt.Errorf("token invalid or expired")
+		return "", "", "", fmt.Errorf("token invalid or expired")
 	}
-	return claims.Subject, claims.Role, nil
+	return claims.Subject, claims.Username, claims.Role, nil
 }

@@ -49,13 +49,13 @@ func (uc *loginUseCase) Execute(ctx context.Context, req dto.LoginRequest) (dto.
 		return dto.LoginResponse{}, domain.ErrInvalidCredentials
 	}
 
-	accessToken, accessExpire, err := uc.jwtProvider.GenerateAccessToken(ctx, user.ID, user.Role)
+	accessToken, accessExpire, err := uc.jwtProvider.GenerateAccessToken(ctx, user.ID, user.Username, user.Role)
 	if err != nil {
 		uc.logger.Error("Failed to generate access token", zap.Error(err))
 		return dto.LoginResponse{}, err
 	}
 
-	refreshToken, refreshExpire, err := uc.jwtProvider.GenerateRefreshToken(ctx, user.ID, user.Role)
+	refreshToken, refreshExpire, err := uc.jwtProvider.GenerateRefreshToken(ctx, user.ID, user.Username, user.Role)
 	if err != nil {
 		uc.logger.Error("Failed to generate refresh token", zap.Error(err))
 		return dto.LoginResponse{}, err

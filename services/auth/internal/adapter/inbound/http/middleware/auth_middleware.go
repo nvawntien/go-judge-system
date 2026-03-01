@@ -22,13 +22,14 @@ func NewAuthMiddleware(jwtProvider outbound.JWTProvider) gin.HandlerFunc {
 			token = strings.TrimPrefix(authHeader, "Bearer ")
 		}
 
-		userID, role, err := jwtProvider.VerifyAccessToken(c.Request.Context(), token)
+		userID, username, role, err := jwtProvider.VerifyAccessToken(c.Request.Context(), token)
 		if err != nil {
 			response.Error(c, http.StatusUnauthorized, "unauthorized: invalid or expired token")
 			return
 		}
 
 		c.Set("user_id", userID)
+		c.Set("username", username)
 		c.Set("role", role)
 		c.Next()
 	}
