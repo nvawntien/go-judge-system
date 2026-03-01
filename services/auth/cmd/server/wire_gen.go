@@ -74,7 +74,7 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	getProfileUseCase := usecase.NewGetProfileUseCase(userRepository, zapLogger)
 	getProfileHandler := handler.NewGetProfileHandler(getProfileUseCase)
 	authHandler := handler.NewAuthHandler(registerHandler, verifyActivationHandler, resendOTPHandler, forgotPasswordHandler, verifyForgotPasswordHandler, resetPasswordHandler, loginHandler, changePasswordHandler, logoutHandler, refreshTokenHandler, getProfileHandler)
-	handlerFunc := middleware.NewAuthMiddleware(jwtProvider)
+	handlerFunc := middleware.NewAuthMiddleware()
 	router := http.NewRouter(authHandler, handlerFunc)
 	app := container.NewApp(cfg, router, zapLogger)
 	return app, nil
