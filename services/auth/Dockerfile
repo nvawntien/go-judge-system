@@ -19,7 +19,7 @@ COPY services/auth/ ./services/auth/
 WORKDIR /workspace/services/auth
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
-    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o app cmd/main.go
+    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o app ./cmd/server
 
 FROM alpine:3.19
 
@@ -27,12 +27,8 @@ WORKDIR /app
 
 RUN apk add --no-cache tzdata ca-certificates
 
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
-
 COPY --from=builder /workspace/services/auth/app .
 
-RUN chown appuser:appgroup /app/app
-
-USER appuser
+RUN mkdir -p /app/logs
 
 CMD ["./app"]

@@ -7,31 +7,46 @@ services:
     restart: unless-stopped
     env_file:
       - ./environment/postgres.env
+    ports:
+      - "5432:5432"
     volumes:
       - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
       - postgres_data:/var/lib/postgresql/data
     networks:
       - judge_net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U admin -d auth_db"]
+      test: [ "CMD-SHELL", "pg_isready -U admin -d auth_db" ]
       interval: 5s
       timeout: 5s
       retries: 5
+
   redis:
     container_name: judge_redis
     image: redis:7-alpine
     restart: unless-stopped
     env_file:
       - ./environment/redis.env
+    ports:
+      - "6379:6379"
     command: >
       /bin/sh -c "redis-server --requirepass $$REDIS_PASSWORD"
     networks:
       - judge_net
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a $$REDIS_PASSWORD ping"]
+      test: [ "CMD-SHELL", "redis-cli -a $$REDIS_PASSWORD ping" ]
       interval: 5s
       timeout: 5s
       retries: 5
+  mailhog:
+    container_name: judge_mailhog
+    image: mailhog/mailhog:latest
+    restart: unless-stopped
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    networks:
+      - judge_net
+
   auth-service:
     container_name: judge_auth
     build:
@@ -40,18 +55,22 @@ services:
     ports:
       - "8081:8081"
     env_file:
-      - ./environment/postgres.env
-      - ./environment/redis.env
       - ./environment/service.env
+    user: "1000:1000"
     volumes:
       - ./services/auth/config:/app/config:ro
+      - ./services/auth/logs:/app/logs
     depends_on:
-      postgres: { condition: service_healthy }
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - judge_net
 
 networks:
   judge_net:
+
 
 volumes:
   postgres_data:

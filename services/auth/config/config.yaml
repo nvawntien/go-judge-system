@@ -1,20 +1,52 @@
+# Auth Service Configuration
+# Sensitive values (passwords, secrets) are overridden by environment variables
+# Viper maps env vars: DATABASE_PASSWORD -> database.password
+
 server:
   name: auth-service
   port: 8081
   mode: debug
+
+logger:
+  level: debug
+  filename: /app/logs/auth.log
+  max_size: 10
+  max_backups: 5
+  max_age: 30
+  compress: true
+
 database:
-  host: judge_postgres
+  host: postgres
   port: 5432
-  user: ""
-  password: ""
+  user: admin
+  password: ""        # overridden by DATABASE_PASSWORD env
   dbname: auth_db
   sslmode: disable
   max_open_conns: 30
   max_idle_conns: 10
   conn_max_lifetime: 3600
+
 redis:
-  host: judge_redis
+  host: redis
   port: 6379
-  password: ""
+  password: ""        # overridden by REDIS_PASSWORD env
   db: 0
   pool_size: 10
+  min_idle_conns: 5
+  dial_timeout: 5s
+  read_timeout: 3s
+  write_timeout: 3s
+
+smtp:
+  host: mailhog
+  port: 1025
+  username: ""
+  password: ""
+  from_name: "Judge System"
+  from: "noreply@go-judge.com"
+
+jwt:
+  access_secret: ""   # overridden by JWT_ACCESS_SECRET env
+  refresh_secret: ""  # overridden by JWT_REFRESH_SECRET env
+  access_ttl: 15m
+  refresh_ttl: 168h

@@ -1,6 +1,0 @@
-2026-02-24T22:53:16.068+0700	[34mINFO[0m	container/app.go:28	Starting Auth Service	{"port": "8081"}
-2026-02-24T22:53:54.028+0700	[31mERROR[0m	usecase/register.go:32	failed to check existing user	{"email": "ngvantien1526@gmail.com", "error": "invalid field found for struct go-judge-system/services/auth/internal/domain/entity.User's field Email: define a valid foreign key for relations or implement the Valuer/Scanner interface"}
-2026-02-24T23:01:24.426+0700	[34mINFO[0m	container/app.go:28	Starting Auth Service	{"port": "8081"}
-2026-02-24T23:01:27.069+0700	[31mERROR[0m	usecase/register.go:32	failed to check existing user	{"email": "ngvantien1526@gmail.com", "error": "invalid field found for struct go-judge-system/services/auth/internal/domain/entity.User's field Email: define a valid foreign key for relations or implement the Valuer/Scanner interface"}
-2026-02-24T23:04:17.446+0700	[34mINFO[0m	container/app.go:28	Starting Auth Service	{"port": "8081"}
-2026-02-24T23:04:21.793+0700	[31mERROR[0m	usecase/register.go:32	failed to check existing user	{"email": "ngvantien1526@gmail.com", "error": "invalid field found for struct go-judge-system/services/auth/internal/domain/entity.User's field Email: define a valid foreign key for relations or implement the Valuer/Scanner interface"}

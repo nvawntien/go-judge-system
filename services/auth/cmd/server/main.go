@@ -6,7 +6,7 @@ import (
 )
 
 func main() {
-	cfg, err := config.LoadConfig("../../config")
+	cfg, err := config.LoadConfig("/app/config")
 	if err != nil {
 		log.Fatalf("load config failed: %v", err)
 	}
