@@ -7,14 +7,14 @@ import (
 	"go-judge-system/services/auth/internal/application/port/outbound"
 )
 
-type tokenGenerator struct {
+type resetTokenGenerator struct {
 }
 
-func NewTokenGenerator() outbound.TokenGenerator {
-	return &tokenGenerator{}
+func NewResetTokenGenerator() outbound.ResetTokenGenerator {
+	return &resetTokenGenerator{}
 }
 
-func (g *tokenGenerator) GenerateSecureToken(userID string) string {
+func (g *resetTokenGenerator) Generate(userID string) string{
 	randomBytes := make([]byte, 32)
 	_, _= rand.Read(randomBytes)
 
@@ -22,7 +22,7 @@ func (g *tokenGenerator) GenerateSecureToken(userID string) string {
 	return hex.EncodeToString(tokenData)
 }
 
-func (g *tokenGenerator) HashToken(token string) string {
+func (g *resetTokenGenerator) Hash(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
 }

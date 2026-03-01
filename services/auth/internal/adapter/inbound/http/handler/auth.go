@@ -7,9 +7,17 @@ type AuthHandler struct {
 	ForgotPasswordHandler *ForgotPasswordHandler
 	VerifyForgotPasswordHandler *VerifyForgotPasswordHandler
 	ResetPasswordHandler *ResetPasswordHandler
+	LoginHandler *LoginHandler
 }
 
-func NewAuthHandler(registerHandler *RegisterHandler, verifyActivationHandler *VerifyActivationHandler, resendOTPHandler *ResendOTPHandler, forgotPasswordHandler *ForgotPasswordHandler, verifyForgotPasswordHandler *VerifyForgotPasswordHandler, resetPasswordHandler *ResetPasswordHandler) *AuthHandler {
+func NewAuthHandler(
+	registerHandler *RegisterHandler, 
+	verifyActivationHandler *VerifyActivationHandler, 
+	resendOTPHandler *ResendOTPHandler, 
+	forgotPasswordHandler *ForgotPasswordHandler, 
+	verifyForgotPasswordHandler *VerifyForgotPasswordHandler, 
+	resetPasswordHandler *ResetPasswordHandler, 
+	loginHandler *LoginHandler) *AuthHandler {
 	return &AuthHandler{
 		RegisterHandler:  registerHandler,
 		VerifyActivationHandler: verifyActivationHandler,
@@ -17,5 +25,6 @@ func NewAuthHandler(registerHandler *RegisterHandler, verifyActivationHandler *V
 		ForgotPasswordHandler: forgotPasswordHandler,
 		VerifyForgotPasswordHandler: verifyForgotPasswordHandler,
 		ResetPasswordHandler: resetPasswordHandler,
+		LoginHandler: loginHandler,
 	}
 }

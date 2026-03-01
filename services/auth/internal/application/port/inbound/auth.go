@@ -13,6 +13,10 @@ type VerifyActivationUseCase interface {
 	Execute(ctx context.Context, req dto.VerifyOTPRequest) error
 }
 
+type LoginUseCase interface {
+	Execute(ctx context.Context, req dto.LoginRequest) (dto.LoginResponse, error)
+}
+
 type VerifyForgotPasswordUseCase interface {
 	Execute(ctx context.Context, req dto.VerifyOTPRequest) (string, error)
 }

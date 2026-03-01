@@ -16,7 +16,7 @@ func provideServerMode(cfg config.ServerConfig) string {
 
 func InitializeApp(cfg *config.Config) (*container.App, error) {
 	wire.Build(
-		wire.FieldsOf(new(*config.Config), "Server", "Database", "Redis", "Logger", "SMTP"),
+		wire.FieldsOf(new(*config.Config), "Server", "Database", "Redis", "Logger", "SMTP", "JWT"),
 		
 		provideServerMode,
 

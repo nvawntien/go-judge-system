@@ -15,11 +15,11 @@ type verifyForgotPasswordUseCase struct {
 	otpUseCase     inbound.OTPUseCase
 	userRepository outbound.UserRepository
 	resetTokenRepo outbound.ResetTokenRepository
-	tokenGen       outbound.TokenGenerator
+	tokenGen       outbound.ResetTokenGenerator
 	logger         *zap.Logger
 }
 
-func NewVerifyForgotPasswordUseCase(otpUseCase inbound.OTPUseCase, userRepository outbound.UserRepository, resetTokenRepo outbound.ResetTokenRepository, tokenGen outbound.TokenGenerator, logger *zap.Logger) inbound.VerifyForgotPasswordUseCase {
+func NewVerifyForgotPasswordUseCase(otpUseCase inbound.OTPUseCase, userRepository outbound.UserRepository, resetTokenRepo outbound.ResetTokenRepository, tokenGen outbound.ResetTokenGenerator, logger *zap.Logger) inbound.VerifyForgotPasswordUseCase {
 	return &verifyForgotPasswordUseCase{
 		otpUseCase:     otpUseCase,
 		userRepository: userRepository,
@@ -47,11 +47,11 @@ func (uc *verifyForgotPasswordUseCase) Execute(ctx context.Context, req dto.Veri
 		return "", domain.ErrUserInactive
 	}
 
-	rawToken := uc.tokenGen.GenerateSecureToken(user.ID)
-	hashedToken := uc.tokenGen.HashToken(rawToken)
+	rawToken := uc.tokenGen.Generate(user.ID)
+	hashedToken := uc.tokenGen.Hash(rawToken)
 
-	if err := uc.resetTokenRepo.Set(ctx, hashedToken, req.Email, 15*time.Minute); err != nil {
-		uc.logger.Error("failed to set reset token", zap.String("email", req.Email), zap.Error(err))
+	if err := uc.resetTokenRepo.Save(ctx, hashedToken, req.Email, 15*time.Minute); err != nil {
+		uc.logger.Error("failed to save reset token", zap.String("email", req.Email), zap.Error(err))
 		return "", domain.ErrInternalServer
 	}
 

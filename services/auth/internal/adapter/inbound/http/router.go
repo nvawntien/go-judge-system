@@ -29,6 +29,8 @@ func (r *Router) SetupRoutes() {
 		v1.POST("/forgot-password", r.authHandler.ForgotPasswordHandler.Handle)
 		v1.POST("/verify-forgot-password", r.authHandler.VerifyForgotPasswordHandler.Handle)
 		v1.POST("/reset-password", r.authHandler.ResetPasswordHandler.Handle)
+
+		v1.POST("/login", r.authHandler.LoginHandler.Handle)
 	}
 }
 

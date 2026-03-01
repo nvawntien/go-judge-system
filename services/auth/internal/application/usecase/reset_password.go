@@ -12,27 +12,27 @@ import (
 )
 
 type resetPasswordUseCase struct {
-	userRepo  outbound.UserRepository
-	tokenRepo outbound.ResetTokenRepository
-	tokenGen  outbound.TokenGenerator
+	userRepo       outbound.UserRepository
+	tokenRepo      outbound.ResetTokenRepository
+	tokenGen       outbound.ResetTokenGenerator
 	passwordHasher outbound.PasswordHasher
-	logger    *zap.Logger
+	logger         *zap.Logger
 }
 
-func NewResetPasswordUseCase(userRepo outbound.UserRepository, tokenRepo outbound.ResetTokenRepository, tokenGen outbound.TokenGenerator, passwordHasher outbound.PasswordHasher, logger *zap.Logger) inbound.ResetPasswordUseCase {
+func NewResetPasswordUseCase(userRepo outbound.UserRepository, tokenRepo outbound.ResetTokenRepository, tokenGen outbound.ResetTokenGenerator, passwordHasher outbound.PasswordHasher, logger *zap.Logger) inbound.ResetPasswordUseCase {
 	return &resetPasswordUseCase{
-		userRepo:  userRepo,
-		tokenRepo: tokenRepo,
-		tokenGen:  tokenGen,
+		userRepo:       userRepo,
+		tokenRepo:      tokenRepo,
+		tokenGen:       tokenGen,
 		passwordHasher: passwordHasher,
-		logger:    logger,
+		logger:         logger,
 	}
 }
 
 func (uc *resetPasswordUseCase) Execute(ctx context.Context, req dto.ResetPasswordRequest) error {
-	hashedToken := uc.tokenGen.HashToken(req.ResetToken)
+	hashedToken := uc.tokenGen.Hash(req.ResetToken)
 
-	email, err := uc.tokenRepo.Get(ctx, hashedToken)
+	email, err := uc.tokenRepo.FindEmailByToken(ctx, hashedToken)
 	if err != nil {
 		uc.logger.Warn("failed to get email from reset token", zap.String("reset_token", req.ResetToken), zap.Error(err))
 		return domain.ErrInvalidOrExpiredToken
@@ -61,7 +61,7 @@ func (uc *resetPasswordUseCase) Execute(ctx context.Context, req dto.ResetPasswo
 	}
 
 	user.UpdatePassword(passwordVO)
-	
+
 	err = uc.userRepo.UpdateUser(ctx, user)
 	if err != nil {
 		uc.logger.Error("failed to update user password", zap.String("email", email), zap.Error(err))

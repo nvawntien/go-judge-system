@@ -49,6 +49,20 @@ func (uc *registerUseCase) Execute(ctx context.Context, req dto.RegisterRequest)
 		return domain.ErrUserAlreadyExists
 	}
 
+	existingUser, err = uc.userRepo.GetUserByUsername(ctx, req.Username)
+	if err != nil && err != domain.ErrUserNotFound {
+		uc.logger.Error(
+			"failed to check existing user by username",
+			zap.String("username", req.Username),
+			zap.Error(err),
+		)
+		return domain.ErrInternalServer
+	}
+
+	if existingUser != nil {
+		return domain.ErrUserAlreadyExists
+	}
+
 	emailVO, err := valueobject.NewEmail(req.Email)
 	if err != nil {
 		return domain.ErrInvalidEmail

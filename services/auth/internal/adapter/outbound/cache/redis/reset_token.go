@@ -17,12 +17,12 @@ func NewResetTokenRepository(rdb *redis.Client) outbound.ResetTokenRepository {
 	return &resetTokenRepository{rdb: rdb}
 }
 
-func (r *resetTokenRepository) Set(ctx context.Context, hashedToken string, email string, ttl time.Duration) error {
+func (r *resetTokenRepository) Save(ctx context.Context, hashedToken string, email string, ttl time.Duration) error {
 	key := "reset_token:" + hashedToken
 	return r.rdb.Set(ctx, key, email, ttl).Err()
 }
 
-func (r *resetTokenRepository) Get(ctx context.Context, hashedToken string) (string, error) {
+func (r *resetTokenRepository) FindEmailByToken(ctx context.Context, hashedToken string) (string, error) {
 	key := "reset_token:" + hashedToken
 
 	email, err := r.rdb.Get(ctx, key).Result()

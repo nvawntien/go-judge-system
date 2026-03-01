@@ -15,8 +15,10 @@ import (
 	"go-judge-system/services/auth/internal/adapter/inbound/http/handler"
 	"go-judge-system/services/auth/internal/adapter/outbound/cache/redis"
 	"go-judge-system/services/auth/internal/adapter/outbound/crypto"
+	"go-judge-system/services/auth/internal/adapter/outbound/jwt"
 	"go-judge-system/services/auth/internal/adapter/outbound/mail"
 	"go-judge-system/services/auth/internal/adapter/outbound/persistence/postgres"
+	"go-judge-system/services/auth/internal/adapter/outbound/security"
 	"go-judge-system/services/auth/internal/application/usecase"
 	"go-judge-system/services/auth/internal/container"
 )
@@ -30,6 +32,7 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 		return nil, err
 	}
 	userRepository := postgres.NewUserRepository(db)
+	passwordHasher := security.NewBcryptHasher()
 	redisConfig := cfg.Redis
 	client, err := cache.ConnectRedis(redisConfig)
 	if err != nil {
@@ -43,7 +46,7 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	zapLogger := logger.NewLogger(loggerConfig, string2)
 	mailProvider := mail.NewSMTPProvider(smtpConfig, zapLogger)
 	otpUseCase := usecase.NewOTPUseCase(cacheRepository, mailProvider, zapLogger)
-	registerUseCase := usecase.NewRegisterUseCase(userRepository, otpUseCase, zapLogger)
+	registerUseCase := usecase.NewRegisterUseCase(userRepository, passwordHasher, otpUseCase, zapLogger)
 	registerHandler := handler.NewRegisterHandler(registerUseCase)
 	verifyActivationUseCase := usecase.NewVerifyActivationUseCase(otpUseCase, userRepository, zapLogger)
 	verifyActivationHandler := handler.NewVerifyActivationHandler(verifyActivationUseCase)
@@ -52,12 +55,16 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	forgotPasswordUseCase := usecase.NewForgotPasswordUseCase(userRepository, otpUseCase, zapLogger)
 	forgotPasswordHandler := handler.NewForgotPasswordHandler(forgotPasswordUseCase)
 	resetTokenRepository := redis.NewResetTokenRepository(client)
-	tokenGenerator := crypto.NewTokenGenerator()
-	verifyForgotPasswordUseCase := usecase.NewVerifyForgotPasswordUseCase(otpUseCase, userRepository, resetTokenRepository, tokenGenerator, zapLogger)
+	resetTokenGenerator := crypto.NewResetTokenGenerator()
+	verifyForgotPasswordUseCase := usecase.NewVerifyForgotPasswordUseCase(otpUseCase, userRepository, resetTokenRepository, resetTokenGenerator, zapLogger)
 	verifyForgotPasswordHandler := handler.NewVerifyForgotPasswordHandler(verifyForgotPasswordUseCase)
-	resetPasswordUseCase := usecase.NewResetPasswordUseCase(userRepository, resetTokenRepository, tokenGenerator, zapLogger)
+	resetPasswordUseCase := usecase.NewResetPasswordUseCase(userRepository, resetTokenRepository, resetTokenGenerator, passwordHasher, zapLogger)
 	resetPasswordHandler := handler.NewResetPasswordHandler(resetPasswordUseCase)
-	authHandler := handler.NewAuthHandler(registerHandler, verifyActivationHandler, resendOTPHandler, forgotPasswordHandler, verifyForgotPasswordHandler, resetPasswordHandler)
+	jwtConfig := cfg.JWT
+	jwtProvider := jwt.NewJWTProvider(jwtConfig)
+	loginUseCase := usecase.NewLoginUseCase(userRepository, passwordHasher, jwtProvider, zapLogger)
+	loginHandler := handler.NewLoginHandler(loginUseCase)
+	authHandler := handler.NewAuthHandler(registerHandler, verifyActivationHandler, resendOTPHandler, forgotPasswordHandler, verifyForgotPasswordHandler, resetPasswordHandler, loginHandler)
 	router := http.NewRouter(authHandler)
 	app := container.NewApp(cfg, router, zapLogger)
 	return app, nil
