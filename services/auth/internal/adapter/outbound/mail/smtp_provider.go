@@ -3,8 +3,10 @@ package mail
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"fmt"
 	"html/template"
+	"net"
 	"net/smtp"
 	"time"
 
@@ -78,7 +80,6 @@ func (s *smtpProvider) SendOTP(ctx context.Context, toEmail string, otp string) 
 
 	var body bytes.Buffer
 	if err := s.tmpl.Execute(&body, data); err != nil {
-		//s.logger.Error("failed to render email template", zap.Error(err))
 		return err
 	}
 
@@ -96,16 +97,56 @@ func (s *smtpProvider) SendOTP(ctx context.Context, toEmail string, otp string) 
 	msg.WriteString("\r\n")
 	msg.Write(body.Bytes())
 
-	auth := smtp.PlainAuth("", s.cfg.Username, s.cfg.Password, s.cfg.Host)
 	addr := fmt.Sprintf("%s:%d", s.cfg.Host, s.cfg.Port)
 
-	//s.logger.Info("sending OTP email", zap.String("to", toEmail))
-	
-	err := smtp.SendMail(addr, auth, s.cfg.From, []string{toEmail}, msg.Bytes())
+	// Dial the SMTP server manually
+	conn, err := net.Dial("tcp", addr)
 	if err != nil {
-		//s.logger.Error("failed to send SMTP email", zap.Error(err))
-		return err
+		return fmt.Errorf("failed to connect to SMTP server: %w", err)
 	}
 
-	return nil
+	client, err := smtp.NewClient(conn, s.cfg.Host)
+	if err != nil {
+		conn.Close()
+		return fmt.Errorf("failed to create SMTP client: %w", err)
+	}
+	defer client.Close()
+
+	// Upgrade to TLS only if the server supports STARTTLS
+	if ok, _ := client.Extension("STARTTLS"); ok {
+		tlsConfig := &tls.Config{ServerName: s.cfg.Host}
+		if err = client.StartTLS(tlsConfig); err != nil {
+			return fmt.Errorf("STARTTLS failed: %w", err)
+		}
+	}
+
+	// Authenticate only if credentials are provided
+	if s.cfg.Username != "" && s.cfg.Password != "" {
+		auth := smtp.PlainAuth("", s.cfg.Username, s.cfg.Password, s.cfg.Host)
+		if err = client.Auth(auth); err != nil {
+			return fmt.Errorf("SMTP auth failed: %w", err)
+		}
+	}
+
+	// Set sender and recipient
+	if err = client.Mail(s.cfg.From); err != nil {
+		return fmt.Errorf("MAIL FROM failed: %w", err)
+	}
+	if err = client.Rcpt(toEmail); err != nil {
+		return fmt.Errorf("RCPT TO failed: %w", err)
+	}
+
+	// Write the email body
+	w, err := client.Data()
+	if err != nil {
+		return fmt.Errorf("DATA command failed: %w", err)
+	}
+	if _, err = w.Write(msg.Bytes()); err != nil {
+		return fmt.Errorf("failed to write email body: %w", err)
+	}
+	if err = w.Close(); err != nil {
+		return fmt.Errorf("failed to close email body: %w", err)
+	}
+
+	return client.Quit()
 }
