@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"go-judge-system/services/auth/internal/application/dto"
 	"go-judge-system/services/auth/internal/application/port/inbound"
 	"go-judge-system/services/auth/internal/application/port/outbound"
@@ -31,11 +32,12 @@ func (uc *verifyActivationUseCase) Execute(ctx context.Context, req dto.VerifyOT
 
 	user, err := uc.userRepo.GetUserByEmail(ctx, req.Email)
 	if err != nil {
-		if err != domain.ErrUserNotFound {
-			uc.logger.Error("failed to retrieve user after OTP verification", zap.String("email", req.Email), zap.Error(err))
-			return domain.ErrInternalServer
+		if errors.Is(err, domain.ErrUserNotFound) {
+			return domain.ErrUserNotFound
 		}
-		return err
+
+		uc.logger.Error("failed to retrieve user after OTP verification", zap.String("email", req.Email), zap.Error(err))
+		return domain.ErrInternalServer.Wrap(err)
 	}
 
 	if user.IsActive {
@@ -46,13 +48,11 @@ func (uc *verifyActivationUseCase) Execute(ctx context.Context, req dto.VerifyOT
 
 	if err := uc.userRepo.UpdateUser(ctx, user); err != nil {
 		uc.logger.Error("failed to update user status to active", zap.String("email", req.Email), zap.Error(err))
-		return domain.ErrInternalServer
+		return domain.ErrInternalServer.Wrap(err)
 	}
 
 	uc.otpService.Cleanup(ctx, "activation", req.Email)
 
-	uc.logger.Info("User account activated successfully",
-		zap.String("email", req.Email),
-	)
+	uc.logger.Info("User account activated successfully", zap.String("email", req.Email))
 	return nil
 }

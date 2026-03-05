@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"go-judge-system/services/auth/internal/application/dto"
 	"go-judge-system/services/auth/internal/application/port/inbound"
 	"go-judge-system/services/auth/internal/application/port/outbound"
@@ -29,11 +30,12 @@ func NewLoginUseCase(userRepo outbound.UserRepository, passwordHasher outbound.P
 func (uc *loginUseCase) Execute(ctx context.Context, req dto.LoginRequest) (dto.LoginResponse, error) {
 	user, err := uc.userRepo.GetUserByUsername(ctx, req.Username)
 	if err != nil {
-		if err == domain.ErrUserNotFound {
+		if errors.Is(err, domain.ErrUserNotFound) {
 			return dto.LoginResponse{}, domain.ErrInvalidCredentials
 		}
-		uc.logger.Error("Failed to get user by username", zap.Error(err))
-		return dto.LoginResponse{}, err
+
+		uc.logger.Error("Failed to get user by username", zap.String("username", req.Username), zap.Error(err))
+		return dto.LoginResponse{}, domain.ErrInternalServer.Wrap(err)
 	}
 
 	if !user.IsActive {
@@ -42,8 +44,8 @@ func (uc *loginUseCase) Execute(ctx context.Context, req dto.LoginRequest) (dto.
 
 	compare, err := uc.passwordHasher.Compare(user.Password, req.Password)
 	if err != nil {
-		uc.logger.Error("Failed to compare password", zap.Error(err))
-		return dto.LoginResponse{}, err
+		uc.logger.Error("Failed to compare password", zap.String("username", req.Username), zap.Error(err))
+		return dto.LoginResponse{}, domain.ErrInternalServer.Wrap(err)
 	}
 	if !compare {
 		return dto.LoginResponse{}, domain.ErrInvalidCredentials
@@ -51,14 +53,14 @@ func (uc *loginUseCase) Execute(ctx context.Context, req dto.LoginRequest) (dto.
 
 	accessToken, accessExpire, err := uc.jwtProvider.GenerateAccessToken(ctx, user.ID, user.Username, user.Role)
 	if err != nil {
-		uc.logger.Error("Failed to generate access token", zap.Error(err))
-		return dto.LoginResponse{}, err
+		uc.logger.Error("Failed to generate access token", zap.String("username", req.Username), zap.Error(err))
+		return dto.LoginResponse{}, domain.ErrInternalServer.Wrap(err)
 	}
 
 	refreshToken, refreshExpire, err := uc.jwtProvider.GenerateRefreshToken(ctx, user.ID, user.Username, user.Role)
 	if err != nil {
-		uc.logger.Error("Failed to generate refresh token", zap.Error(err))
-		return dto.LoginResponse{}, err
+		uc.logger.Error("Failed to generate refresh token", zap.String("username", req.Username), zap.Error(err))
+		return dto.LoginResponse{}, domain.ErrInternalServer.Wrap(err)
 	}
 
 	return dto.LoginResponse{

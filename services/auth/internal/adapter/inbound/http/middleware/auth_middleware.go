@@ -1,8 +1,7 @@
 package middleware
 
 import (
-	"go-judge-system/services/auth/internal/adapter/inbound/http/response"
-	"net/http"
+	"go-judge-system/pkg/response"
 
 	"github.com/gin-gonic/gin"
 )
@@ -13,7 +12,7 @@ func NewAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID := c.GetHeader("X-User-ID")
 		if userID == "" {
-			response.Error(c, http.StatusUnauthorized, "unauthorized: missing identity headers from gateway")
+			response.Error(c, response.CodeUnauthorized, "unauthorized: missing identity headers from gateway")
 			return
 		}
 

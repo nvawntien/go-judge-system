@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"go-judge-system/services/auth/internal/application/dto"
 	"go-judge-system/services/auth/internal/application/port/inbound"
 	"go-judge-system/services/auth/internal/application/port/outbound"
@@ -27,11 +28,11 @@ func NewForgotPasswordUseCase(userRepo outbound.UserRepository, otpService outbo
 func (uc *forgotPasswordUseCase) Execute(ctx context.Context, req dto.ForgotPasswordRequest) error {
 	user, err := uc.userRepo.GetUserByEmail(ctx, req.Email)
 	if err != nil {
-		if err != domain.ErrUserNotFound {
+		if !errors.Is(err, domain.ErrUserNotFound) {
 			uc.logger.Error("failed to retrieve user for forgot password", zap.String("email", req.Email), zap.Error(err))
-			return domain.ErrInternalServer
+			return domain.ErrInternalServer.Wrap(err)
 		}
-		return err
+		return domain.ErrUserNotFound
 	}
 
 	if !user.IsActive {

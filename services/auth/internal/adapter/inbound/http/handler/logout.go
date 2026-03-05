@@ -1,8 +1,7 @@
 package handler
 
 import (
-	"go-judge-system/services/auth/internal/adapter/inbound/http/response"
-	"net/http"
+	"go-judge-system/pkg/response"
 
 	"github.com/gin-gonic/gin"
 )
@@ -17,5 +16,5 @@ func (h *LogoutHandler) Handle(c *gin.Context) {
 	c.SetCookie("access_token", "", -1, "/", "", false, true)
 	c.SetCookie("refresh_token", "", -1, "/", "", false, true)
 
-	response.SuccessWithMessage(c, http.StatusOK, "logged out successfully", nil)
+	response.SuccessWithMessage(c, response.CodeSuccess, "logged out successfully", nil)
 }

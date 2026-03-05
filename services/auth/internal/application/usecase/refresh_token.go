@@ -5,6 +5,7 @@ import (
 	"go-judge-system/services/auth/internal/application/dto"
 	"go-judge-system/services/auth/internal/application/port/inbound"
 	"go-judge-system/services/auth/internal/application/port/outbound"
+	"go-judge-system/services/auth/internal/domain"
 
 	"go.uber.org/zap"
 )
@@ -25,19 +26,19 @@ func (uc *refreshTokenUseCase) Execute(ctx context.Context, refreshToken string)
 	userID, username, role, err := uc.jwt.VerifyRefreshToken(ctx, refreshToken)
 	if err != nil {
 		uc.logger.Warn("invalid or expired refresh token", zap.Error(err))
-		return dto.LoginResponse{}, err
+		return dto.LoginResponse{}, domain.ErrInvalidOrExpiredToken.Wrap(err)
 	}
 
 	accessToken, accessExpire, err := uc.jwt.GenerateAccessToken(ctx, userID, username, role)
 	if err != nil {
-		uc.logger.Error("failed to generate new access token", zap.Error(err))
-		return dto.LoginResponse{}, err
+		uc.logger.Error("failed to generate new access token", zap.String("user_id", userID), zap.Error(err))
+		return dto.LoginResponse{}, domain.ErrInternalServer.Wrap(err)
 	}
 
 	newRefreshToken, refreshExpire, err := uc.jwt.GenerateRefreshToken(ctx, userID, username, role)
 	if err != nil {
-		uc.logger.Error("failed to generate new refresh token", zap.Error(err))
-		return dto.LoginResponse{}, err
+		uc.logger.Error("failed to generate new refresh token", zap.String("user_id", userID), zap.Error(err))
+		return dto.LoginResponse{}, domain.ErrInternalServer.Wrap(err)
 	}
 
 	return dto.LoginResponse{

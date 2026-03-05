@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"go-judge-system/services/auth/internal/application/dto"
 	"go-judge-system/services/auth/internal/application/port/inbound"
 	"go-judge-system/services/auth/internal/application/port/outbound"
@@ -28,14 +29,17 @@ func NewChangePasswordUseCase(userRepo outbound.UserRepository, passwordHasher o
 func (uc *changePasswordUseCase) Execute(ctx context.Context, userID string, req dto.ChangePasswordRequest) error {
 	user, err := uc.userRepo.GetUserById(ctx, userID)
 	if err != nil {
-		uc.logger.Error("failed to get user by id", zap.String("user_id", userID), zap.Error(err))
-		return domain.ErrInternalServer
+		if !errors.Is(err, domain.ErrUserNotFound) {
+			uc.logger.Error("failed to get user by id", zap.String("user_id", userID), zap.Error(err))
+			return domain.ErrInternalServer.Wrap(err)
+		}
+		return domain.ErrUserNotFound
 	}
 
 	match, err := uc.passwordHasher.Compare(user.Password, req.OldPassword)
 	if err != nil {
 		uc.logger.Error("failed to compare password", zap.Error(err))
-		return domain.ErrInternalServer
+		return domain.ErrInternalServer.Wrap(err)
 	}
 	if !match {
 		return domain.ErrIncorrecOldPassword
@@ -48,7 +52,7 @@ func (uc *changePasswordUseCase) Execute(ctx context.Context, userID string, req
 	hashedPassword, err := uc.passwordHasher.Hash(req.NewPassword)
 	if err != nil {
 		uc.logger.Error("failed to hash new password", zap.Error(err))
-		return domain.ErrInternalServer
+		return domain.ErrInternalServer.Wrap(err)
 	}
 
 	passwordVO := valueobject.NewPasswordFromHash(hashedPassword)
@@ -56,7 +60,7 @@ func (uc *changePasswordUseCase) Execute(ctx context.Context, userID string, req
 
 	if err := uc.userRepo.UpdateUser(ctx, user); err != nil {
 		uc.logger.Error("failed to update user password", zap.String("user_id", userID), zap.Error(err))
-		return domain.ErrInternalServer
+		return domain.ErrInternalServer.Wrap(err)
 	}
 
 	return nil

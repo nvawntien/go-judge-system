@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 
 	"go-judge-system/services/auth/internal/application/dto"
 	"go-judge-system/services/auth/internal/application/port/inbound"
@@ -36,13 +37,9 @@ func NewRegisterUseCase(
 
 func (uc *registerUseCase) Execute(ctx context.Context, req dto.RegisterRequest) error {
 	existingUser, err := uc.userRepo.GetUserByEmail(ctx, req.Email)
-	if err != nil && err != domain.ErrUserNotFound {
-		uc.logger.Error(
-			"failed to check existing user",
-			zap.String("email", req.Email),
-			zap.Error(err),
-		)
-		return domain.ErrInternalServer
+	if err != nil && !errors.Is(err, domain.ErrUserNotFound) {
+		uc.logger.Error("failed to check existing user", zap.String("email", req.Email), zap.Error(err))
+		return domain.ErrInternalServer.Wrap(err)
 	}
 
 	if existingUser != nil {
@@ -50,13 +47,9 @@ func (uc *registerUseCase) Execute(ctx context.Context, req dto.RegisterRequest)
 	}
 
 	existingUser, err = uc.userRepo.GetUserByUsername(ctx, req.Username)
-	if err != nil && err != domain.ErrUserNotFound {
-		uc.logger.Error(
-			"failed to check existing user by username",
-			zap.String("username", req.Username),
-			zap.Error(err),
-		)
-		return domain.ErrInternalServer
+	if err != nil && !errors.Is(err, domain.ErrUserNotFound) {
+		uc.logger.Error("failed to check existing user by username", zap.String("username", req.Username), zap.Error(err))
+		return domain.ErrInternalServer.Wrap(err)
 	}
 
 	if existingUser != nil {
@@ -65,7 +58,7 @@ func (uc *registerUseCase) Execute(ctx context.Context, req dto.RegisterRequest)
 
 	emailVO, err := valueobject.NewEmail(req.Email)
 	if err != nil {
-		return domain.ErrInvalidEmail
+		return err
 	}
 
 	if err := valueobject.ValidatePlainPassword(req.Password); err != nil {
@@ -74,12 +67,8 @@ func (uc *registerUseCase) Execute(ctx context.Context, req dto.RegisterRequest)
 
 	hashedPassword, err := uc.passwordHasher.Hash(req.Password)
 	if err != nil {
-		uc.logger.Error(
-			"failed to hash password",
-			zap.String("email", req.Email),
-			zap.Error(err),
-		)
-		return domain.ErrInternalServer
+		uc.logger.Error("failed to hash password", zap.String("email", req.Email), zap.Error(err))
+		return domain.ErrInternalServer.Wrap(err)
 	}
 
 	passwordVO := valueobject.NewPasswordFromHash(hashedPassword)
@@ -91,20 +80,12 @@ func (uc *registerUseCase) Execute(ctx context.Context, req dto.RegisterRequest)
 	)
 
 	if err := uc.userRepo.CreateUser(ctx, user); err != nil {
-		uc.logger.Error(
-			"failed to create user",
-			zap.String("email", req.Email),
-			zap.Error(err),
-		)
-		return domain.ErrInternalServer
+		uc.logger.Error("failed to create user", zap.String("email", req.Email), zap.Error(err))
+		return domain.ErrInternalServer.Wrap(err)
 	}
 
 	if err := uc.otpService.RequestOTP(ctx, "activation", req.Email); err != nil {
-		uc.logger.Error(
-			"failed to request OTP after registration",
-			zap.String("email", req.Email),
-			zap.Error(err),
-		)
+		uc.logger.Error("failed to request OTP after registration", zap.String("email", req.Email), zap.Error(err))
 		return err
 	}
 

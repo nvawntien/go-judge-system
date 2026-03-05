@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"go-judge-system/services/auth/internal/application/dto"
 	"go-judge-system/services/auth/internal/application/port/inbound"
 	"go-judge-system/services/auth/internal/application/port/outbound"
@@ -36,11 +37,11 @@ func (uc *verifyForgotPasswordUseCase) Execute(ctx context.Context, req dto.Veri
 
 	user, err := uc.userRepository.GetUserByEmail(ctx, req.Email)
 	if err != nil {
-		if err == domain.ErrUserNotFound {
-			return "", domain.ErrUserNotFound
+		if !errors.Is(err, domain.ErrUserNotFound) {
+			uc.logger.Error("failed to retrieve user", zap.String("email", req.Email), zap.Error(err))
+			return "", domain.ErrInternalServer.Wrap(err)
 		}
-		uc.logger.Error("failed to retrieve user", zap.String("email", req.Email), zap.Error(err))
-		return "", domain.ErrInternalServer
+		return "", domain.ErrUserNotFound
 	}
 
 	if !user.IsActive {
@@ -52,7 +53,7 @@ func (uc *verifyForgotPasswordUseCase) Execute(ctx context.Context, req dto.Veri
 
 	if err := uc.resetTokenRepo.Save(ctx, hashedToken, req.Email, 15*time.Minute); err != nil {
 		uc.logger.Error("failed to save reset token", zap.String("email", req.Email), zap.Error(err))
-		return "", domain.ErrInternalServer
+		return "", domain.ErrInternalServer.Wrap(err)
 	}
 
 	uc.otpService.Cleanup(ctx, "forgot_password", req.Email)

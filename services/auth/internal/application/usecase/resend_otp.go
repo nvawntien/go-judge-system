@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"go-judge-system/services/auth/internal/application/dto"
 	"go-judge-system/services/auth/internal/application/port/inbound"
 	"go-judge-system/services/auth/internal/application/port/outbound"
@@ -24,11 +25,11 @@ func NewResendOTPUseCase(userRepo outbound.UserRepository, otpService outbound.O
 func (uc *resendOTPUseCase) Execute(ctx context.Context, req dto.ResendOTPRequest) error {
 	user, err := uc.userRepo.GetUserByEmail(ctx, req.Email)
 	if err != nil {
-		if err != domain.ErrUserNotFound {
+		if !errors.Is(err, domain.ErrUserNotFound) {
 			uc.logger.Error("failed to retrieve user for OTP resend", zap.String("email", req.Email), zap.Error(err))
-			return domain.ErrInternalServer
+			return domain.ErrInternalServer.Wrap(err)
 		}
-		return err
+		return domain.ErrUserNotFound
 	}
 
 	validators := map[string]func(*entity.User) error{

@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"go-judge-system/services/auth/internal/application/dto"
 	"go-judge-system/services/auth/internal/application/port/inbound"
 	"go-judge-system/services/auth/internal/application/port/outbound"
@@ -44,20 +45,19 @@ func (uc *resetPasswordUseCase) Execute(ctx context.Context, req dto.ResetPasswo
 
 	hashedPassword, err := uc.passwordHasher.Hash(req.NewPassword)
 	if err != nil {
-		uc.logger.Error(
-			"failed to hash password",
-			zap.String("email", email),
-			zap.Error(err),
-		)
-		return domain.ErrInternalServer
+		uc.logger.Error("failed to hash password", zap.String("email", email), zap.Error(err))
+		return domain.ErrInternalServer.Wrap(err)
 	}
 
 	passwordVO := valueobject.NewPasswordFromHash(hashedPassword)
 
 	user, err := uc.userRepo.GetUserByEmail(ctx, email)
 	if err != nil {
-		uc.logger.Error("failed to get user by email", zap.String("email", email), zap.Error(err))
-		return err
+		if !errors.Is(err, domain.ErrUserNotFound) {
+			uc.logger.Error("failed to get user by email", zap.String("email", email), zap.Error(err))
+			return domain.ErrInternalServer.Wrap(err)
+		}
+		return domain.ErrUserNotFound
 	}
 
 	user.UpdatePassword(passwordVO)
@@ -65,7 +65,7 @@ func (uc *resetPasswordUseCase) Execute(ctx context.Context, req dto.ResetPasswo
 	err = uc.userRepo.UpdateUser(ctx, user)
 	if err != nil {
 		uc.logger.Error("failed to update user password", zap.String("email", email), zap.Error(err))
-		return err
+		return domain.ErrInternalServer.Wrap(err)
 	}
 
 	if err := uc.tokenRepo.Delete(ctx, hashedToken); err != nil {

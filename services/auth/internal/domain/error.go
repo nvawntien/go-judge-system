@@ -1,21 +1,21 @@
 package domain
 
-import "errors"
+import "go-judge-system/pkg/response"
 
 var (
-	ErrUserInactive          = errors.New("user is not active")
-	ErrUserAlreadyActive     = errors.New("user is already active")
-	ErrUserNotFound          = errors.New("user not found")
-	ErrInvalidEmail          = errors.New("invalid email format")
-	ErrPasswordTooShort      = errors.New("password must be at least 8 characters")
-	ErrUserAlreadyExists     = errors.New("user already exists")
-	ErrInternalServer        = errors.New("internal server error")
-	ErrUserBlocked           = errors.New("you are temporarily blocked due to multiple OTP requests")
-	ErrRateLimitExceeded     = errors.New("you have exceeded the maximum requests per second")
-	ErrOTPNotFound           = errors.New("OTP expired or not found")
-	ErrOTPInvalid            = errors.New("invalid OTP")
-	ErrInvalidPurpose        = errors.New("invalid OTP purpose")
-	ErrInvalidOrExpiredToken = errors.New("invalid or expired token")
-	ErrInvalidCredentials    = errors.New("invalid username or password")
-	ErrIncorrecOldPassword   = errors.New("incorrect old password")
+	ErrUserInactive          = response.NewAppError(response.CodeForbidden, "user is not active", nil)
+	ErrUserAlreadyActive     = response.NewAppError(response.CodeConflict, "user is already active", nil)
+	ErrUserNotFound          = response.NewAppError(response.CodeAccountNotFound, "user not found", nil)
+	ErrInvalidEmail          = response.NewAppError(response.CodeParamInvalid, "invalid email format", nil)
+	ErrPasswordTooShort      = response.NewAppError(response.CodeParamInvalid, "password must be at least 8 characters", nil)
+	ErrUserAlreadyExists     = response.NewAppError(response.CodeConflict, "user already exists", nil)
+	ErrInternalServer        = response.NewAppError(response.CodeInternalServer, "internal server error", nil)
+	ErrUserBlocked           = response.NewAppError(response.CodeForbidden, "you are temporarily blocked due to multiple OTP requests", nil)
+	ErrRateLimitExceeded     = response.NewAppError(response.CodeRateLimitExceeded, "you have exceeded the maximum requests per second", nil)
+	ErrOTPNotFound           = response.NewAppError(response.CodeBadRequest, "OTP expired or not found", nil)
+	ErrOTPInvalid            = response.NewAppError(response.CodeBadRequest, "invalid OTP", nil)
+	ErrInvalidPurpose        = response.NewAppError(response.CodeBadRequest, "invalid OTP purpose", nil)
+	ErrInvalidOrExpiredToken = response.NewAppError(response.CodeInvalidToken, "invalid or expired token", nil)
+	ErrInvalidCredentials    = response.NewAppError(response.CodeUnauthorized, "invalid username or password", nil)
+	ErrIncorrecOldPassword   = response.NewAppError(response.CodeInvalidPassword, "incorrect old password", nil)
 )
