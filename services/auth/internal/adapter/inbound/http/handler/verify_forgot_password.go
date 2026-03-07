@@ -18,10 +18,5 @@ func NewVerifyForgotPasswordHandler(uc inbound.VerifyForgotPasswordUseCase) *Ver
 }
 
 func (h *VerifyForgotPasswordHandler) Handle(c *gin.Context) {
-	response.HandleWithMessage(
-		c,
-		h.uc.Execute,
-		response.CodeSuccess,
-		"verify forgot password successfully",
-	)
+	response.HandleWithMessage(c, h.uc.Execute, response.CodeSuccess, "verify forgot password successfully")
 }

@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"errors"
+	"go-judge-system/pkg/auth"
 	"go-judge-system/services/auth/internal/application/dto"
 	"go-judge-system/services/auth/internal/application/port/inbound"
 	"go-judge-system/services/auth/internal/application/port/outbound"
@@ -36,4 +37,12 @@ func (uc *getProfileUseCase) Execute(ctx context.Context, username string) (dto.
 		Rating:    user.Rating,
 		CreatedAt: user.CreatedAt,
 	}, nil
+}
+
+func (uc *getProfileUseCase) ExecuteMe(ctx context.Context, claims auth.Claims) (dto.ProfileResponse, error) {
+	return uc.Execute(ctx, claims.Username)
+}
+
+func (uc *getProfileUseCase) ExecutePublic(ctx context.Context, req dto.ProfileRequest) (dto.ProfileResponse, error) {
+	return uc.Execute(ctx, req.Username)
 }

@@ -18,10 +18,5 @@ func NewForgotPasswordHandler(uc inbound.ForgotPasswordUseCase) *ForgotPasswordH
 }
 
 func (h *ForgotPasswordHandler) Handle(c *gin.Context) {
-	response.HandleVoid(
-		c,
-		h.uc.Execute,
-		response.CodeSuccess,
-		"OTP sent to your email, please check your inbox to verify your account.",
-	)
+	response.HandleVoid(c, h.uc.Execute, response.CodeSuccess, "OTP sent to your email, please check your inbox to verify your account.")
 }

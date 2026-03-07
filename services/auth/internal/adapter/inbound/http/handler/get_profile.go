@@ -16,33 +16,9 @@ func NewGetProfileHandler(uc inbound.GetProfileUseCase) *GetProfileHandler {
 }
 
 func (h *GetProfileHandler) HandleMe(c *gin.Context) {
-	username := c.GetString("username")
-	if username == "" {
-		response.Error(c, response.CodeUnauthorized, "Unauthorized")
-		return
-	}
-
-	profile, err := h.uc.Execute(c, username)
-	if err != nil {
-		response.HandleError(c, err)
-		return
-	}
-
-	response.Success(c, response.CodeSuccess, profile)
+	response.HandleWithClaimsNoBody(c, h.uc.ExecuteMe, response.CodeSuccess)
 }
 
 func (h *GetProfileHandler) HandlePublic(c *gin.Context) {
-	username := c.Param("username")
-	if username == "" {
-		response.Error(c, response.CodeParamInvalid, "invalid username")
-		return
-	}
-
-	profile, err := h.uc.Execute(c, username)
-	if err != nil {
-		response.HandleError(c, err)
-		return
-	}
-
-	response.Success(c, response.CodeSuccess, profile)
+	response.HandleWithParams(c, h.uc.ExecutePublic, response.CodeSuccess)
 }

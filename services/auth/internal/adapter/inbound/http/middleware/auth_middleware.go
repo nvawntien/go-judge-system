@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"go-judge-system/pkg/auth"
 	"go-judge-system/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -16,9 +17,11 @@ func NewAuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		c.Set("user_id", userID)
-		c.Set("username", c.GetHeader("X-Username"))
-		c.Set("role", c.GetHeader("X-Role"))
+		auth.SetClaims(c, auth.Claims{
+			UserID:   userID,
+			Username: c.GetHeader("X-Username"),
+			Role:     c.GetHeader("X-Role"),
+		})
 
 		c.Next()
 	}

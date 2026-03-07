@@ -18,10 +18,5 @@ func NewVerifyActivationHandler(uc inbound.VerifyActivationUseCase) *VerifyActiv
 }
 
 func (h *VerifyActivationHandler) Handle(c *gin.Context) {
-	response.HandleVoid(
-		c,
-		h.uc.Execute,
-		response.CodeSuccess,
-		"verification successful, your account is now active",
-	)
+	response.HandleVoid(c, h.uc.Execute, response.CodeSuccess, "verification successful, your account is now active")
 }

@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"errors"
+	"go-judge-system/pkg/auth"
 	"go-judge-system/services/auth/internal/application/dto"
 	"go-judge-system/services/auth/internal/application/port/inbound"
 	"go-judge-system/services/auth/internal/application/port/outbound"
@@ -26,11 +27,11 @@ func NewChangePasswordUseCase(userRepo outbound.UserRepository, passwordHasher o
 	}
 }
 
-func (uc *changePasswordUseCase) Execute(ctx context.Context, userID string, req dto.ChangePasswordRequest) error {
-	user, err := uc.userRepo.GetUserById(ctx, userID)
+func (uc *changePasswordUseCase) Execute(ctx context.Context, claims auth.Claims, req dto.ChangePasswordRequest) error {
+	user, err := uc.userRepo.GetUserById(ctx, claims.UserID)
 	if err != nil {
 		if !errors.Is(err, domain.ErrUserNotFound) {
-			uc.logger.Error("failed to get user by id", zap.String("user_id", userID), zap.Error(err))
+			uc.logger.Error("failed to get user by id", zap.String("user_id", claims.UserID), zap.Error(err))
 			return domain.ErrInternalServer.Wrap(err)
 		}
 		return domain.ErrUserNotFound
@@ -59,7 +60,7 @@ func (uc *changePasswordUseCase) Execute(ctx context.Context, userID string, req
 	user.UpdatePassword(passwordVO)
 
 	if err := uc.userRepo.UpdateUser(ctx, user); err != nil {
-		uc.logger.Error("failed to update user password", zap.String("user_id", userID), zap.Error(err))
+		uc.logger.Error("failed to update user password", zap.String("user_id", claims.UserID), zap.Error(err))
 		return domain.ErrInternalServer.Wrap(err)
 	}
 

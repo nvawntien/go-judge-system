@@ -16,10 +16,5 @@ func NewRegisterHandler(uc inbound.RegisterUseCase) *RegisterHandler {
 }
 
 func (h *RegisterHandler) Handle(c *gin.Context) {
-	response.HandleVoid(
-		c,
-		h.uc.Execute,
-		response.CodeCreated,
-		"registration successful, please check your email for the OTP",
-	)
+	response.HandleVoid(c, h.uc.Execute, response.CodeCreated, "registration successful, please check your email for the OTP")
 }
