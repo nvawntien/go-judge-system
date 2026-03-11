@@ -154,6 +154,147 @@ func HandleWithMessage[Req any, Res any](c *gin.Context, fn func(context.Context
 	SuccessWithMessage(c, successCode, successMsg, res)
 }
 
+// HandleVoidWithParamsAndClaims: URI params + claims → void. Used for DELETE, Publish, Hide.
+func HandleVoidWithParamsAndClaims[Req any](c *gin.Context, fn func(context.Context, auth.Claims, Req) error, successCode int, successMsg string) {
+	claims, ok := auth.GetClaims(c)
+	if !ok {
+		Error(c, CodeUnauthorized, "unauthorized")
+		return
+	}
+
+	var req Req
+	if err := c.ShouldBindUri(&req); err != nil {
+		Error(c, CodeParamInvalid, "invalid uri params")
+		return
+	}
+
+	if err := fn(c.Request.Context(), claims, req); err != nil {
+		HandleError(c, err)
+		return
+	}
+
+	SuccessWithMessage(c, successCode, successMsg, nil)
+}
+
+// HandleWithParamsAndClaims: URI params + claims → data. Used for admin GET by ID.
+func HandleWithParamsAndClaims[Req any, Res any](c *gin.Context, fn func(context.Context, auth.Claims, Req) (Res, error), successCode int) {
+	claims, ok := auth.GetClaims(c)
+	if !ok {
+		Error(c, CodeUnauthorized, "unauthorized")
+		return
+	}
+
+	var req Req
+	if err := c.ShouldBindUri(&req); err != nil {
+		Error(c, CodeParamInvalid, "invalid uri params")
+		return
+	}
+
+	res, err := fn(c.Request.Context(), claims, req)
+	if err != nil {
+		HandleError(c, err)
+		return
+	}
+
+	Success(c, successCode, res)
+}
+
+// HandleWithQuery: Query params → data. Used for public list endpoints.
+func HandleWithQuery[Req any, Res any](c *gin.Context, fn func(context.Context, Req) (Res, error), successCode int) {
+	var req Req
+	if err := c.ShouldBindQuery(&req); err != nil {
+		Error(c, CodeBadRequest, "invalid query parameters")
+		return
+	}
+
+	res, err := fn(c.Request.Context(), req)
+	if err != nil {
+		HandleError(c, err)
+		return
+	}
+
+	Success(c, successCode, res)
+}
+
+// HandleWithQueryAndClaims: Query params + claims → data. Used for admin list, my list.
+func HandleWithQueryAndClaims[Req any, Res any](c *gin.Context, fn func(context.Context, auth.Claims, Req) (Res, error), successCode int) {
+	claims, ok := auth.GetClaims(c)
+	if !ok {
+		Error(c, CodeUnauthorized, "unauthorized")
+		return
+	}
+
+	var req Req
+	if err := c.ShouldBindQuery(&req); err != nil {
+		Error(c, CodeBadRequest, "invalid query parameters")
+		return
+	}
+
+	res, err := fn(c.Request.Context(), claims, req)
+	if err != nil {
+		HandleError(c, err)
+		return
+	}
+
+	Success(c, successCode, res)
+}
+
+// HandleVoidWithParamsAndBody: URI params + JSON body + claims → void. Used for Update (ID + body).
+func HandleVoidWithParamsAndBody[Req any](c *gin.Context, fn func(context.Context, auth.Claims, Req) error, successCode int, successMsg string) {
+	claims, ok := auth.GetClaims(c)
+	if !ok {
+		Error(c, CodeUnauthorized, "unauthorized")
+		return
+	}
+
+	var req Req
+
+	if err := c.ShouldBindUri(&req); err != nil {
+		Error(c, CodeParamInvalid, "invalid uri params")
+		return
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		Error(c, CodeBadRequest, "invalid request payload")
+		return
+	}
+
+	if err := fn(c.Request.Context(), claims, req); err != nil {
+		HandleError(c, err)
+		return
+	}
+
+	SuccessWithMessage(c, successCode, successMsg, nil)
+}
+
+// HandleWithParamsAndBody: URI params + JSON body + claims → data. Used for Create TestCase (problem ID + body).
+func HandleWithParamsAndBody[Req any, Res any](c *gin.Context, fn func(context.Context, auth.Claims, Req) (Res, error), successCode int) {
+	claims, ok := auth.GetClaims(c)
+	if !ok {
+		Error(c, CodeUnauthorized, "unauthorized")
+		return
+	}
+
+	var req Req
+	if err := c.ShouldBindUri(&req); err != nil {
+		Error(c, CodeParamInvalid, "invalid uri params")
+		return
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		Error(c, CodeBadRequest, "invalid request payload")
+		return
+	}
+
+	res, err := fn(c.Request.Context(), claims, req)
+	if err != nil {
+		HandleError(c, err)
+		return
+	}
+
+	Success(c, successCode, res)
+}
+
 // HandleError: Handles errors and returns appropriate HTTP responses.
 func HandleError(c *gin.Context, err error) {
 	var appErr *AppError
@@ -164,3 +305,4 @@ func HandleError(c *gin.Context, err error) {
 
 	Error(c, CodeInternalServer, "internal server error")
 }
+

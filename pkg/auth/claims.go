@@ -23,3 +23,16 @@ func GetClaims(c *gin.Context) (Claims, bool) {
 	claims, ok := val.(Claims)
 	return claims, ok
 }
+
+func (c Claims) IsSuperAdmin() bool {
+	return c.Role == "super_admin"
+}
+
+func (c Claims) IsAdmin() bool {
+	return c.Role == "admin" || c.IsSuperAdmin()
+}
+
+func (c Claims) CanManage(authorID string) bool {
+	return c.IsSuperAdmin() || (c.IsAdmin() && c.UserID == authorID)
+}
+
