@@ -12,6 +12,7 @@ type AuthHandler struct {
 	LogoutHandler               *LogoutHandler
 	RefreshTokenHandler         *RefreshTokenHandler
 	GetProfileHandler           *GetProfileHandler
+	UpdateUserRoleHandler       *UpdateUserRoleHandler
 }
 
 func NewAuthHandler(
@@ -26,6 +27,7 @@ func NewAuthHandler(
 	logoutHandler *LogoutHandler,
 	refreshTokenHandler *RefreshTokenHandler,
 	getProfileHandler *GetProfileHandler,
+	updateUserRoleHandler *UpdateUserRoleHandler,
 ) *AuthHandler {
 	return &AuthHandler{
 		RegisterHandler:             registerHandler,
@@ -39,5 +41,6 @@ func NewAuthHandler(
 		LogoutHandler:               logoutHandler,
 		RefreshTokenHandler:         refreshTokenHandler,
 		GetProfileHandler:           getProfileHandler,
+		UpdateUserRoleHandler:       updateUserRoleHandler,
 	}
 }

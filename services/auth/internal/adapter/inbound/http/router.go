@@ -22,6 +22,11 @@ func NewRouter(authHandler *handler.AuthHandler, authMiddleware gin.HandlerFunc)
 }
 
 func (r *Router) SetupRoutes() {
+	// Health check — used by Docker HEALTHCHECK / K8s probes
+	r.engine.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{"status": "ok"})
+	})
+
 	v1 := r.engine.Group("/api/v1/auth")
 	{
 		v1.POST("/register", r.authHandler.RegisterHandler.Handle)
@@ -44,6 +49,13 @@ func (r *Router) SetupRoutes() {
 		authenticated.PUT("/change-password", r.authHandler.ChangePasswordHandler.Handle)
 		authenticated.POST("/logout", r.authHandler.LogoutHandler.Handle)
 		authenticated.GET("/profile", r.authHandler.GetProfileHandler.HandleMe)
+	}
+
+	// Super Admin routes
+	admin := v1.Group("/admin")
+	admin.Use(r.authMiddleware)
+	{
+		admin.PUT("/:username/role", r.authHandler.UpdateUserRoleHandler.Handle)
 	}
 }
 

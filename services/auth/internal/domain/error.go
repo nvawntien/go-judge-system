@@ -18,4 +18,5 @@ var (
 	ErrInvalidOrExpiredToken = response.NewAppError(response.CodeInvalidToken, "invalid or expired token", nil)
 	ErrInvalidCredentials    = response.NewAppError(response.CodeUnauthorized, "invalid username or password", nil)
 	ErrIncorrecOldPassword   = response.NewAppError(response.CodeInvalidPassword, "incorrect old password", nil)
+	ErrForbidden             = response.NewAppError(response.CodeForbidden, "you are not allowed to perform this action", nil)
 )

@@ -47,3 +47,7 @@ type GetProfileUseCase interface {
 	ExecuteMe(ctx context.Context, claims auth.Claims) (dto.ProfileResponse, error)
 	ExecutePublic(ctx context.Context, req dto.ProfileRequest) (dto.ProfileResponse, error)
 }
+
+type UpdateUserRoleUseCase interface {
+	Execute(ctx context.Context, claims auth.Claims, req dto.UpdateUserRoleRequest) error
+}

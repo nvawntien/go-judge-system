@@ -1,34 +1,61 @@
 FROM golang:1.24-alpine AS builder
 
+RUN apk add --no-cache git
+
 WORKDIR /workspace
 
-COPY go.work .
+RUN printf 'go 1.24.0\n\nuse (\n\t./pkg\n\t./services/auth\n)\n' > go.work
+
 COPY pkg/go.mod pkg/go.sum ./pkg/
 COPY services/auth/go.mod services/auth/go.sum ./services/auth/
 
-WORKDIR /workspace/pkg
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    cd /workspace/pkg && go mod download && \
+    cd /workspace/services/auth && go mod download
 
-WORKDIR /workspace/services/auth
-RUN go mod download
-
-WORKDIR /workspace
 COPY pkg/ ./pkg/
 COPY services/auth/ ./services/auth/
 
-WORKDIR /workspace/services/auth
+ARG VERSION=dev
+ARG BUILD_TIME
+ARG COMMIT_SHA
+
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
-    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o app ./cmd/server
+    cd /workspace/services/auth && \
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+      -trimpath \
+      -ldflags="-s -w \
+        -X main.version=${VERSION} \
+        -X main.buildTime=${BUILD_TIME} \
+        -X main.commitSHA=${COMMIT_SHA}" \
+      -o /workspace/auth-service ./cmd/server
 
-FROM alpine:3.19
+FROM alpine:3.21 AS runtime
+
+RUN apk add --no-cache \
+      tzdata \
+      ca-certificates && \
+    addgroup -S appgroup && \
+    adduser -S appuser -G appgroup -h /app -s /sbin/nologin
 
 WORKDIR /app
 
-RUN apk add --no-cache tzdata ca-certificates
+RUN mkdir -p /app/logs && chown -R appuser:appgroup /app
 
-COPY --from=builder /workspace/services/auth/app .
+COPY --from=builder --chown=appuser:appgroup /workspace/auth-service ./app
 
-RUN mkdir -p /app/logs
+USER appuser
 
-CMD ["./app"]
+EXPOSE 8081
+
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD wget -qO- http://localhost:8081/health || exit 1
+
+
+LABEL org.opencontainers.image.title="auth-service" \
+      org.opencontainers.image.description="Authentication microservice for Go Judge System" \
+      org.opencontainers.image.source="https://github.com/go-judge-system"
+
+ENTRYPOINT ["./app"]

@@ -42,3 +42,8 @@ func (u *User) UpdatePassword(newPassword valueobject.Password) {
 	u.Password = newPassword.Hash()
 	u.UpdatedAt = time.Now()
 }
+
+func (u *User) AssignRole(role string) {
+	u.Role = role
+	u.UpdatedAt = time.Now()
+}
