@@ -13,6 +13,8 @@ services:
       - judge_net
     depends_on:
       - auth-service
+      - problem-service
+    restart: unless-stopped
 
   postgres:
     container_name: judge_postgres
@@ -67,7 +69,7 @@ services:
       dockerfile: services/auth/Dockerfile
     env_file:
       - ./environment/service.env
-    user: "1000:1000"
+    restart: unless-stopped
     volumes:
       - ./services/auth/config:/app/config:ro
       - ./services/auth/logs:/app/logs
@@ -75,6 +77,23 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+    networks:
+      - judge_net
+
+  problem-service:
+    container_name: judge_problem
+    build:
+      context: .
+      dockerfile: services/problem/Dockerfile
+    env_file:
+      - ./environment/service.env
+    restart: unless-stopped
+    volumes:
+      - ./services/problem/config:/app/config:ro
+      - ./services/problem/logs:/app/logs
+    depends_on:
+      postgres:
         condition: service_healthy
     networks:
       - judge_net
