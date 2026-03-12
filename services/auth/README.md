@@ -6,27 +6,27 @@
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-336791?style=flat&logo=postgresql)
 ![Redis](https://img.shields.io/badge/Redis-7-DC382D?style=flat&logo=redis)
 
-The **Authentication Service** is a core microservice of the **Go Judge System**. It is responsible for secure user identity management, registration, session handling, and credential recovery. 
+The **Authentication Service** is a core microservice of the **Go Judge System**. It handles user identity, account lifecycle, token issuance, password recovery, and role management.
 
-Built with **Go**, this service strictly adheres to **Hexagonal Architecture (Ports and Adapters)** to ensure high testability, maintainability, and separation of concerns.
+Built with **Go**, this service follows **Hexagonal Architecture (Ports and Adapters)** to keep business logic isolated from frameworks, storage, and delivery concerns.
 
 ---
 
 ## ✨ Key Features
 
-- **Secure Authentication**: Implementation of JWT (JSON Web Tokens) with short-lived access tokens and secure refresh tokens.
-- **Robust Session Management**: Support for cookie-based and Bearer token authentication.
-- **Account Verification & Recovery**: Integrated OTP (One-Time Password) mechanism via email (MailHog for local dev) for account activation and password reset.
-- **Clean Architecture**: Domain-centric design decoupled from frameworks and databases.
-- **Dependency Injection**: Compile-time DI using Google Wire for safe, automated wiring of dependencies.
-- **Containerized**: Fully Dockerized with multi-stage builds for minimal image size.
-- **Structured Logging**: Configurable log rotation and file management using Lumberjack.
+- **JWT-based authentication**: Short-lived access tokens and refresh-token flow.
+- **OTP verification flows**: Account activation and password reset via SMTP email.
+- **Role-aware access control**: Supports `user`, `admin`, and `super_admin` authorization paths.
+- **Hexagonal architecture**: Clear separation of domain, use cases, ports, and adapters.
+- **Compile-time dependency injection**: Powered by Google Wire.
+- **Container-ready**: Multi-stage Docker build and health check support.
+- **Structured logging**: File-based logging with rotation.
 
 ---
 
 ## 🏗️ Architecture & Design Patterns
 
-This service is engineered following **Hexagonal Architecture**, ensuring that business logic remains entirely agnostic of external technologies (databases, web frameworks, external APIs).
+This service is structured around **Hexagonal Architecture**, allowing business rules to stay independent from Gin, PostgreSQL, Redis, and SMTP.
 
 ```mermaid
 graph TD
@@ -34,16 +34,16 @@ graph TD
     PortIn --> AppCore[Application Core<br/>Business Logic]
     AppCore --> |Implements| Domain[Domain Layer<br/>Entities & Value Objects]
     AppCore --> |Calls| PortOut[Outbound Ports<br/>Repository/Provider Interfaces]
-    PortOut --> Outbound[Outbound Adapters<br/>Postgres/Redis/SMTP]
+    PortOut --> Outbound[Outbound Adapters<br/>Postgres/Redis/SMTP/JWT]
 ```
 
 ### Directory Structure Overview
-- `cmd/server/`: Application entry point and DI setup using Google Wire.
-- `internal/domain/`: Core business models (`User`), value objects (`Email`, `Password`), and domain exceptions.
-- `internal/application/`: Application use cases, DTOs, and interface definitions (Ports).
-- `internal/adapter/`: Concrete implementations of ports.
-  - `inbound/http/`: Gin HTTP handlers, routes, and middlewares.
-  - `outbound/`: PostgreSQL persistence, Redis caching, JWT provider, SMTP mailer.
+- `cmd/server/`: Application entry point and Wire injector setup.
+- `internal/domain/`: Entities, value objects, and domain errors.
+- `internal/application/`: DTOs, ports, and use-case implementations.
+- `internal/adapter/`: Inbound HTTP handlers and outbound integrations.
+  - `inbound/http/`: Gin handlers, router, and middleware.
+  - `outbound/`: PostgreSQL, Redis, JWT, OTP, mail, and crypto adapters.
 
 ---
 
@@ -52,12 +52,12 @@ graph TD
 | Category | Technology |
 | :--- | :--- |
 | **Language** | Go 1.24 |
-| **Web Framework** | Gin Web Framework |
+| **Web Framework** | Gin |
 | **Database** | PostgreSQL 15 |
 | **Cache & State** | Redis 7 |
 | **Dependency Injection** | Google Wire |
-| **Authentication** | golang-jwt/jwt |
-| **Mail Testing** | MailHog (SMTP) |
+| **Authentication** | JWT |
+| **Mail Testing** | MailHog |
 | **Infrastructure** | Docker, Docker Compose |
 
 ---
@@ -65,39 +65,40 @@ graph TD
 ## 🚀 Getting Started
 
 ### Prerequisites
-- Docker Engine & Docker Compose (for containerized execution)
-- Go 1.24+ (for local development)
+- Docker Engine and Docker Compose
+- Go 1.24+
 
 ### Quick Start (Docker Compose)
 
-The easiest way to run the service along with its dependencies (PostgreSQL, Redis, MailHog) is via Docker Compose.
-
-1. **Set up Environment Variables**: Ensure your `.env` files are configured in the `environment/` directory at the project root.
-2. **Launch the Stack**:
+1. Configure the environment files under the project-level `environment/` directory.
+2. Start the service and its dependencies:
    ```bash
    docker compose up -d auth-service
    ```
-3. **Verify the Service**: The API will be available at `http://localhost:8081`. You can view outgoing local emails at the MailHog UI: `http://localhost:8025`.
+3. Verify the service:
+   - API: `http://localhost:8081`
+   - Health check: `http://localhost:8081/health`
+   - MailHog UI: `http://localhost:8025`
 
 ### Local Development Setup
 
-1. **Install Dependencies**:
+1. Install dependencies:
    ```bash
    go mod download
    ```
-2. **Generate DI Code** (If you modify constructors):
+2. Regenerate Wire code when constructor wiring changes:
    ```bash
-   cd internal/container
+   cd cmd/server
    wire
    ```
-3. **Run the Server**:
+3. Run the server:
    ```bash
    export DATABASE_PASSWORD=your_db_password
    export REDIS_PASSWORD=your_redis_password
-   export JWT_ACCESS_SECRET=your_secret_key
-   export JWT_REFRESH_SECRET=your_refresh_key
-   
-   go run cmd/server/main.go
+   export JWT_ACCESS_SECRET=your_access_secret
+   export JWT_REFRESH_SECRET=your_refresh_secret
+
+   go run ./cmd/server
    ```
 
 ---
@@ -108,34 +109,40 @@ The easiest way to run the service along with its dependencies (PostgreSQL, Redi
 
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
-| `POST` | `/api/v1/auth/register` | Create a new user account |
-| `POST` | `/api/v1/auth/verify-activation`| Verify email OTP to activate account |
+| `POST` | `/api/v1/auth/register` | Register a new account |
+| `POST` | `/api/v1/auth/verify-activation` | Verify activation OTP |
 | `POST` | `/api/v1/auth/resend-otp` | Resend activation OTP |
-| `POST` | `/api/v1/auth/login` | Authenticate and retrieve JWT tokens |
-| `POST` | `/api/v1/auth/refresh-token` | Obtain a new access token via refresh token |
-| `POST` | `/api/v1/auth/forgot-password` | Request password reset OTP |
-| `POST` | `/api/v1/auth/verify-forgot-password`| Verify reset OTP |
-| `POST` | `/api/v1/auth/reset-password` | Set a new password |
-| `GET` | `/api/v1/auth/profile/:username`| Fetch public user profile |
+| `POST` | `/api/v1/auth/forgot-password` | Request password-reset OTP |
+| `POST` | `/api/v1/auth/verify-forgot-password` | Verify password-reset OTP |
+| `POST` | `/api/v1/auth/reset-password` | Reset password with verified OTP |
+| `POST` | `/api/v1/auth/login` | Login and receive tokens |
+| `POST` | `/api/v1/auth/refresh-token` | Refresh access token |
+| `GET` | `/api/v1/auth/profile/:username` | Get public profile by username |
 
-### Protected Endpoints (Requires Valid JWT)
+### Authenticated Endpoints
 
-*Send the token via the `Authorization: Bearer <token>` header or as an `access_token` cookie.*
+Send the token via `Authorization: Bearer <token>` or the `access_token` cookie.
 
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
-| `GET` | `/api/v1/auth/profile` | Retrieve the authenticated user's profile |
-| `PUT` | `/api/v1/auth/change-password` | Update current password |
-| `POST` | `/api/v1/auth/logout` | Invalidate current session |
+| `GET` | `/api/v1/auth/profile` | Get current user's profile |
+| `PUT` | `/api/v1/auth/change-password` | Change current password |
+| `POST` | `/api/v1/auth/logout` | Logout current session |
+
+### Super Admin Endpoints
+
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `PUT` | `/api/v1/auth/admin/:username/role` | Update a user's role |
 
 ---
 
 ## ⚙️ Configuration
 
-The service utilizes a hybrid configuration model prioritizing security and flexibility:
+The service uses a hybrid configuration model:
 
-1. **`config/config.yaml`**: Contains public/non-sensitive configuration such as server ports, database connection pools, log levels, and cache TTLs.
-2. **Environment Variables Configs**: Overwrites sensitive YAML paths dynamically (e.g., `DATABASE_PASSWORD` overwrites `database.password`).
+1. `config/config.yaml` contains non-sensitive runtime configuration such as server settings, logging, database host, Redis host, SMTP host, and JWT TTLs.
+2. Environment variables override secret fields such as `database.password`, `redis.password`, `jwt.access_secret`, and `jwt.refresh_secret`.
 
 ---
-*Built with ❤️ for the Go Judge System.*
+Built for the Go Judge System.
