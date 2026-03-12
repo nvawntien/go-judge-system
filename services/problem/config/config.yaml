@@ -1,0 +1,27 @@
+# Problem Service Configuration
+# Sensitive values (passwords, secrets) are overridden by environment variables
+# Viper maps env vars: DATABASE_PASSWORD -> database.password
+
+server:
+  name: problem-service
+  port: 8082
+  mode: debug
+
+logger:
+  level: debug
+  filename: /app/logs/problem.log
+  max_size: 10
+  max_backups: 5
+  max_age: 30
+  compress: true
+
+database:
+  host: postgres
+  port: 5432
+  user: admin
+  password: ""        # overridden by DATABASE_PASSWORD env
+  dbname: problem_db
+  sslmode: disable
+  max_open_conns: 30
+  max_idle_conns: 10
+  conn_max_lifetime: 3600
