@@ -13,7 +13,7 @@ var (
 	ErrInvalidTestCaseOrder  = response.NewAppError(response.CodeBadRequest, "Invalid test case order", nil)
 	ErrInvalidTimeLimit      = response.NewAppError(response.CodeBadRequest, "Invalid time limit", nil)
 	ErrInvalidMemoryLimit    = response.NewAppError(response.CodeBadRequest, "Invalid memory limit", nil)
-	ErrInvalidProblemID      = response.NewAppError(response.CodeBadRequest, "Invalid problem ID", nil)
+	ErrInvalidProblemSlug    = response.NewAppError(response.CodeBadRequest, "Invalid problem slug", nil)
 	ErrInvalidInput          = response.NewAppError(response.CodeBadRequest, "Invalid input", nil)
 	ErrNotOwner              = response.NewAppError(response.CodeForbidden, "You are not the owner of this problem", nil)
 	ErrInternalServer        = response.NewAppError(response.CodeInternalServer, "Internal Server Error", nil)

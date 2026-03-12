@@ -312,7 +312,7 @@
             ]
         },
         {
-            "endpoint": "/api/v1/problems",
+            "endpoint": "/api/v1/admin/problems",
             "method": "POST",
             "output_encoding": "no-op",
             "input_headers": [
@@ -342,7 +342,7 @@
             },
             "backend": [
                 {
-                    "url_pattern": "/api/v1/problems",
+                    "url_pattern": "/api/v1/admin/problems",
                     "encoding": "no-op",
                     "host": [
                         "http://problem-service:8082"
@@ -351,7 +351,7 @@
             ]
         },
         {
-            "endpoint": "/api/v1/problems/{slug}",
+            "endpoint": "/api/v1/admin/problems/{id}",
             "method": "PUT",
             "output_encoding": "no-op",
             "input_headers": [
@@ -381,7 +381,7 @@
             },
             "backend": [
                 {
-                    "url_pattern": "/api/v1/problems/{slug}",
+                    "url_pattern": "/api/v1/admin/problems/{id}",
                     "encoding": "no-op",
                     "host": [
                         "http://problem-service:8082"
@@ -390,7 +390,7 @@
             ]
         },
         {
-            "endpoint": "/api/v1/problems/{slug}",
+            "endpoint": "/api/v1/admin/problems/{id}",
             "method": "DELETE",
             "output_encoding": "no-op",
             "input_headers": [
@@ -420,7 +420,7 @@
             },
             "backend": [
                 {
-                    "url_pattern": "/api/v1/problems/{slug}",
+                    "url_pattern": "/api/v1/admin/problems/{id}",
                     "encoding": "no-op",
                     "host": [
                         "http://problem-service:8082"
@@ -429,7 +429,7 @@
             ]
         },
         {
-            "endpoint": "/api/v1/problems/{slug}/publish",
+            "endpoint": "/api/v1/admin/problems/{id}/publish",
             "method": "PUT",
             "output_encoding": "no-op",
             "input_headers": [
@@ -459,7 +459,7 @@
             },
             "backend": [
                 {
-                    "url_pattern": "/api/v1/problems/{slug}/publish",
+                    "url_pattern": "/api/v1/admin/problems/{id}/publish",
                     "encoding": "no-op",
                     "host": [
                         "http://problem-service:8082"
@@ -468,7 +468,7 @@
             ]
         },
         {
-            "endpoint": "/api/v1/problems/{slug}/hide",
+            "endpoint": "/api/v1/admin/problems/{id}/hide",
             "method": "PUT",
             "output_encoding": "no-op",
             "input_headers": [
@@ -498,7 +498,7 @@
             },
             "backend": [
                 {
-                    "url_pattern": "/api/v1/problems/{slug}/hide",
+                    "url_pattern": "/api/v1/admin/problems/{id}/hide",
                     "encoding": "no-op",
                     "host": [
                         "http://problem-service:8082"
@@ -507,7 +507,7 @@
             ]
         },
         {
-            "endpoint": "/api/v1/problems/{slug}/testcases",
+            "endpoint": "/api/v1/admin/problems/{id}/testcases",
             "method": "POST",
             "output_encoding": "no-op",
             "input_headers": [
@@ -537,7 +537,7 @@
             },
             "backend": [
                 {
-                    "url_pattern": "/api/v1/problems/{slug}/testcases",
+                    "url_pattern": "/api/v1/admin/problems/{id}/testcases",
                     "encoding": "no-op",
                     "host": [
                         "http://problem-service:8082"
@@ -546,7 +546,7 @@
             ]
         },
         {
-            "endpoint": "/api/v1/problems/{slug}/testcases",
+            "endpoint": "/api/v1/admin/problems/{id}/testcases",
             "method": "GET",
             "output_encoding": "no-op",
             "input_headers": [
@@ -576,7 +576,7 @@
             },
             "backend": [
                 {
-                    "url_pattern": "/api/v1/problems/{slug}/testcases",
+                    "url_pattern": "/api/v1/admin/problems/{id}/testcases",
                     "encoding": "no-op",
                     "host": [
                         "http://problem-service:8082"
@@ -585,7 +585,7 @@
             ]
         },
         {
-            "endpoint": "/api/v1/testcases/{id}",
+            "endpoint": "/api/v1/admin/testcases/{id}",
             "method": "PUT",
             "output_encoding": "no-op",
             "input_headers": [
@@ -615,7 +615,7 @@
             },
             "backend": [
                 {
-                    "url_pattern": "/api/v1/testcases/{id}",
+                    "url_pattern": "/api/v1/admin/testcases/{id}",
                     "encoding": "no-op",
                     "host": [
                         "http://problem-service:8082"
@@ -624,7 +624,7 @@
             ]
         },
         {
-            "endpoint": "/api/v1/testcases/{id}",
+            "endpoint": "/api/v1/admin/testcases/{id}",
             "method": "DELETE",
             "output_encoding": "no-op",
             "input_headers": [
@@ -654,7 +654,7 @@
             },
             "backend": [
                 {
-                    "url_pattern": "/api/v1/testcases/{id}",
+                    "url_pattern": "/api/v1/admin/testcases/{id}",
                     "encoding": "no-op",
                     "host": [
                         "http://problem-service:8082"
@@ -741,7 +741,7 @@
             ]
         },
         {
-            "endpoint": "/api/v1/admin/problems/{slug}",
+            "endpoint": "/api/v1/admin/problems/{id}",
             "method": "GET",
             "output_encoding": "no-op",
             "input_headers": [
@@ -771,7 +771,7 @@
             },
             "backend": [
                 {
-                    "url_pattern": "/api/v1/admin/problems/{slug}",
+                    "url_pattern": "/api/v1/admin/problems/{id}",
                     "encoding": "no-op",
                     "host": [
                         "http://problem-service:8082"

@@ -28,7 +28,7 @@ type Problem struct {
 	DeletedAt *time.Time
 }
 
-func NewProblem(title, slug, desc string, diff Difficulty, timeLimit, memLimit int, authorIDs string) *Problem {
+func NewProblem(title, slug, desc string, diff Difficulty, timeLimit, memLimit int, authorID string) *Problem {
 	return &Problem{
 		Title:       title,
 		Slug:        slug,
@@ -36,7 +36,7 @@ func NewProblem(title, slug, desc string, diff Difficulty, timeLimit, memLimit i
 		Difficulty:  diff,
 		TimeLimit:   timeLimit,
 		MemoryLimit: memLimit,
-		AuthorID:    authorIDs,
+		AuthorID:    authorID,
 		IsHidden:    true,
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
