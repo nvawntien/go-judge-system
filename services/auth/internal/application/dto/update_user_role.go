@@ -1,6 +1,9 @@
 package dto
 
+type UserRoleRequest struct {
+	Username string `uri:"username" binding:"required"`
+}
+
 type UpdateUserRoleRequest struct {
-	Username string  `uri:"username" binding:"required"`
-	Role     *string `json:"role" binding:"omitempty,oneof=admin user"`
+	Role *string `json:"role" binding:"omitempty,oneof=admin user"`
 }

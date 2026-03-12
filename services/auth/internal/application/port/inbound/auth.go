@@ -49,5 +49,5 @@ type GetProfileUseCase interface {
 }
 
 type UpdateUserRoleUseCase interface {
-	Execute(ctx context.Context, claims auth.Claims, req dto.UpdateUserRoleRequest) error
+	Execute(ctx context.Context, claims auth.Claims, params dto.UserRoleRequest, body dto.UpdateUserRoleRequest) error
 }
