@@ -5,3 +5,7 @@ services/auth/logs/
 logs/
 *.log
 *.log.*
+
+*.sh
+api-tests/
+
