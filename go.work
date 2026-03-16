@@ -4,4 +4,5 @@ use (
 	./pkg
 	./services/auth
 	./services/problem
+	./services/submission
 )

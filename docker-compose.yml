@@ -14,6 +14,7 @@ services:
     depends_on:
       - auth-service
       - problem-service
+      - submission-service
     restart: unless-stopped
 
   postgres:
@@ -92,6 +93,23 @@ services:
     volumes:
       - ./services/problem/config:/app/config:ro
       - ./services/problem/logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - judge_net
+
+  submission-service:
+    container_name: judge_submission
+    build:
+      context: .
+      dockerfile: services/submission/Dockerfile
+    env_file:
+      - ./environment/service.env
+    restart: unless-stopped
+    volumes:
+      - ./services/submission/config:/app/config:ro
+      - ./services/submission/logs:/app/logs
     depends_on:
       postgres:
         condition: service_healthy

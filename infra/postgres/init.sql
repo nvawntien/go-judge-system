@@ -1,2 +1,3 @@
 CREATE DATABASE auth_db;
 CREATE DATABASE problem_db;
+CREATE DATABASE submission_db;
