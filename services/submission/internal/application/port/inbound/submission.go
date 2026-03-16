@@ -8,5 +8,9 @@ import (
 )
 
 type CreateSubmissionUseCase interface {
-	Execute(ctx context.Context, claims auth.Claims, req dto.CreateSubmissionRequest) (dto.CreateSubmissionResponse, error)
+	Execute(ctx context.Context, claims auth.Claims, req dto.CreateSubmissionRequest) (dto.SubmissionResponse, error)
+}
+
+type ListSubmissionsUseCase interface {
+	ExecuteMy(ctx context.Context, claims auth.Claims, req dto.ListMySubmissionsRequest) (dto.ListMySubmissionsResponse, error)
 }

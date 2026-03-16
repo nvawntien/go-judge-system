@@ -29,6 +29,7 @@ const (
 type Submission struct {
 	ID            int64
 	ProblemID     int64
+	ProblemName   string
 	UserID        string
 	Username      string
 	Language      Language
@@ -36,23 +37,23 @@ type Submission struct {
 	Status        Status
 	ExecutionTime *int
 	MemoryUsed    *int
-	Score         *float64
 	CompileOutput *string
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 }
 
-func NewSubmission(problemID int64, userID, username string, language Language, sourceCode string) *Submission {
+func NewSubmission(problemID int64, problemName, userID, username string, language Language, sourceCode string) *Submission {
 	now := time.Now()
 	return &Submission{
-		ProblemID:  problemID,
-		UserID:     userID,
-		Username:   username,
-		Language:   language,
-		SourceCode: sourceCode,
-		Status:     StatusPending,
-		CreatedAt:  now,
-		UpdatedAt:  now,
+		ProblemID:   problemID,
+		ProblemName: problemName,
+		UserID:      userID,
+		Username:    username,
+		Language:    language,
+		SourceCode:  sourceCode,
+		Status:      StatusPending,
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}
 }
 
@@ -70,11 +71,10 @@ func (s *Submission) MarkJudging() {
 	s.UpdatedAt = time.Now()
 }
 
-func (s *Submission) MarkCompleted(status Status, timeUsed, memoryUsed *int, score *float64, compileOutput *string) {
+func (s *Submission) MarkCompleted(status Status, timeUsed, memoryUsed *int, compileOutput *string) {
 	s.Status = status
 	s.ExecutionTime = timeUsed
 	s.MemoryUsed = memoryUsed
-	s.Score = score
 	s.CompileOutput = compileOutput
 	s.UpdatedAt = time.Now()
 }

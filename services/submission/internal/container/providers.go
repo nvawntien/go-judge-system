@@ -30,10 +30,12 @@ var OutboundProviderSet = wire.NewSet(
 
 var UseCaseProviderSet = wire.NewSet(
 	subuc.NewCreateSubmissionUseCase,
+	subuc.NewListSubmissionsUseCase,
 )
 
 var InboundProviderSet = wire.NewSet(
 	subhd.NewCreateSubmissionHandler,
+	subhd.NewListMySubmissionsHandler,
 	handler.NewSubmissionHandler,
 	http.NewRouter,
 )
