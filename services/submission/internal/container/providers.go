@@ -4,7 +4,12 @@ import (
 	"go-judge-system/pkg/database"
 	"go-judge-system/pkg/logger"
 	"go-judge-system/services/submission/internal/adapter/inbound/http"
+	"go-judge-system/services/submission/internal/adapter/inbound/http/handler"
+	subhd "go-judge-system/services/submission/internal/adapter/inbound/http/handler/submission"
 	"go-judge-system/services/submission/internal/adapter/inbound/http/middleware"
+	"go-judge-system/services/submission/internal/adapter/outbound/judge"
+	"go-judge-system/services/submission/internal/adapter/outbound/persistence/postgres"
+	subuc "go-judge-system/services/submission/internal/application/usecase/submission"
 
 	"github.com/google/wire"
 )
@@ -18,6 +23,17 @@ var MiddlewareProviderSet = wire.NewSet(
 	middleware.NewAuthMiddleware,
 )
 
+var OutboundProviderSet = wire.NewSet(
+	postgres.NewSubmissionRepository,
+	judge.NewNoopJudgePublisher,
+)
+
+var UseCaseProviderSet = wire.NewSet(
+	subuc.NewCreateSubmissionUseCase,
+)
+
 var InboundProviderSet = wire.NewSet(
+	subhd.NewCreateSubmissionHandler,
+	handler.NewSubmissionHandler,
 	http.NewRouter,
 )

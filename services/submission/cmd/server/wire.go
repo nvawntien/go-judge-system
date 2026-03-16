@@ -21,7 +21,9 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 		provideServerMode,
 
 		container.InfrastructureProviderSet,
+		container.OutboundProviderSet,
 		container.MiddlewareProviderSet,
+		container.UseCaseProviderSet,
 		container.InboundProviderSet,
 
 		container.NewApp,

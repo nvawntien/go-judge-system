@@ -1,16 +1,22 @@
 package http
 
-import "github.com/gin-gonic/gin"
+import (
+	"go-judge-system/services/submission/internal/adapter/inbound/http/handler"
+
+	"github.com/gin-gonic/gin"
+)
 
 type Router struct {
-	engine         *gin.Engine
-	authMiddleware gin.HandlerFunc
+	engine            *gin.Engine
+	submissionHandler *handler.SubmissionHandler
+	authMiddleware    gin.HandlerFunc
 }
 
-func NewRouter(authMiddleware gin.HandlerFunc) *Router {
+func NewRouter(submissionHandler *handler.SubmissionHandler, authMiddleware gin.HandlerFunc) *Router {
 	return &Router{
-		engine:         gin.Default(),
-		authMiddleware: authMiddleware,
+		engine:            gin.Default(),
+		submissionHandler: submissionHandler,
+		authMiddleware:    authMiddleware,
 	}
 }
 
@@ -20,6 +26,11 @@ func (r *Router) SetupRoutes() {
 	})
 
 	v1 := r.engine.Group("/api/v1")
+	auth := v1.Group("")
+	auth.Use(r.authMiddleware)
+	{
+		auth.POST("/submissions", r.submissionHandler.CreateSubmission.Handle)
+	}
 
 	my := v1.Group("/my")
 	my.Use(r.authMiddleware)

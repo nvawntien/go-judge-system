@@ -11,7 +11,12 @@ import (
 	"go-judge-system/pkg/database"
 	"go-judge-system/pkg/logger"
 	"go-judge-system/services/submission/internal/adapter/inbound/http"
+	"go-judge-system/services/submission/internal/adapter/inbound/http/handler"
+	submission2 "go-judge-system/services/submission/internal/adapter/inbound/http/handler/submission"
 	"go-judge-system/services/submission/internal/adapter/inbound/http/middleware"
+	"go-judge-system/services/submission/internal/adapter/outbound/judge"
+	"go-judge-system/services/submission/internal/adapter/outbound/persistence/postgres"
+	"go-judge-system/services/submission/internal/application/usecase/submission"
 	"go-judge-system/services/submission/internal/container"
 )
 
@@ -23,12 +28,17 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	if err != nil {
 		return nil, err
 	}
-	handlerFunc := middleware.NewAuthMiddleware()
-	router := http.NewRouter(handlerFunc)
+	submissionRepository := postgres.NewSubmissionRepository(db)
 	loggerConfig := cfg.Logger
 	serverConfig := cfg.Server
 	string2 := provideServerMode(serverConfig)
 	zapLogger := logger.NewLogger(loggerConfig, string2)
+	judgePublisher := judge.NewNoopJudgePublisher(zapLogger)
+	createSubmissionUseCase := submission.NewCreateSubmissionUseCase(submissionRepository, judgePublisher, zapLogger)
+	createSubmissionHandler := submission2.NewCreateSubmissionHandler(createSubmissionUseCase)
+	submissionHandler := handler.NewSubmissionHandler(createSubmissionHandler)
+	handlerFunc := middleware.NewAuthMiddleware()
+	router := http.NewRouter(submissionHandler, handlerFunc)
 	app := container.NewApp(cfg, db, router, zapLogger)
 	return app, nil
 }
