@@ -21,7 +21,6 @@ type SubmissionResponse struct {
 	UserID      string `json:"user_id"`
 	Username    string `json:"username"`
 	Language    string `json:"language"`
-	SourceCode  string `json:"source_code"`
 	Status      string `json:"status"`
 	CreatedAt   string `json:"created_at"`
 }
@@ -31,4 +30,27 @@ type ListMySubmissionsResponse struct {
 	Total int64                `json:"total"`
 	Page  int                  `json:"page"`
 	Limit int                  `json:"limit"`
+}
+
+type SubmissionIDRequest struct {
+	ID int64 `uri:"id" binding:"required,min=1"`
+}
+
+type SubmissionResultResponse struct {
+	ID            int64   `json:"id"`
+	TestCaseID    int64   `json:"test_case_id"`
+	Status        string  `json:"status"`
+	ActualOutput  *string `json:"actual_output,omitempty"`
+	ExecutionTime *int    `json:"execution_time,omitempty"`
+	MemoryUsed    *int    `json:"memory_used,omitempty"`
+	Order         int     `json:"order"`
+}
+
+type SubmissionDetailResponse struct {
+	SubmissionResponse
+	SourceCode    string                     `json:"source_code"`
+	ExecutionTime *int                       `json:"execution_time,omitempty"`
+	MemoryUsed    *int                       `json:"memory_used,omitempty"`
+	CompileOutput *string                    `json:"compile_output,omitempty"`
+	Results       []SubmissionResultResponse `json:"results"`
 }

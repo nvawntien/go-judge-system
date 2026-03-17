@@ -36,6 +36,7 @@ func (r *Router) SetupRoutes() {
 	my.Use(r.authMiddleware)
 	{
 		my.GET("/submissions", r.submissionHandler.ListMySubmissions.Handle)
+		my.GET("/submissions/:id", r.submissionHandler.GetMySubmission.Handle)
 	}
 
 	admin := v1.Group("/admin")

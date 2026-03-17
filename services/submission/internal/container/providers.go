@@ -25,17 +25,20 @@ var MiddlewareProviderSet = wire.NewSet(
 
 var OutboundProviderSet = wire.NewSet(
 	postgres.NewSubmissionRepository,
+	postgres.NewSubmissionResultRepository,
 	judge.NewNoopJudgePublisher,
 )
 
 var UseCaseProviderSet = wire.NewSet(
 	subuc.NewCreateSubmissionUseCase,
 	subuc.NewListSubmissionsUseCase,
+	subuc.NewGetSubmissionUseCase,
 )
 
 var InboundProviderSet = wire.NewSet(
 	subhd.NewCreateSubmissionHandler,
 	subhd.NewListMySubmissionsHandler,
+	subhd.NewGetMySubmissionHandler,
 	handler.NewSubmissionHandler,
 	http.NewRouter,
 )

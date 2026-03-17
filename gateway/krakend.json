@@ -898,6 +898,45 @@
                     ]
                 }
             ]
+        },
+        {
+            "endpoint": "/api/v1/my/submissions/{id}",
+            "method": "GET",
+            "output_encoding": "no-op",
+            "input_headers": [
+                "*"
+            ],
+            "extra_config": {
+                "auth/validator": {
+                    "alg": "HS256",
+                    "jwk_local_path": "/etc/krakend/symmetric.json",
+                    "disable_jwk_security": true,
+                    "cookie_key": "access_token",
+                    "propagate_claims": [
+                        [
+                            "sub",
+                            "X-User-ID"
+                        ],
+                        [
+                            "role",
+                            "X-Role"
+                        ],
+                        [
+                            "username",
+                            "X-Username"
+                        ]
+                    ]
+                }
+            },
+            "backend": [
+                {
+                    "url_pattern": "/api/v1/my/submissions/{id}",
+                    "encoding": "no-op",
+                    "host": [
+                        "http://submission-service:8083"
+                    ]
+                }
+            ]
         }
     ]
 }

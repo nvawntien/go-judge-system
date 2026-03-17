@@ -2,9 +2,11 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"go-judge-system/services/submission/internal/application/port/outbound"
+	"go-judge-system/services/submission/internal/domain"
 	"go-judge-system/services/submission/internal/domain/entity"
 
 	"gorm.io/gorm"
@@ -45,6 +47,18 @@ func (r *submissionRepository) Create(ctx context.Context, submission *entity.Su
 
 	submission.ID = dao.ID
 	return nil
+}
+
+func (r *submissionRepository) GetByID(ctx context.Context, id int64) (*entity.Submission, error) {
+	var dao SubmissionDAO
+	if err := r.db.WithContext(ctx).First(&dao, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, domain.ErrSubmissionNotFound
+		}
+		return nil, err
+	}
+
+	return toSubmissionEntity(&dao), nil
 }
 
 func (r *submissionRepository) ListByUser(ctx context.Context, userID string, offset, limit int, status, language string) ([]*entity.Submission, error) {
