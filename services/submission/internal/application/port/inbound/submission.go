@@ -21,3 +21,7 @@ type GetSubmissionUseCase interface {
 	ExecuteMy(ctx context.Context, claims auth.Claims, req dto.SubmissionIDRequest) (dto.SubmissionDetailResponse, error)
 	ExecuteAdmin(ctx context.Context, claims auth.Claims, req dto.SubmissionIDRequest) (dto.SubmissionDetailResponse, error)
 }
+
+type RejudgeSubmissionUseCase interface {
+	Execute(ctx context.Context, claims auth.Claims, req dto.SubmissionIDRequest) error
+}

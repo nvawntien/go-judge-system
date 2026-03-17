@@ -50,6 +50,7 @@ func (r *Router) SetupRoutes() {
 	admin.Use(r.authMiddleware)
 	{
 		admin.GET("/submissions/:id", r.submissionHandler.GetSubmission.HandleAdmin)
+		admin.PUT("/submissions/:id/rejudge", r.submissionHandler.RejudgeSubmission.Handle)
 	}
 
 }

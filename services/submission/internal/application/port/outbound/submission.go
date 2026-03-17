@@ -10,6 +10,7 @@ import (
 type SubmissionRepository interface {
 	Create(ctx context.Context, submission *entity.Submission) error
 	GetByID(ctx context.Context, id int64) (*entity.Submission, error)
+	Update(ctx context.Context, submission *entity.Submission) error
 	ListByUser(ctx context.Context, userID string, offset, limit int, status, language string) ([]*entity.Submission, error)
 	CountByUser(ctx context.Context, userID string, status, language string) (int64, error)
 	ListByProblem(ctx context.Context, problemID int64, offset, limit int, status, language string) ([]*entity.Submission, error)
@@ -20,6 +21,7 @@ type SubmissionRepository interface {
 
 type SubmissionResultRepository interface {
 	GetBySubmissionID(ctx context.Context, submissionID int64) ([]*entity.SubmissionResult, error)
+	DeleteBySubmissionID(ctx context.Context, submissionID int64) error
 }
 
 type ProblemAccessChecker interface {

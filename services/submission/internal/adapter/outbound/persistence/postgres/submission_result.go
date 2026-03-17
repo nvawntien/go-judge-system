@@ -50,6 +50,10 @@ func (r *submissionResultRepository) GetBySubmissionID(ctx context.Context, subm
 	return results, nil
 }
 
+func (r *submissionResultRepository) DeleteBySubmissionID(ctx context.Context, submissionID int64) error {
+	return r.db.WithContext(ctx).Where("submission_id = ?", submissionID).Delete(&SubmissionResultDAO{}).Error
+}
+
 func toSubmissionResultEntity(dao *SubmissionResultDAO) *entity.SubmissionResult {
 	return &entity.SubmissionResult{
 		ID:            dao.ID,

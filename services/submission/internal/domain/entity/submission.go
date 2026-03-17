@@ -78,3 +78,11 @@ func (s *Submission) MarkCompleted(status Status, timeUsed, memoryUsed *int, com
 	s.CompileOutput = compileOutput
 	s.UpdatedAt = time.Now()
 }
+
+func (s *Submission) ResetForRejudge() {
+	s.Status = StatusPending
+	s.ExecutionTime = nil
+	s.MemoryUsed = nil
+	s.CompileOutput = nil
+	s.UpdatedAt = time.Now()
+}

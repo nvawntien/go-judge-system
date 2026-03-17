@@ -61,6 +61,26 @@ func (r *submissionRepository) GetByID(ctx context.Context, id int64) (*entity.S
 	return toSubmissionEntity(&dao), nil
 }
 
+func (r *submissionRepository) Update(ctx context.Context, submission *entity.Submission) error {
+	updates := map[string]interface{}{
+		"status":         string(submission.Status),
+		"execution_time": submission.ExecutionTime,
+		"memory_used":    submission.MemoryUsed,
+		"compile_output": submission.CompileOutput,
+		"updated_at":     submission.UpdatedAt,
+	}
+
+	result := r.db.WithContext(ctx).Model(&SubmissionDAO{}).Where("id = ?", submission.ID).Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return domain.ErrSubmissionNotFound
+	}
+
+	return nil
+}
+
 func (r *submissionRepository) ListByUser(ctx context.Context, userID string, offset, limit int, status, language string) ([]*entity.Submission, error) {
 	query := r.db.WithContext(ctx).Where("user_id = ?", userID)
 	query = applyListFilters(query, status, language)
