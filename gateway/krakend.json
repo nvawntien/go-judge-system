@@ -937,6 +937,26 @@
                     ]
                 }
             ]
+        },
+        {
+            "endpoint": "/api/v1/problems/id/{id}/submissions",
+            "method": "GET",
+            "output_encoding": "no-op",
+            "input_headers": [
+                "*"
+            ],
+            "input_query_strings": [
+                "*"
+            ],
+            "backend": [
+                {
+                    "url_pattern": "/api/v1/problems/id/{id}/submissions",
+                    "encoding": "no-op",
+                    "host": [
+                        "http://submission-service:8083"
+                    ]
+                }
+            ]
         }
     ]
 }

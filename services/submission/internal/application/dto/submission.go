@@ -36,6 +36,24 @@ type SubmissionIDRequest struct {
 	ID int64 `uri:"id" binding:"required,min=1"`
 }
 
+type ProblemIDRequest struct {
+	ID       int64  `uri:"id" binding:"required,min=1"`
+}
+
+type ListProblemSubmissionsQueryRequest struct {
+	Page     int    `form:"page,default=1" binding:"min=1"`
+	Limit    int    `form:"limit,default=20" binding:"min=1,max=100"`
+	Status   string `form:"status" binding:"omitempty"`
+	Language string `form:"language" binding:"omitempty"`
+}
+
+type ListProblemSubmissionsResponse struct {
+	Items []SubmissionResponse `json:"items"`
+	Total int64                `json:"total"`
+	Page  int                  `json:"page"`
+	Limit int                  `json:"limit"`
+}
+
 type SubmissionResultResponse struct {
 	ID            int64   `json:"id"`
 	TestCaseID    int64   `json:"test_case_id"`

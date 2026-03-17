@@ -59,6 +59,41 @@ func (uc *listSubmissionsUseCase) ExecuteMy(ctx context.Context, claims auth.Cla
 	return dto.ListMySubmissionsResponse{Items: items, Total: total, Page: req.Page, Limit: req.Limit}, nil
 }
 
+func (uc *listSubmissionsUseCase) ExecuteProblem(ctx context.Context, params dto.ProblemIDRequest, query dto.ListProblemSubmissionsQueryRequest) (dto.ListProblemSubmissionsResponse, error) {
+	offset := (query.Page - 1) * query.Limit
+	status := strings.ToUpper(query.Status)
+	language := strings.ToUpper(query.Language)
+
+	if status != "" && !isValidStatus(status) {
+		return dto.ListProblemSubmissionsResponse{}, domain.ErrInvalidStatus
+	}
+
+	if language != "" {
+		if _, ok := entity.ParseLanguage(language); !ok {
+			return dto.ListProblemSubmissionsResponse{}, domain.ErrInvalidLanguage
+		}
+	}
+
+	submissions, err := uc.submissionRepo.ListByProblem(ctx, params.ID, offset, query.Limit, status, language)
+	if err != nil {
+		uc.logger.Error("failed to list submissions by problem", zap.Int64("problem_id", params.ID), zap.Error(err))
+		return dto.ListProblemSubmissionsResponse{}, domain.ErrInternalServer.Wrap(err)
+	}
+
+	total, err := uc.submissionRepo.CountByProblem(ctx, params.ID, status, language)
+	if err != nil {
+		uc.logger.Error("failed to count submissions by problem", zap.Int64("problem_id", params.ID), zap.Error(err))
+		return dto.ListProblemSubmissionsResponse{}, domain.ErrInternalServer.Wrap(err)
+	}
+
+	items := make([]dto.SubmissionResponse, 0, len(submissions))
+	for _, s := range submissions {
+		items = append(items, usecase.MapSubmissionToResponse(s))
+	}
+
+	return dto.ListProblemSubmissionsResponse{Items: items, Total: total, Page: query.Page, Limit: query.Limit}, nil
+}
+
 func isValidStatus(status string) bool {
 	switch entity.Status(status) {
 	case entity.StatusPending,

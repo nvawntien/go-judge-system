@@ -26,6 +26,11 @@ func (r *Router) SetupRoutes() {
 	})
 
 	v1 := r.engine.Group("/api/v1")
+	problems := v1.Group("/problems")
+	{
+		problems.GET("/id/:id/submissions", r.submissionHandler.ListProblemSubmissions.Handle)
+	}
+
 	auth := v1.Group("")
 	auth.Use(r.authMiddleware)
 	{

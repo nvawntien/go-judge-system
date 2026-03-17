@@ -215,6 +215,29 @@ func HandleWithQuery[Req any, Res any](c *gin.Context, fn func(context.Context, 
 	Success(c, successCode, res)
 }
 
+// HandleWithParamsAndQuery: URI params + query params (bound separately) -> data.
+func HandleWithParamsAndQuery[P any, Q any, Res any](c *gin.Context, fn func(context.Context, P, Q) (Res, error), successCode int) {
+	var params P
+	if err := c.ShouldBindUri(&params); err != nil {
+		Error(c, CodeParamInvalid, "invalid uri params")
+		return
+	}
+
+	var query Q
+	if err := c.ShouldBindQuery(&query); err != nil {
+		Error(c, CodeBadRequest, "invalid query parameters")
+		return
+	}
+
+	res, err := fn(c.Request.Context(), params, query)
+	if err != nil {
+		HandleError(c, err)
+		return
+	}
+
+	Success(c, successCode, res)
+}
+
 // HandleWithQueryAndClaims: Query params + claims → data. Used for admin list, my list.
 func HandleWithQueryAndClaims[Req any, Res any](c *gin.Context, fn func(context.Context, auth.Claims, Req) (Res, error), successCode int) {
 	claims, ok := auth.GetClaims(c)

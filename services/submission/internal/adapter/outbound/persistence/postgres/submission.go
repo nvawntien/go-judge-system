@@ -81,6 +81,26 @@ func (r *submissionRepository) CountByUser(ctx context.Context, userID string, s
 	return count, query.Count(&count).Error
 }
 
+func (r *submissionRepository) ListByProblem(ctx context.Context, problemID int64, offset, limit int, status, language string) ([]*entity.Submission, error) {
+	query := r.db.WithContext(ctx).Where("problem_id = ?", problemID)
+	query = applyListFilters(query, status, language)
+
+	var daos []SubmissionDAO
+	if err := query.Order("created_at DESC").Offset(offset).Limit(limit).Find(&daos).Error; err != nil {
+		return nil, err
+	}
+
+	return toSubmissionEntities(daos), nil
+}
+
+func (r *submissionRepository) CountByProblem(ctx context.Context, problemID int64, status, language string) (int64, error) {
+	query := r.db.WithContext(ctx).Model(&SubmissionDAO{}).Where("problem_id = ?", problemID)
+	query = applyListFilters(query, status, language)
+
+	var count int64
+	return count, query.Count(&count).Error
+}
+
 func applyListFilters(query *gorm.DB, status, language string) *gorm.DB {
 	if status != "" {
 		query = query.Where("status = ?", status)
