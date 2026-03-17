@@ -7,14 +7,18 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type GetMySubmissionHandler struct {
+type GetSubmissionHandler struct {
 	uc inbound.GetSubmissionUseCase
 }
 
-func NewGetMySubmissionHandler(uc inbound.GetSubmissionUseCase) *GetMySubmissionHandler {
-	return &GetMySubmissionHandler{uc: uc}
+func NewGetSubmissionHandler(uc inbound.GetSubmissionUseCase) *GetSubmissionHandler {
+	return &GetSubmissionHandler{uc: uc}
 }
 
-func (h *GetMySubmissionHandler) Handle(c *gin.Context) {
+func (h *GetSubmissionHandler) HandleMy(c *gin.Context) {
 	response.HandleWithParamsAndClaims(c, h.uc.ExecuteMy, response.CodeSuccess)
+}
+
+func (h *GetSubmissionHandler) HandleAdmin(c *gin.Context) {
+	response.HandleWithParamsAndClaims(c, h.uc.ExecuteAdmin, response.CodeSuccess)
 }

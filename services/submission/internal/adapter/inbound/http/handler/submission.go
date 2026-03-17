@@ -5,17 +5,17 @@ import "go-judge-system/services/submission/internal/adapter/inbound/http/handle
 type SubmissionHandler struct {
 	CreateSubmission *submission.CreateSubmissionHandler
 	ListSubmissions  *submission.ListSubmissionsHandler
-	GetMySubmission  *submission.GetMySubmissionHandler
+	GetSubmission    *submission.GetSubmissionHandler
 }
 
 func NewSubmissionHandler(
 	createSubmission *submission.CreateSubmissionHandler,
 	listSubmissions *submission.ListSubmissionsHandler,
-	getMySubmission *submission.GetMySubmissionHandler,
+	getSubmission *submission.GetSubmissionHandler,
 ) *SubmissionHandler {
 	return &SubmissionHandler{
 		CreateSubmission: createSubmission,
 		ListSubmissions:  listSubmissions,
-		GetMySubmission:  getMySubmission,
+		GetSubmission:    getSubmission,
 	}
 }

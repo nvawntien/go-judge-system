@@ -3,6 +3,7 @@ package outbound
 import (
 	"context"
 
+	"go-judge-system/pkg/auth"
 	"go-judge-system/services/submission/internal/domain/entity"
 )
 
@@ -19,6 +20,10 @@ type SubmissionRepository interface {
 
 type SubmissionResultRepository interface {
 	GetBySubmissionID(ctx context.Context, submissionID int64) ([]*entity.SubmissionResult, error)
+}
+
+type ProblemAccessChecker interface {
+	CanManageProblem(ctx context.Context, claims auth.Claims, problemID int64) (bool, error)
 }
 
 type JudgePublisher interface {

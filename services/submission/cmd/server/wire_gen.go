@@ -16,6 +16,7 @@ import (
 	"go-judge-system/services/submission/internal/adapter/inbound/http/middleware"
 	"go-judge-system/services/submission/internal/adapter/outbound/judge"
 	"go-judge-system/services/submission/internal/adapter/outbound/persistence/postgres"
+	"go-judge-system/services/submission/internal/adapter/outbound/problem"
 	"go-judge-system/services/submission/internal/application/usecase/submission"
 	"go-judge-system/services/submission/internal/container"
 )
@@ -39,9 +40,10 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	listSubmissionsUseCase := submission.NewListSubmissionsUseCase(submissionRepository, zapLogger)
 	listSubmissionsHandler := submission2.NewListSubmissionsHandler(listSubmissionsUseCase)
 	submissionResultRepository := postgres.NewSubmissionResultRepository(db)
-	getSubmissionUseCase := submission.NewGetSubmissionUseCase(submissionRepository, submissionResultRepository, zapLogger)
-	getMySubmissionHandler := submission2.NewGetMySubmissionHandler(getSubmissionUseCase)
-	submissionHandler := handler.NewSubmissionHandler(createSubmissionHandler, listSubmissionsHandler, getMySubmissionHandler)
+	problemAccessChecker := problem.NewProblemAccessChecker()
+	getSubmissionUseCase := submission.NewGetSubmissionUseCase(submissionRepository, submissionResultRepository, problemAccessChecker, zapLogger)
+	getSubmissionHandler := submission2.NewGetSubmissionHandler(getSubmissionUseCase)
+	submissionHandler := handler.NewSubmissionHandler(createSubmissionHandler, listSubmissionsHandler, getSubmissionHandler)
 	handlerFunc := middleware.NewAuthMiddleware()
 	router := http.NewRouter(submissionHandler, handlerFunc)
 	app := container.NewApp(cfg, db, router, zapLogger)
