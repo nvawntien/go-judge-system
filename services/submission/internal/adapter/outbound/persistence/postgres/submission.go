@@ -101,6 +101,26 @@ func (r *submissionRepository) CountByProblem(ctx context.Context, problemID int
 	return count, query.Count(&count).Error
 }
 
+func (r *submissionRepository) ListAll(ctx context.Context, offset, limit int, problemID *int64, userID, status, language string) ([]*entity.Submission, error) {
+	query := r.db.WithContext(ctx).Model(&SubmissionDAO{})
+	query = applyAdminFilters(query, problemID, userID, status, language)
+
+	var daos []SubmissionDAO
+	if err := query.Order("created_at DESC").Offset(offset).Limit(limit).Find(&daos).Error; err != nil {
+		return nil, err
+	}
+
+	return toSubmissionEntities(daos), nil
+}
+
+func (r *submissionRepository) CountAll(ctx context.Context, problemID *int64, userID, status, language string) (int64, error) {
+	query := r.db.WithContext(ctx).Model(&SubmissionDAO{})
+	query = applyAdminFilters(query, problemID, userID, status, language)
+
+	var count int64
+	return count, query.Count(&count).Error
+}
+
 func applyListFilters(query *gorm.DB, status, language string) *gorm.DB {
 	if status != "" {
 		query = query.Where("status = ?", status)
@@ -109,6 +129,16 @@ func applyListFilters(query *gorm.DB, status, language string) *gorm.DB {
 		query = query.Where("language = ?", language)
 	}
 	return query
+}
+
+func applyAdminFilters(query *gorm.DB, problemID *int64, userID, status, language string) *gorm.DB {
+	if problemID != nil {
+		query = query.Where("problem_id = ?", *problemID)
+	}
+	if userID != "" {
+		query = query.Where("user_id = ?", userID)
+	}
+	return applyListFilters(query, status, language)
 }
 
 func toSubmissionDAO(s *entity.Submission) *SubmissionDAO {

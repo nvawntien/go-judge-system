@@ -37,7 +37,7 @@ type SubmissionIDRequest struct {
 }
 
 type ProblemIDRequest struct {
-	ID       int64  `uri:"id" binding:"required,min=1"`
+	ID int64 `uri:"id" binding:"required,min=1"`
 }
 
 type ListProblemSubmissionsQueryRequest struct {
@@ -48,6 +48,22 @@ type ListProblemSubmissionsQueryRequest struct {
 }
 
 type ListProblemSubmissionsResponse struct {
+	Items []SubmissionResponse `json:"items"`
+	Total int64                `json:"total"`
+	Page  int                  `json:"page"`
+	Limit int                  `json:"limit"`
+}
+
+type ListSubmissionsRequest struct {
+	Page      int    `form:"page,default=1" binding:"min=1"`
+	Limit     int    `form:"limit,default=20" binding:"min=1,max=100"`
+	ProblemID *int64 `form:"problem_id" binding:"omitempty,min=1"`
+	UserID    string `form:"user_id" binding:"omitempty"`
+	Status    string `form:"status" binding:"omitempty"`
+	Language  string `form:"language" binding:"omitempty"`
+}
+
+type ListSubmissionsResponse struct {
 	Items []SubmissionResponse `json:"items"`
 	Total int64                `json:"total"`
 	Page  int                  `json:"page"`

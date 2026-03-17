@@ -13,6 +13,8 @@ type SubmissionRepository interface {
 	CountByUser(ctx context.Context, userID string, status, language string) (int64, error)
 	ListByProblem(ctx context.Context, problemID int64, offset, limit int, status, language string) ([]*entity.Submission, error)
 	CountByProblem(ctx context.Context, problemID int64, status, language string) (int64, error)
+	ListAll(ctx context.Context, offset, limit int, problemID *int64, userID, status, language string) ([]*entity.Submission, error)
+	CountAll(ctx context.Context, problemID *int64, userID, status, language string) (int64, error)
 }
 
 type SubmissionResultRepository interface {

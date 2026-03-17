@@ -12,6 +12,7 @@ type CreateSubmissionUseCase interface {
 }
 
 type ListSubmissionsUseCase interface {
+	Execute(ctx context.Context, req dto.ListSubmissionsRequest) (dto.ListSubmissionsResponse, error)
 	ExecuteMy(ctx context.Context, claims auth.Claims, req dto.ListMySubmissionsRequest) (dto.ListMySubmissionsResponse, error)
 	ExecuteProblem(ctx context.Context, params dto.ProblemIDRequest, query dto.ListProblemSubmissionsQueryRequest) (dto.ListProblemSubmissionsResponse, error)
 }

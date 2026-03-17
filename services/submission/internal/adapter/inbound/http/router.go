@@ -26,9 +26,11 @@ func (r *Router) SetupRoutes() {
 	})
 
 	v1 := r.engine.Group("/api/v1")
+	v1.GET("/submissions", r.submissionHandler.ListSubmissions.Handle)
+
 	problems := v1.Group("/problems")
 	{
-		problems.GET("/id/:id/submissions", r.submissionHandler.ListProblemSubmissions.Handle)
+		problems.GET("/id/:id/submissions", r.submissionHandler.ListSubmissions.HandleProblem)
 	}
 
 	auth := v1.Group("")
@@ -40,12 +42,10 @@ func (r *Router) SetupRoutes() {
 	my := v1.Group("/my")
 	my.Use(r.authMiddleware)
 	{
-		my.GET("/submissions", r.submissionHandler.ListMySubmissions.Handle)
+		my.GET("/submissions", r.submissionHandler.ListSubmissions.HandleMy)
 		my.GET("/submissions/:id", r.submissionHandler.GetMySubmission.Handle)
 	}
 
-	admin := v1.Group("/admin")
-	admin.Use(r.authMiddleware)
 }
 
 func (r *Router) Start(port string) error {

@@ -957,6 +957,26 @@
                     ]
                 }
             ]
+        },
+        {
+            "endpoint": "/api/v1/submissions",
+            "method": "GET",
+            "output_encoding": "no-op",
+            "input_headers": [
+                "*"
+            ],
+            "input_query_strings": [
+                "*"
+            ],
+            "backend": [
+                {
+                    "url_pattern": "/api/v1/submissions",
+                    "encoding": "no-op",
+                    "host": [
+                        "http://submission-service:8083"
+                    ]
+                }
+            ]
         }
     ]
 }
