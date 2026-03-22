@@ -1,0 +1,15 @@
+server:
+  port: 0  # not used, judge worker is event-driven
+
+kafka:
+  brokers: ""
+  job_topic: ""
+  result_topic: ""
+  dlt_topic: ""
+  consumer_group: ""
+
+judging:
+  timeout_seconds: 30
+  memory_limit_mb: 256
+  go_judge_url: ""
+  max_concurrent_jobs: 4

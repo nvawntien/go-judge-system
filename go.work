@@ -5,4 +5,5 @@ use (
 	./services/auth
 	./services/problem
 	./services/submission
+	./workers/judge
 )

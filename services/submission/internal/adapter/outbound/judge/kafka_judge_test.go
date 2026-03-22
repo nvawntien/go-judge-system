@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go-judge-system/pkg/config"
+	pkgjudge "go-judge-system/pkg/judge"
 	"go-judge-system/services/submission/internal/domain/entity"
 
 	"github.com/IBM/sarama"
@@ -98,7 +99,7 @@ func TestPublish_Success(t *testing.T) {
 			t.Fatalf("encode value: %v", err)
 		}
 
-		var payload judgeJobMessage
+		var payload pkgjudge.JobMessage
 		if err := json.Unmarshal(val, &payload); err != nil {
 			t.Fatalf("unmarshal payload: %v", err)
 		}
@@ -118,8 +119,8 @@ func TestPublish_Success(t *testing.T) {
 		if payload.SourceCode != sub.SourceCode {
 			t.Fatalf("source_code = %q, want %q", payload.SourceCode, sub.SourceCode)
 		}
-		if payload.Status != string(sub.Status) {
-			t.Fatalf("status = %q, want %q", payload.Status, sub.Status)
+		if payload.AttemptID == "" {
+			t.Fatal("attempt_id should not be empty")
 		}
 		if payload.EnqueuedAt.IsZero() {
 			t.Fatal("enqueued_at should not be zero")
