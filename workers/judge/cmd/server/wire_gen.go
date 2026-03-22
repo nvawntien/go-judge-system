@@ -13,6 +13,7 @@ import (
 	kafka2 "go-judge-system/workers/judge/internal/adapter/inbound/kafka"
 	"go-judge-system/workers/judge/internal/adapter/outbound/execute"
 	"go-judge-system/workers/judge/internal/adapter/outbound/judge"
+	"go-judge-system/workers/judge/internal/adapter/outbound/problem"
 	judge2 "go-judge-system/workers/judge/internal/application/usecase/judge"
 	"go-judge-system/workers/judge/internal/container"
 )
@@ -34,7 +35,8 @@ func InitializeApp(cfg *config.Config) (*container.App, func(), error) {
 		return nil, nil, err
 	}
 	kafkaResultPublisher := judge.NewKafkaResultPublisher(syncProducer, kafkaConfig, zapLogger)
-	processJudgeJobUseCase := judge2.NewProcessJudgeJobUseCase(goJudgeClient, kafkaResultPublisher, zapLogger)
+	problemServiceClient := problem.NewProblemServiceClient(string2, zapLogger)
+	processJudgeJobUseCase := judge2.NewProcessJudgeJobUseCase(goJudgeClient, kafkaResultPublisher, problemServiceClient, zapLogger)
 	dltPublisher := kafka2.NewDLTPublisher(syncProducer, kafkaConfig, zapLogger)
 	judgeJobConsumer := kafka2.NewJudgeJobConsumer(consumerGroup, kafkaConfig, processJudgeJobUseCase, dltPublisher, zapLogger)
 	app := container.NewApp(cfg, judgeJobConsumer, zapLogger, syncProducer)

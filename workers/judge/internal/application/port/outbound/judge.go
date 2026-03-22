@@ -40,3 +40,9 @@ type TestCase struct {
 type ResultPublisher interface {
 	PublishResult(ctx context.Context, submissionID int64, attemptID string, result *ExecutionResult) error
 }
+
+// TestCaseFetcher retrieves test cases for a problem from an external source
+// (e.g., Problem Service internal API).
+type TestCaseFetcher interface {
+	FetchTestCases(ctx context.Context, problemID int64) ([]TestCase, error)
+}

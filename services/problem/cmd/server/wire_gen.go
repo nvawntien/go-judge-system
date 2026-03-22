@@ -59,8 +59,9 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	deleteTestCaseUseCase := testcase.NewDeleteTestCaseUseCase(problemRepository, testCaseRepository, zapLogger)
 	deleteTestCaseHandler := testcase2.NewDeleteTestCaseHandler(deleteTestCaseUseCase)
 	testCaseHandler := handler.NewTestCaseHandler(createTestCaseHandler, listTestCasesHandler, updateTestCaseHandler, deleteTestCaseHandler)
+	internalTestCaseHandler := handler.NewInternalTestCaseHandler(testCaseRepository, zapLogger)
 	handlerFunc := middleware.NewAuthMiddleware()
-	router := http.NewRouter(problemHandler, testCaseHandler, handlerFunc)
+	router := http.NewRouter(problemHandler, testCaseHandler, internalTestCaseHandler, handlerFunc)
 	app := container.NewApp(cfg, router, zapLogger)
 	return app, nil
 }

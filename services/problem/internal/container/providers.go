@@ -60,5 +60,6 @@ var InboundProviderSet = wire.NewSet(
 
 	handler.NewProblemHandler,
 	handler.NewTestCaseHandler,
+	handler.NewInternalTestCaseHandler,
 	http.NewRouter,
 )
