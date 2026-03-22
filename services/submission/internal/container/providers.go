@@ -8,6 +8,7 @@ import (
 	"go-judge-system/services/submission/internal/adapter/inbound/http/handler"
 	subhd "go-judge-system/services/submission/internal/adapter/inbound/http/handler/submission"
 	"go-judge-system/services/submission/internal/adapter/inbound/http/middleware"
+	kafkain "go-judge-system/services/submission/internal/adapter/inbound/kafka"
 	"go-judge-system/services/submission/internal/adapter/outbound/judge"
 	"go-judge-system/services/submission/internal/adapter/outbound/persistence/postgres"
 	"go-judge-system/services/submission/internal/adapter/outbound/problem"
@@ -20,6 +21,7 @@ var InfrastructureProviderSet = wire.NewSet(
 	database.ConnectDatabase,
 	logger.NewLogger,
 	kafka.NewSyncProducer,
+	kafka.NewConsumerGroup,
 )
 
 var MiddlewareProviderSet = wire.NewSet(
@@ -38,9 +40,11 @@ var UseCaseProviderSet = wire.NewSet(
 	subuc.NewListSubmissionsUseCase,
 	subuc.NewGetSubmissionUseCase,
 	subuc.NewRejudgeSubmissionUseCase,
+	subuc.NewProcessJudgeResultUseCase,
 )
 
 var InboundProviderSet = wire.NewSet(
+	kafkain.NewJudgeResultConsumer,
 	subhd.NewCreateSubmissionHandler,
 	subhd.NewListSubmissionsHandler,
 	subhd.NewGetSubmissionHandler,

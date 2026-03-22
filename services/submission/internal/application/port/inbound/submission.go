@@ -25,3 +25,7 @@ type GetSubmissionUseCase interface {
 type RejudgeSubmissionUseCase interface {
 	Execute(ctx context.Context, claims auth.Claims, req dto.SubmissionIDRequest) error
 }
+
+type ProcessJudgeResultUseCase interface {
+	Execute(ctx context.Context, message dto.JudgeResultMessage) error
+}

@@ -22,6 +22,7 @@ type SubmissionRepository interface {
 type SubmissionResultRepository interface {
 	GetBySubmissionID(ctx context.Context, submissionID int64) ([]*entity.SubmissionResult, error)
 	DeleteBySubmissionID(ctx context.Context, submissionID int64) error
+	ReplaceBySubmissionID(ctx context.Context, submissionID int64, results []*entity.SubmissionResult) error
 }
 
 type ProblemAccessChecker interface {

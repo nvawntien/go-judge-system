@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"go-judge-system/pkg/config"
 	"go-judge-system/services/submission/internal/adapter/inbound/http"
+	kafkain "go-judge-system/services/submission/internal/adapter/inbound/kafka"
 	nethttp "net/http"
 	"os"
 	"os/signal"
@@ -18,15 +19,30 @@ import (
 )
 
 type App struct {
-	Config        *config.Config
-	Database      *gorm.DB
-	Router        *http.Router
-	Logger        *zap.Logger
-	KafkaProducer sarama.SyncProducer
+	Config         *config.Config
+	Database       *gorm.DB
+	Router         *http.Router
+	ResultConsumer *kafkain.JudgeResultConsumer
+	Logger         *zap.Logger
+	KafkaProducer  sarama.SyncProducer
 }
 
-func NewApp(cfg *config.Config, database *gorm.DB, router *http.Router, logger *zap.Logger, producer sarama.SyncProducer) *App {
-	return &App{Config: cfg, Database: database, Router: router, Logger: logger, KafkaProducer: producer}
+func NewApp(
+	cfg *config.Config,
+	database *gorm.DB,
+	router *http.Router,
+	resultConsumer *kafkain.JudgeResultConsumer,
+	logger *zap.Logger,
+	producer sarama.SyncProducer,
+) *App {
+	return &App{
+		Config:         cfg,
+		Database:       database,
+		Router:         router,
+		ResultConsumer: resultConsumer,
+		Logger:         logger,
+		KafkaProducer:  producer,
+	}
 }
 
 func (a *App) Run() error {
@@ -39,6 +55,14 @@ func (a *App) Run() error {
 		serverErrCh <- a.Router.Start(port)
 	}()
 
+	consumerCtx, consumerCancel := context.WithCancel(context.Background())
+	defer consumerCancel()
+
+	consumerErrCh := make(chan error, 1)
+	go func() {
+		consumerErrCh <- a.ResultConsumer.Run(consumerCtx)
+	}()
+
 	signalCh := make(chan os.Signal, 1)
 	signal.Notify(signalCh, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(signalCh)
@@ -48,10 +72,33 @@ func (a *App) Run() error {
 		if err != nil && !errors.Is(err, nethttp.ErrServerClosed) {
 			return err
 		}
+		consumerCancel()
+		if consumerErr := <-consumerErrCh; consumerErr != nil {
+			return consumerErr
+		}
 		return nil
+	case err := <-consumerErrCh:
+		if err == nil {
+			err = errors.New("judge result consumer stopped unexpectedly")
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if shutdownErr := a.Router.Shutdown(ctx); shutdownErr != nil {
+			return errors.Join(err, shutdownErr)
+		}
+
+		serverErr := <-serverErrCh
+		if serverErr != nil && !errors.Is(serverErr, nethttp.ErrServerClosed) {
+			return errors.Join(err, serverErr)
+		}
+
+		return err
 	case sig := <-signalCh:
 		a.Logger.Info("shutdown signal received", zap.String("signal", sig.String()))
 	}
+
+	consumerCancel()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -65,6 +112,10 @@ func (a *App) Run() error {
 		return err
 	}
 
+	if consumerErr := <-consumerErrCh; consumerErr != nil {
+		return consumerErr
+	}
+
 	return nil
 }
 
@@ -74,6 +125,13 @@ func (a *App) Close() error {
 	if a.KafkaProducer != nil {
 		if err := a.KafkaProducer.Close(); err != nil {
 			a.Logger.Error("failed to close kafka producer", zap.Error(err))
+			closeErr = errors.Join(closeErr, err)
+		}
+	}
+
+	if a.ResultConsumer != nil {
+		if err := a.ResultConsumer.Close(); err != nil {
+			a.Logger.Error("failed to close judge result consumer", zap.Error(err))
 			closeErr = errors.Join(closeErr, err)
 		}
 	}

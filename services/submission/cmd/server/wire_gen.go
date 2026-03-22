@@ -15,6 +15,7 @@ import (
 	"go-judge-system/services/submission/internal/adapter/inbound/http/handler"
 	submission2 "go-judge-system/services/submission/internal/adapter/inbound/http/handler/submission"
 	"go-judge-system/services/submission/internal/adapter/inbound/http/middleware"
+	kafka2 "go-judge-system/services/submission/internal/adapter/inbound/kafka"
 	"go-judge-system/services/submission/internal/adapter/outbound/judge"
 	"go-judge-system/services/submission/internal/adapter/outbound/persistence/postgres"
 	"go-judge-system/services/submission/internal/adapter/outbound/problem"
@@ -54,7 +55,13 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	submissionHandler := handler.NewSubmissionHandler(createSubmissionHandler, listSubmissionsHandler, getSubmissionHandler, rejudgeSubmissionHandler)
 	handlerFunc := middleware.NewAuthMiddleware()
 	router := http.NewRouter(submissionHandler, handlerFunc)
-	app := container.NewApp(cfg, db, router, zapLogger, syncProducer)
+	consumerGroup, err := kafka.NewConsumerGroup(kafkaConfig, zapLogger)
+	if err != nil {
+		return nil, err
+	}
+	processJudgeResultUseCase := submission.NewProcessJudgeResultUseCase(submissionRepository, submissionResultRepository, zapLogger)
+	judgeResultConsumer := kafka2.NewJudgeResultConsumer(consumerGroup, kafkaConfig, processJudgeResultUseCase, zapLogger)
+	app := container.NewApp(cfg, db, router, judgeResultConsumer, zapLogger, syncProducer)
 	return app, nil
 }
 

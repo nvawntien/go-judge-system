@@ -54,6 +54,33 @@ func (r *submissionResultRepository) DeleteBySubmissionID(ctx context.Context, s
 	return r.db.WithContext(ctx).Where("submission_id = ?", submissionID).Delete(&SubmissionResultDAO{}).Error
 }
 
+func (r *submissionResultRepository) ReplaceBySubmissionID(ctx context.Context, submissionID int64, results []*entity.SubmissionResult) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("submission_id = ?", submissionID).Delete(&SubmissionResultDAO{}).Error; err != nil {
+			return err
+		}
+
+		if len(results) == 0 {
+			return nil
+		}
+
+		daos := make([]SubmissionResultDAO, 0, len(results))
+		for _, item := range results {
+			daos = append(daos, SubmissionResultDAO{
+				SubmissionID:  submissionID,
+				TestCaseID:    item.TestCaseID,
+				Status:        string(item.Status),
+				ActualOutput:  item.ActualOutput,
+				ExecutionTime: item.ExecutionTime,
+				MemoryUsed:    item.MemoryUsed,
+				Order:         item.Order,
+			})
+		}
+
+		return tx.Create(&daos).Error
+	})
+}
+
 func toSubmissionResultEntity(dao *SubmissionResultDAO) *entity.SubmissionResult {
 	return &entity.SubmissionResult{
 		ID:            dao.ID,
