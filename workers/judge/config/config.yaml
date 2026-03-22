@@ -2,11 +2,11 @@ server:
   port: 0  # not used, judge worker is event-driven
 
 kafka:
-  brokers: ""
-  job_topic: ""
-  result_topic: ""
-  dlt_topic: ""
-  consumer_group: ""
+  brokers: "kafka:9092"
+  consumer_group: "judge-worker-v1"
+  job_topic: "judge.submission.jobs"
+  result_topic: "judge.submission.results"
+  dlt_topic: "judge.submission.jobs.dlt"
 
 judging:
   timeout_seconds: 30

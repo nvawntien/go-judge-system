@@ -14,6 +14,7 @@ import (
 )
 
 type rejudgeSubmissionUseCase struct {
+	txManager            outbound.TransactionManager
 	submissionRepo       outbound.SubmissionRepository
 	submissionResultRepo outbound.SubmissionResultRepository
 	problemAccessChecker outbound.ProblemAccessChecker
@@ -22,6 +23,7 @@ type rejudgeSubmissionUseCase struct {
 }
 
 func NewRejudgeSubmissionUseCase(
+	txManager outbound.TransactionManager,
 	submissionRepo outbound.SubmissionRepository,
 	submissionResultRepo outbound.SubmissionResultRepository,
 	problemAccessChecker outbound.ProblemAccessChecker,
@@ -29,6 +31,7 @@ func NewRejudgeSubmissionUseCase(
 	logger *zap.Logger,
 ) inbound.RejudgeSubmissionUseCase {
 	return &rejudgeSubmissionUseCase{
+		txManager:            txManager,
 		submissionRepo:       submissionRepo,
 		submissionResultRepo: submissionResultRepo,
 		problemAccessChecker: problemAccessChecker,
@@ -68,18 +71,25 @@ func (uc *rejudgeSubmissionUseCase) Execute(ctx context.Context, claims auth.Cla
 	}
 
 	submission.ResetForRejudge()
-	if err := uc.submissionRepo.Update(ctx, submission); err != nil {
-		uc.logger.Error("failed to reset submission for rejudge", zap.Int64("submission_id", req.ID), zap.Error(err))
-		return domain.ErrInternalServer.Wrap(err)
-	}
 
-	if err := uc.submissionResultRepo.DeleteBySubmissionID(ctx, submission.ID); err != nil {
-		uc.logger.Error("failed to clear submission results for rejudge", zap.Int64("submission_id", req.ID), zap.Error(err))
-		return domain.ErrInternalServer.Wrap(err)
-	}
+	err = uc.txManager.ExecuteInTx(ctx, func(txCtx context.Context) error {
+		if err := uc.submissionRepo.Update(txCtx, submission); err != nil {
+			return err
+		}
 
-	if err := uc.judgePublisher.Publish(ctx, submission); err != nil {
-		uc.logger.Error("failed to republish submission to judge", zap.Int64("submission_id", req.ID), zap.Error(err))
+		if err := uc.submissionResultRepo.DeleteBySubmissionID(txCtx, submission.ID); err != nil {
+			return err
+		}
+
+		if err := uc.judgePublisher.Publish(txCtx, submission); err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		uc.logger.Error("failed to rejudge submission or write to outbox", zap.Int64("submission_id", req.ID), zap.Error(err))
 		return domain.ErrInternalServer.Wrap(err)
 	}
 

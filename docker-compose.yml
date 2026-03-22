@@ -136,14 +136,17 @@ services:
     entrypoint: ["/bin/bash", "-ec"]
     command: >
       /opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic $${KAFKA_JUDGE_JOB_TOPIC} --partitions 3 --replication-factor 1 &&
-      /opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic $${KAFKA_JUDGE_DLT_TOPIC} --partitions 1 --replication-factor 1
+      /opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic $${KAFKA_JUDGE_DLT_TOPIC} --partitions 1 --replication-factor 1 &&
+      /opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic $${KAFKA_JUDGE_RESULT_TOPIC} --partitions 3 --replication-factor 1
     networks:
       - judge_internal
     restart: "no"
 
   go-judge:
     container_name: judge_sandbox
-    image: criyle/executorserver:latest
+    build:
+      context: .
+      dockerfile: build/sandbox/Dockerfile
     restart: unless-stopped
     privileged: true 
     ports:
@@ -163,9 +166,6 @@ services:
     networks:
       - judge_internal
     logging: *default-logging
-    healthcheck:
-      <<: *healthcheck-defaults
-      test: ["CMD", "wget", "-qO-", "http://localhost:5050/version"]
     deploy:
       resources:
         limits:
@@ -270,13 +270,13 @@ services:
       - ./environment/service.env
     restart: unless-stopped
     volumes:
-      - ./workers/judge:/app 
+      - ./workers/judge/config:/app/config:ro
       - ./workers/judge/logs:/app/logs
     depends_on:
       kafka:
         condition: service_healthy
       go-judge:
-        condition: service_healthy
+        condition: service_started
       submission-service:
         condition: service_healthy
     networks:

@@ -25,6 +25,17 @@ type SubmissionResultRepository interface {
 	ReplaceBySubmissionID(ctx context.Context, submissionID int64, results []*entity.SubmissionResult) error
 }
 
+type TransactionManager interface {
+	ExecuteInTx(ctx context.Context, fn func(txCtx context.Context) error) error
+}
+
+type OutboxRepository interface {
+	Create(ctx context.Context, message *entity.OutboxMessage) error
+	GetPending(ctx context.Context, limit int) ([]*entity.OutboxMessage, error)
+	MarkPublished(ctx context.Context, id int64) error
+	MarkFailed(ctx context.Context, id int64, errReason string) error
+}
+
 type ProblemAccessChecker interface {
 	CanManageProblem(ctx context.Context, claims auth.Claims, problemID int64) (bool, error)
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"time"
 
 	"go-judge-system/pkg/config"
@@ -12,31 +11,30 @@ import (
 	"go-judge-system/services/submission/internal/application/port/outbound"
 	"go-judge-system/services/submission/internal/domain/entity"
 
-	"github.com/IBM/sarama"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
-type kafkaJudgePublisher struct {
-	producer sarama.SyncProducer
-	topic    string
-	logger   *zap.Logger
+type outboxJudgePublisher struct {
+	outboxRepo outbound.OutboxRepository
+	topic      string
+	logger     *zap.Logger
 }
 
-func NewKafkaJudgePublisher(producer sarama.SyncProducer, kafkaCfg config.KafkaConfig, logger *zap.Logger) outbound.JudgePublisher {
+func NewOutboxJudgePublisher(outboxRepo outbound.OutboxRepository, kafkaCfg config.KafkaConfig, logger *zap.Logger) outbound.JudgePublisher {
 	topic := kafkaCfg.JobTopic
 	if topic == "" {
 		topic = "judge.submission.jobs"
 	}
 
-	return &kafkaJudgePublisher{
-		producer: producer,
-		topic:    topic,
-		logger:   logger,
+	return &outboxJudgePublisher{
+		outboxRepo: outboxRepo,
+		topic:      topic,
+		logger:     logger,
 	}
 }
 
-func (p *kafkaJudgePublisher) Publish(ctx context.Context, submission *entity.Submission) error {
+func (p *outboxJudgePublisher) Publish(ctx context.Context, submission *entity.Submission) error {
 	payload := pkgjudge.JobMessage{
 		SubmissionID: submission.ID,
 		ProblemID:    submission.ProblemID,
@@ -53,25 +51,23 @@ func (p *kafkaJudgePublisher) Publish(ctx context.Context, submission *entity.Su
 		return fmt.Errorf("marshal judge job payload: %w", err)
 	}
 
-	msg := &sarama.ProducerMessage{
-		Topic: p.topic,
-		Key:   sarama.StringEncoder(strconv.FormatInt(submission.ID, 10)),
-		Value: sarama.ByteEncoder(value),
+	outboxMsg := &entity.OutboxMessage{
+		AggregateID: submission.ID,
+		Topic:       p.topic,
+		Payload:     value,
+		Status:      entity.OutboxStatusPending,
 	}
 
-	partition, offset, err := p.producer.SendMessage(msg)
-	if err != nil {
-		return fmt.Errorf("publish judge job message: %w", err)
+	if err := p.outboxRepo.Create(ctx, outboxMsg); err != nil {
+		return fmt.Errorf("create outbox message: %w", err)
 	}
 
 	p.logger.Info(
-		"published submission to judge queue",
+		"inserted judge job into outbox",
 		zap.Int64("submission_id", submission.ID),
 		zap.String("attempt_id", payload.AttemptID),
 		zap.String("topic", p.topic),
-		zap.Int32("partition", partition),
-		zap.Int64("offset", offset),
+		zap.Int64("outbox_id", outboxMsg.ID),
 	)
 	return nil
 }
-

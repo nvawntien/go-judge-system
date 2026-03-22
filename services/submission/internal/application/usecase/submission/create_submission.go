@@ -15,17 +15,20 @@ import (
 )
 
 type createSubmissionUseCase struct {
+	txManager      outbound.TransactionManager
 	submissionRepo outbound.SubmissionRepository
 	judgePublisher outbound.JudgePublisher
 	logger         *zap.Logger
 }
 
 func NewCreateSubmissionUseCase(
+	txManager outbound.TransactionManager,
 	submissionRepo outbound.SubmissionRepository,
 	judgePublisher outbound.JudgePublisher,
 	logger *zap.Logger,
 ) inbound.CreateSubmissionUseCase {
 	return &createSubmissionUseCase{
+		txManager:      txManager,
 		submissionRepo: submissionRepo,
 		judgePublisher: judgePublisher,
 		logger:         logger,
@@ -44,13 +47,20 @@ func (uc *createSubmissionUseCase) Execute(ctx context.Context, claims auth.Clai
 
 	sub := entity.NewSubmission(req.ProblemID, req.ProblemName, claims.UserID, claims.Username, language, req.SourceCode)
 
-	if err := uc.submissionRepo.Create(ctx, sub); err != nil {
-		uc.logger.Error("failed to create submission", zap.Error(err))
-		return dto.SubmissionResponse{}, domain.ErrInternalServer.Wrap(err)
-	}
+	err := uc.txManager.ExecuteInTx(ctx, func(txCtx context.Context) error {
+		if err := uc.submissionRepo.Create(txCtx, sub); err != nil {
+			return err
+		}
 
-	if err := uc.judgePublisher.Publish(ctx, sub); err != nil {
-		uc.logger.Error("failed to publish submission for judging", zap.Int64("submission_id", sub.ID), zap.Error(err))
+		if err := uc.judgePublisher.Publish(txCtx, sub); err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		uc.logger.Error("failed to create submission or write to outbox", zap.Error(err))
 		return dto.SubmissionResponse{}, domain.ErrInternalServer.Wrap(err)
 	}
 

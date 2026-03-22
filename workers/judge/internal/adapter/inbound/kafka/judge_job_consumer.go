@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"go-judge-system/pkg/config"
@@ -26,6 +29,7 @@ type JudgeJobConsumer struct {
 	useCase      inbound.ProcessJudgeJobUseCase
 	dltPublisher *DLTPublisher
 	maxRetries   int
+	poolSize     int
 	logger       *zap.Logger
 }
 
@@ -41,12 +45,20 @@ func NewJudgeJobConsumer(
 		topic = "judge.submission.jobs"
 	}
 
+	poolSize := 4
+	if psStr := os.Getenv("WORKER_POOL_SIZE"); psStr != "" {
+		if ps, err := strconv.Atoi(psStr); err == nil && ps > 0 {
+			poolSize = ps
+		}
+	}
+
 	return &JudgeJobConsumer{
 		group:        group,
 		topic:        topic,
 		useCase:      useCase,
 		dltPublisher: dltPublisher,
 		maxRetries:   defaultMaxRetries,
+		poolSize:     poolSize,
 		logger:       logger,
 	}
 }
@@ -56,6 +68,7 @@ func (c *JudgeJobConsumer) Run(ctx context.Context) error {
 		useCase:      c.useCase,
 		dltPublisher: c.dltPublisher,
 		maxRetries:   c.maxRetries,
+		poolSize:     c.poolSize,
 		logger:       c.logger,
 	}
 
@@ -88,6 +101,7 @@ type judgeJobHandler struct {
 	useCase      inbound.ProcessJudgeJobUseCase
 	dltPublisher *DLTPublisher
 	maxRetries   int
+	poolSize     int
 	logger       *zap.Logger
 }
 
@@ -95,9 +109,39 @@ func (h *judgeJobHandler) Setup(_ sarama.ConsumerGroupSession) error   { return 
 func (h *judgeJobHandler) Cleanup(_ sarama.ConsumerGroupSession) error { return nil }
 
 func (h *judgeJobHandler) ConsumeClaim(session sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
-	for msg := range claim.Messages() {
-		h.handleMessage(session, msg)
+	poolSize := h.poolSize
+	if poolSize <= 0 {
+		poolSize = 4
 	}
+	
+	// Start N workers
+	var wg sync.WaitGroup
+	msgCh := make(chan *sarama.ConsumerMessage)
+
+	for i := 0; i < poolSize; i++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			for msg := range msgCh {
+				h.logger.Debug("worker processing message", zap.Int("worker_id", workerID), zap.Int64("offset", msg.Offset))
+				h.handleMessage(session, msg)
+			}
+		}(i)
+	}
+
+	for msg := range claim.Messages() {
+		// Stop dispatching if context is done
+		select {
+		case <-session.Context().Done():
+			close(msgCh)
+			wg.Wait()
+			return nil
+		case msgCh <- msg:
+		}
+	}
+
+	close(msgCh)
+	wg.Wait()
 	return nil
 }
 

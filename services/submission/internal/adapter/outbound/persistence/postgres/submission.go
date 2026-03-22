@@ -41,7 +41,8 @@ func NewSubmissionRepository(db *gorm.DB) outbound.SubmissionRepository {
 
 func (r *submissionRepository) Create(ctx context.Context, submission *entity.Submission) error {
 	dao := toSubmissionDAO(submission)
-	if err := r.db.WithContext(ctx).Create(dao).Error; err != nil {
+	db := getDB(ctx, r.db)
+	if err := db.Create(dao).Error; err != nil {
 		return err
 	}
 
@@ -51,7 +52,8 @@ func (r *submissionRepository) Create(ctx context.Context, submission *entity.Su
 
 func (r *submissionRepository) GetByID(ctx context.Context, id int64) (*entity.Submission, error) {
 	var dao SubmissionDAO
-	if err := r.db.WithContext(ctx).First(&dao, id).Error; err != nil {
+	db := getDB(ctx, r.db)
+	if err := db.First(&dao, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, domain.ErrSubmissionNotFound
 		}
@@ -70,7 +72,8 @@ func (r *submissionRepository) Update(ctx context.Context, submission *entity.Su
 		"updated_at":     submission.UpdatedAt,
 	}
 
-	result := r.db.WithContext(ctx).Model(&SubmissionDAO{}).Where("id = ?", submission.ID).Updates(updates)
+	db := getDB(ctx, r.db)
+	result := db.Model(&SubmissionDAO{}).Where("id = ?", submission.ID).Updates(updates)
 	if result.Error != nil {
 		return result.Error
 	}

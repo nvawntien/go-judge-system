@@ -24,6 +24,7 @@ const (
 	StatusMemoryLimitExceed Status = "MLE"
 	StatusRuntimeError      Status = "RUNTIME_ERROR"
 	StatusCompilationError  Status = "COMPILATION_ERROR"
+	StatusSystemError       Status = "SYSTEM_ERROR"
 )
 
 type Submission struct {

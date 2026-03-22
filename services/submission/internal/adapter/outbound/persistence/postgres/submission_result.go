@@ -35,8 +35,8 @@ func NewSubmissionResultRepository(db *gorm.DB) outbound.SubmissionResultReposit
 
 func (r *submissionResultRepository) GetBySubmissionID(ctx context.Context, submissionID int64) ([]*entity.SubmissionResult, error) {
 	var daos []SubmissionResultDAO
-	if err := r.db.WithContext(ctx).
-		Where("submission_id = ?", submissionID).
+	db := getDB(ctx, r.db)
+	if err := db.Where("submission_id = ?", submissionID).
 		Order("\"order\" ASC").
 		Find(&daos).Error; err != nil {
 		return nil, err
@@ -51,11 +51,13 @@ func (r *submissionResultRepository) GetBySubmissionID(ctx context.Context, subm
 }
 
 func (r *submissionResultRepository) DeleteBySubmissionID(ctx context.Context, submissionID int64) error {
-	return r.db.WithContext(ctx).Where("submission_id = ?", submissionID).Delete(&SubmissionResultDAO{}).Error
+	db := getDB(ctx, r.db)
+	return db.Where("submission_id = ?", submissionID).Delete(&SubmissionResultDAO{}).Error
 }
 
 func (r *submissionResultRepository) ReplaceBySubmissionID(ctx context.Context, submissionID int64, results []*entity.SubmissionResult) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	db := getDB(ctx, r.db)
+	return db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("submission_id = ?", submissionID).Delete(&SubmissionResultDAO{}).Error; err != nil {
 			return err
 		}

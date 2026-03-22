@@ -17,6 +17,7 @@ import (
 	"go-judge-system/services/submission/internal/adapter/inbound/http/middleware"
 	kafka2 "go-judge-system/services/submission/internal/adapter/inbound/kafka"
 	"go-judge-system/services/submission/internal/adapter/outbound/judge"
+	"go-judge-system/services/submission/internal/adapter/outbound/outbox"
 	"go-judge-system/services/submission/internal/adapter/outbound/persistence/postgres"
 	"go-judge-system/services/submission/internal/adapter/outbound/problem"
 	"go-judge-system/services/submission/internal/application/usecase/submission"
@@ -31,18 +32,16 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	if err != nil {
 		return nil, err
 	}
+	transactionManager := postgres.NewTransactionManager(db)
 	submissionRepository := postgres.NewSubmissionRepository(db)
+	outboxRepository := postgres.NewOutboxRepository(db)
 	kafkaConfig := cfg.Kafka
 	loggerConfig := cfg.Logger
 	serverConfig := cfg.Server
 	string2 := provideServerMode(serverConfig)
 	zapLogger := logger.NewLogger(loggerConfig, string2)
-	syncProducer, err := kafka.NewSyncProducer(kafkaConfig, zapLogger)
-	if err != nil {
-		return nil, err
-	}
-	judgePublisher := judge.NewKafkaJudgePublisher(syncProducer, kafkaConfig, zapLogger)
-	createSubmissionUseCase := submission.NewCreateSubmissionUseCase(submissionRepository, judgePublisher, zapLogger)
+	judgePublisher := judge.NewOutboxJudgePublisher(outboxRepository, kafkaConfig, zapLogger)
+	createSubmissionUseCase := submission.NewCreateSubmissionUseCase(transactionManager, submissionRepository, judgePublisher, zapLogger)
 	createSubmissionHandler := submission2.NewCreateSubmissionHandler(createSubmissionUseCase)
 	listSubmissionsUseCase := submission.NewListSubmissionsUseCase(submissionRepository, zapLogger)
 	listSubmissionsHandler := submission2.NewListSubmissionsHandler(listSubmissionsUseCase)
@@ -50,7 +49,7 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	problemAccessChecker := problem.NewProblemAccessChecker()
 	getSubmissionUseCase := submission.NewGetSubmissionUseCase(submissionRepository, submissionResultRepository, problemAccessChecker, zapLogger)
 	getSubmissionHandler := submission2.NewGetSubmissionHandler(getSubmissionUseCase)
-	rejudgeSubmissionUseCase := submission.NewRejudgeSubmissionUseCase(submissionRepository, submissionResultRepository, problemAccessChecker, judgePublisher, zapLogger)
+	rejudgeSubmissionUseCase := submission.NewRejudgeSubmissionUseCase(transactionManager, submissionRepository, submissionResultRepository, problemAccessChecker, judgePublisher, zapLogger)
 	rejudgeSubmissionHandler := submission2.NewRejudgeSubmissionHandler(rejudgeSubmissionUseCase)
 	submissionHandler := handler.NewSubmissionHandler(createSubmissionHandler, listSubmissionsHandler, getSubmissionHandler, rejudgeSubmissionHandler)
 	handlerFunc := middleware.NewAuthMiddleware()
@@ -61,7 +60,12 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	}
 	processJudgeResultUseCase := submission.NewProcessJudgeResultUseCase(submissionRepository, submissionResultRepository, zapLogger)
 	judgeResultConsumer := kafka2.NewJudgeResultConsumer(consumerGroup, kafkaConfig, processJudgeResultUseCase, zapLogger)
-	app := container.NewApp(cfg, db, router, judgeResultConsumer, zapLogger, syncProducer)
+	syncProducer, err := kafka.NewSyncProducer(kafkaConfig, zapLogger)
+	if err != nil {
+		return nil, err
+	}
+	outboxRelay := outbox.NewOutboxRelay(outboxRepository, syncProducer, zapLogger)
+	app := container.NewApp(cfg, db, router, judgeResultConsumer, outboxRelay, zapLogger, syncProducer)
 	return app, nil
 }
 

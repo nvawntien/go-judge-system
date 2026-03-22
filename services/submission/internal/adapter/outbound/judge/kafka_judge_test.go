@@ -5,69 +5,47 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	"go-judge-system/pkg/config"
 	pkgjudge "go-judge-system/pkg/judge"
 	"go-judge-system/services/submission/internal/domain/entity"
 
-	"github.com/IBM/sarama"
 	"go.uber.org/zap"
 )
 
-type mockSyncProducer struct {
-	sendMessageFn func(msg *sarama.ProducerMessage) (int32, int64, error)
+type mockOutboxRepository struct {
+	createFn func(ctx context.Context, message *entity.OutboxMessage) error
 }
 
-func (m *mockSyncProducer) SendMessage(msg *sarama.ProducerMessage) (int32, int64, error) {
-	if m.sendMessageFn != nil {
-		return m.sendMessageFn(msg)
+func (m *mockOutboxRepository) Create(ctx context.Context, message *entity.OutboxMessage) error {
+	if m.createFn != nil {
+		return m.createFn(ctx, message)
 	}
-	return 0, 0, nil
-}
-
-func (m *mockSyncProducer) SendMessages(_ []*sarama.ProducerMessage) error {
+	message.ID = 1
+	message.CreatedAt = time.Now()
 	return nil
 }
 
-func (m *mockSyncProducer) Close() error {
+func (m *mockOutboxRepository) GetPending(ctx context.Context, limit int) ([]*entity.OutboxMessage, error) {
+	return nil, nil
+}
+
+func (m *mockOutboxRepository) MarkPublished(ctx context.Context, id int64) error {
 	return nil
 }
 
-func (m *mockSyncProducer) TxnStatus() sarama.ProducerTxnStatusFlag {
-	return 0
-}
-
-func (m *mockSyncProducer) IsTransactional() bool {
-	return false
-}
-
-func (m *mockSyncProducer) BeginTxn() error {
+func (m *mockOutboxRepository) MarkFailed(ctx context.Context, id int64, errReason string) error {
 	return nil
 }
 
-func (m *mockSyncProducer) CommitTxn() error {
-	return nil
-}
-
-func (m *mockSyncProducer) AbortTxn() error {
-	return nil
-}
-
-func (m *mockSyncProducer) AddOffsetsToTxn(_ map[string][]*sarama.PartitionOffsetMetadata, _ string) error {
-	return nil
-}
-
-func (m *mockSyncProducer) AddMessageToTxn(_ *sarama.ConsumerMessage, _ string, _ *string) error {
-	return nil
-}
-
-func TestNewKafkaJudgePublisher_DefaultTopic(t *testing.T) {
+func TestNewOutboxJudgePublisher_DefaultTopic(t *testing.T) {
 	t.Parallel()
 
-	publisher := NewKafkaJudgePublisher(&mockSyncProducer{}, config.KafkaConfig{}, zap.NewNop())
-	impl, ok := publisher.(*kafkaJudgePublisher)
+	publisher := NewOutboxJudgePublisher(&mockOutboxRepository{}, config.KafkaConfig{}, zap.NewNop())
+	impl, ok := publisher.(*outboxJudgePublisher)
 	if !ok {
-		t.Fatal("expected kafkaJudgePublisher implementation")
+		t.Fatal("expected outboxJudgePublisher implementation")
 	}
 	if impl.topic != "judge.submission.jobs" {
 		t.Fatalf("topic = %q, want %q", impl.topic, "judge.submission.jobs")
@@ -80,27 +58,18 @@ func TestPublish_Success(t *testing.T) {
 	sub := entity.NewSubmission(1001, "Two Sum", "u-1", "alice", entity.LanguageGo, "package main")
 	sub.ID = 77
 
-	producer := &mockSyncProducer{}
-	producer.sendMessageFn = func(msg *sarama.ProducerMessage) (int32, int64, error) {
+	repo := &mockOutboxRepository{}
+	repo.createFn = func(ctx context.Context, msg *entity.OutboxMessage) error {
 		if msg.Topic != "judge.submission.jobs" {
 			t.Fatalf("topic = %q, want %q", msg.Topic, "judge.submission.jobs")
 		}
 
-		key, err := msg.Key.Encode()
-		if err != nil {
-			t.Fatalf("encode key: %v", err)
-		}
-		if string(key) != "77" {
-			t.Fatalf("key = %q, want %q", string(key), "77")
-		}
-
-		val, err := msg.Value.Encode()
-		if err != nil {
-			t.Fatalf("encode value: %v", err)
+		if msg.AggregateID != sub.ID {
+			t.Fatalf("aggregate_id = %d, want %d", msg.AggregateID, sub.ID)
 		}
 
 		var payload pkgjudge.JobMessage
-		if err := json.Unmarshal(val, &payload); err != nil {
+		if err := json.Unmarshal(msg.Payload, &payload); err != nil {
 			t.Fatalf("unmarshal payload: %v", err)
 		}
 
@@ -126,11 +95,12 @@ func TestPublish_Success(t *testing.T) {
 			t.Fatal("enqueued_at should not be zero")
 		}
 
-		return 2, 42, nil
+		msg.ID = 1
+		return nil
 	}
 
-	publisher := NewKafkaJudgePublisher(
-		producer,
+	publisher := NewOutboxJudgePublisher(
+		repo,
 		config.KafkaConfig{JobTopic: "judge.submission.jobs"},
 		zap.NewNop(),
 	)
@@ -140,20 +110,20 @@ func TestPublish_Success(t *testing.T) {
 	}
 }
 
-func TestPublish_SendMessageError(t *testing.T) {
+func TestPublish_OutboxCreateError(t *testing.T) {
 	t.Parallel()
 
 	sub := entity.NewSubmission(1001, "Two Sum", "u-1", "alice", entity.LanguageGo, "package main")
 	sub.ID = 77
 
-	wantErr := errors.New("kafka unavailable")
-	producer := &mockSyncProducer{
-		sendMessageFn: func(_ *sarama.ProducerMessage) (int32, int64, error) {
-			return 0, 0, wantErr
+	wantErr := errors.New("db unavailable")
+	repo := &mockOutboxRepository{
+		createFn: func(ctx context.Context, msg *entity.OutboxMessage) error {
+			return wantErr
 		},
 	}
 
-	publisher := NewKafkaJudgePublisher(producer, config.KafkaConfig{}, zap.NewNop())
+	publisher := NewOutboxJudgePublisher(repo, config.KafkaConfig{}, zap.NewNop())
 
 	err := publisher.Publish(context.Background(), sub)
 	if err == nil {

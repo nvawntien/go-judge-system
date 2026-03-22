@@ -24,6 +24,7 @@ func NewSyncProducer(cfg config.KafkaConfig, logger *zap.Logger) (sarama.SyncPro
 	saramaCfg.Producer.Retry.Backoff = 250 * time.Millisecond
 	saramaCfg.Producer.Return.Successes = true
 	saramaCfg.Producer.Idempotent = true
+	saramaCfg.Net.MaxOpenRequests = 1
 
 	producer, err := sarama.NewSyncProducer(brokers, saramaCfg)
 	if err != nil {

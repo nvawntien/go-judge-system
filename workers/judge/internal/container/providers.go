@@ -13,6 +13,7 @@ import (
 	judgeuc "go-judge-system/workers/judge/internal/application/usecase/judge"
 
 	"github.com/google/wire"
+	"go.uber.org/zap"
 )
 
 var InfrastructureProviderSet = wire.NewSet(
@@ -25,13 +26,14 @@ var InfrastructureProviderSet = wire.NewSet(
 )
 
 var OutboundProviderSet = wire.NewSet(
-	execute.NewGoJudgeClient,
+	ProvideGoJudgeClient,
 	wire.Bind(new(outbound.CodeExecutor), new(*execute.GoJudgeClient)),
 	judge.NewKafkaResultPublisher,
 	wire.Bind(new(outbound.ResultPublisher), new(*judge.KafkaResultPublisher)),
-	problem.NewProblemServiceClient,
+	ProvideProblemClient,
 	wire.Bind(new(outbound.TestCaseFetcher), new(*problem.ProblemServiceClient)),
 	ProvideProblemServiceURL,
+	ProvideSandboxServiceURL,
 )
 
 var UseCaseProviderSet = wire.NewSet()
@@ -62,5 +64,19 @@ type ProblemServiceURL string
 // ProvideProblemServiceURL provides the base URL for the problem service.
 // This assumes the problem service is reachable at this internal Docker DNS.
 func ProvideProblemServiceURL() ProblemServiceURL {
-	return "http://problem-service:8080"
+	return "http://judge_problem:8082" // Note: the docker-compose defined problem service correctly
+}
+
+func ProvideProblemClient(url ProblemServiceURL, logger *zap.Logger) *problem.ProblemServiceClient {
+	return problem.NewProblemServiceClient(string(url), logger)
+}
+
+type SandboxServiceURL string
+
+func ProvideSandboxServiceURL() SandboxServiceURL {
+	return "http://judge_sandbox:5050"
+}
+
+func ProvideGoJudgeClient(url SandboxServiceURL, logger *zap.Logger) *execute.GoJudgeClient {
+	return execute.NewGoJudgeClient(string(url), logger)
 }

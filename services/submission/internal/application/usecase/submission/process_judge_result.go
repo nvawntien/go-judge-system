@@ -84,7 +84,8 @@ func parseSubmissionStatus(raw string) (entity.Status, error) {
 		entity.StatusTimeLimitExceed,
 		entity.StatusMemoryLimitExceed,
 		entity.StatusRuntimeError,
-		entity.StatusCompilationError:
+		entity.StatusCompilationError,
+		entity.StatusSystemError:
 		return entity.Status(raw), nil
 	default:
 		return "", fmt.Errorf("invalid judge overall status: %s", raw)

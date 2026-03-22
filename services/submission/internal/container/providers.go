@@ -11,6 +11,7 @@ import (
 	kafkain "go-judge-system/services/submission/internal/adapter/inbound/kafka"
 	"go-judge-system/services/submission/internal/adapter/outbound/judge"
 	"go-judge-system/services/submission/internal/adapter/outbound/persistence/postgres"
+	"go-judge-system/services/submission/internal/adapter/outbound/outbox"
 	"go-judge-system/services/submission/internal/adapter/outbound/problem"
 	subuc "go-judge-system/services/submission/internal/application/usecase/submission"
 
@@ -31,8 +32,11 @@ var MiddlewareProviderSet = wire.NewSet(
 var OutboundProviderSet = wire.NewSet(
 	postgres.NewSubmissionRepository,
 	postgres.NewSubmissionResultRepository,
+	postgres.NewTransactionManager,
+	postgres.NewOutboxRepository,
 	problem.NewProblemAccessChecker,
-	judge.NewKafkaJudgePublisher,
+	judge.NewOutboxJudgePublisher,
+	outbox.NewOutboxRelay,
 )
 
 var UseCaseProviderSet = wire.NewSet(
