@@ -54,7 +54,7 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	submissionHandler := handler.NewSubmissionHandler(createSubmissionHandler, listSubmissionsHandler, getSubmissionHandler, rejudgeSubmissionHandler)
 	handlerFunc := middleware.NewAuthMiddleware()
 	router := http.NewRouter(submissionHandler, handlerFunc)
-	app := container.NewApp(cfg, db, router, zapLogger)
+	app := container.NewApp(cfg, db, router, zapLogger, syncProducer)
 	return app, nil
 }
 

@@ -21,6 +21,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("initialize app failed: %v", err)
 	}
+	defer func() {
+		if err := app.Close(); err != nil {
+			log.Printf("close app resources failed: %v", err)
+		}
+	}()
 
 	if err := app.Run(); err != nil {
 		log.Fatalf("server shutdown with error: %v", err)
