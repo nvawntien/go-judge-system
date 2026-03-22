@@ -9,6 +9,7 @@ package main
 import (
 	"go-judge-system/pkg/config"
 	"go-judge-system/pkg/database"
+	"go-judge-system/pkg/kafka"
 	"go-judge-system/pkg/logger"
 	"go-judge-system/services/submission/internal/adapter/inbound/http"
 	"go-judge-system/services/submission/internal/adapter/inbound/http/handler"
@@ -30,11 +31,16 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 		return nil, err
 	}
 	submissionRepository := postgres.NewSubmissionRepository(db)
+	kafkaConfig := cfg.Kafka
 	loggerConfig := cfg.Logger
 	serverConfig := cfg.Server
 	string2 := provideServerMode(serverConfig)
 	zapLogger := logger.NewLogger(loggerConfig, string2)
-	judgePublisher := judge.NewNoopJudgePublisher(zapLogger)
+	syncProducer, err := kafka.NewSyncProducer(kafkaConfig, zapLogger)
+	if err != nil {
+		return nil, err
+	}
+	judgePublisher := judge.NewKafkaJudgePublisher(syncProducer, kafkaConfig, zapLogger)
 	createSubmissionUseCase := submission.NewCreateSubmissionUseCase(submissionRepository, judgePublisher, zapLogger)
 	createSubmissionHandler := submission2.NewCreateSubmissionHandler(createSubmissionUseCase)
 	listSubmissionsUseCase := submission.NewListSubmissionsUseCase(submissionRepository, zapLogger)

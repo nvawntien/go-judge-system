@@ -2,7 +2,6 @@ package submission
 
 import (
 	"go-judge-system/pkg/response"
-	"go-judge-system/services/submission/internal/application/dto"
 	"go-judge-system/services/submission/internal/application/port/inbound"
 
 	"github.com/gin-gonic/gin"
@@ -25,5 +24,5 @@ func (h *ListSubmissionsHandler) HandleMy(c *gin.Context) {
 }
 
 func (h *ListSubmissionsHandler) HandleProblem(c *gin.Context) {
-	response.HandleWithParamsAndQuery[dto.ProblemIDRequest, dto.ListProblemSubmissionsQueryRequest](c, h.uc.ExecuteProblem, response.CodeSuccess)
+	response.HandleWithParamsAndQuery(c, h.uc.ExecuteProblem, response.CodeSuccess)
 }

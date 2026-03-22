@@ -1,4 +1,15 @@
-version: '3.8'
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+    tag: "{{.Name}}"
+
+x-healthcheck-defaults: &healthcheck-defaults
+  interval: 10s
+  timeout: 5s
+  retries: 5
+  start_period: 15s
 
 services:
   gateway:
@@ -10,58 +21,186 @@ services:
       - ./gateway/krakend.json:/etc/krakend/krakend.json:ro
       - ./gateway/symmetric.json:/etc/krakend/symmetric.json:ro
     networks:
-      - judge_net
+      - judge_internal
     depends_on:
-      - auth-service
-      - problem-service
-      - submission-service
+      auth-service:
+        condition: service_healthy
+      problem-service:
+        condition: service_healthy
+      submission-service:
+        condition: service_healthy
     restart: unless-stopped
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
 
   postgres:
     container_name: judge_postgres
-    image: postgres:15-alpine
+    image: postgres:15.6-alpine
     restart: unless-stopped
     env_file:
       - ./environment/postgres.env
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
-      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
       - postgres_data:/var/lib/postgresql/data
     networks:
-      - judge_net
+      - judge_internal
+    logging: *default-logging
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U admin -d auth_db" ]
+      <<: *healthcheck-defaults
+      test: ["CMD-SHELL", "pg_isready -U admin -d auth_db"]
       interval: 5s
-      timeout: 5s
-      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 512M
 
   redis:
     container_name: judge_redis
-    image: redis:7-alpine
+    image: redis:7.2-alpine
     restart: unless-stopped
     env_file:
       - ./environment/redis.env
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     command: >
-      /bin/sh -c "redis-server --requirepass $$REDIS_PASSWORD"
+      /bin/sh -c "redis-server
+        --requirepass $$REDIS_PASSWORD
+        --maxmemory 128mb
+        --maxmemory-policy allkeys-lru
+        --appendonly yes
+        --appendfsync everysec"
+    volumes:
+      - redis_data:/data
     networks:
-      - judge_net
+      - judge_internal
+    logging: *default-logging
     healthcheck:
-      test: [ "CMD-SHELL", "redis-cli -a $$REDIS_PASSWORD ping" ]
+      <<: *healthcheck-defaults
+      test: ["CMD-SHELL", "redis-cli -a $$REDIS_PASSWORD ping | grep PONG"]
       interval: 5s
-      timeout: 5s
-      retries: 5
-  mailhog:
-    container_name: judge_mailhog
-    image: mailhog/mailhog:latest
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 192M
+
+  kafka:
+    container_name: judge_kafka
+    image: bitnamilegacy/kafka:4.0.0-debian-12-r10
     restart: unless-stopped
     ports:
-      - "1025:1025"
-      - "8025:8025"
+      - "127.0.0.1:9094:9094"
+    environment:
+      - KAFKA_KRAFT_CLUSTER_ID=MkU3OEVBNTcwNTJENDM2Qk
+      - KAFKA_CFG_NODE_ID=1
+      - KAFKA_CFG_PROCESS_ROLES=controller,broker
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
+      - KAFKA_CFG_LISTENERS=INTERNAL://:9092,EXTERNAL://:9094,CONTROLLER://:9093
+      - KAFKA_CFG_ADVERTISED_LISTENERS=INTERNAL://kafka:9092,EXTERNAL://localhost:9094
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=INTERNAL
+      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=false
+      - KAFKA_CFG_NUM_PARTITIONS=3
+      - ALLOW_PLAINTEXT_LISTENER=yes
+    volumes:
+      - kafka_data:/bitnami/kafka
     networks:
-      - judge_net
+      - judge_internal
+    logging: *default-logging
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "bash", "-lc", "/opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list > /dev/null 2>&1"]
+      interval: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 768M
+
+  kafka-init:
+    container_name: judge_kafka_init
+    image: bitnamilegacy/kafka:4.0.0-debian-12-r10
+    depends_on:
+      kafka:
+        condition: service_healthy
+    env_file:
+      - ./environment/service.env
+    entrypoint: ["/bin/bash", "-ec"]
+    command: >
+      /opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic $${KAFKA_JUDGE_JOB_TOPIC} --partitions 3 --replication-factor 1 &&
+      /opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic $${KAFKA_JUDGE_DLT_TOPIC} --partitions 1 --replication-factor 1
+    networks:
+      - judge_internal
+    restart: "no"
+
+  go-judge:
+    container_name: judge_sandbox
+    image: criyle/executorserver:latest
+    restart: unless-stopped
+    privileged: true 
+    ports:
+      - "127.0.0.1:5050:5050"
+      - "127.0.0.1:5051:5051"
+    environment:
+      - ES_HTTP_ADDR=0.0.0.0:5050
+      - ES_GRPC_ADDR=0.0.0.0:5051
+      - ES_ENABLE_GRPC=true
+      - ES_ENABLE_DEBUG=false
+      - ES_LOG_LEVEL=info
+    volumes:
+      - ./test_cases:/judge/test_cases:ro
+    tmpfs:
+      - /tmp:size=256M,exec,mode=777
+      - /w:size=512M,exec,mode=777
+    networks:
+      - judge_internal
+    logging: *default-logging
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "wget", "-qO-", "http://localhost:5050/version"]
+    deploy:
+      resources:
+        limits:
+          cpus: "2.00"
+          memory: 1024M
+
+  mailhog:
+    container_name: judge_mailhog
+    image: mailhog/mailhog:v1.0.1
+    profiles: ["dev"]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
+    networks:
+      - judge_internal
+    logging: *default-logging
+
+  kafka-ui:
+    container_name: judge_kafka_ui
+    image: provectuslabs/kafka-ui:v0.7.2
+    profiles: ["dev"]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8081:8080"
+    environment:
+      - KAFKA_CLUSTERS_0_NAME=judge-cluster
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:9092
+      - DYNAMIC_CONFIG_ENABLED=true
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - judge_internal
+    logging: *default-logging
 
   auth-service:
     container_name: judge_auth
@@ -80,7 +219,8 @@ services:
       redis:
         condition: service_healthy
     networks:
-      - judge_net
+      - judge_internal
+    logging: *default-logging
 
   problem-service:
     container_name: judge_problem
@@ -97,7 +237,8 @@ services:
       postgres:
         condition: service_healthy
     networks:
-      - judge_net
+      - judge_internal
+    logging: *default-logging
 
   submission-service:
     container_name: judge_submission
@@ -113,12 +254,48 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      kafka:
+        condition: service_healthy
     networks:
-      - judge_net
+      - judge_internal
+    logging: *default-logging
+
+  judge-worker:
+    container_name: judge_worker
+    profiles: ["worker"]
+    build:
+      context: .
+      dockerfile: workers/judge/Dockerfile
+    env_file:
+      - ./environment/service.env
+    restart: unless-stopped
+    volumes:
+      - ./workers/judge:/app 
+      - ./workers/judge/logs:/app/logs
+    depends_on:
+      kafka:
+        condition: service_healthy
+      go-judge:
+        condition: service_healthy
+      submission-service:
+        condition: service_healthy
+    networks:
+      - judge_internal
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
 
 networks:
-  judge_net:
-
+  judge_internal:
+    driver: bridge
 
 volumes:
   postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  kafka_data:
+    driver: local

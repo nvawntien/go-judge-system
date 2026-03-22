@@ -2,6 +2,7 @@ package container
 
 import (
 	"go-judge-system/pkg/database"
+	"go-judge-system/pkg/kafka"
 	"go-judge-system/pkg/logger"
 	"go-judge-system/services/submission/internal/adapter/inbound/http"
 	"go-judge-system/services/submission/internal/adapter/inbound/http/handler"
@@ -18,6 +19,7 @@ import (
 var InfrastructureProviderSet = wire.NewSet(
 	database.ConnectDatabase,
 	logger.NewLogger,
+	kafka.NewSyncProducer,
 )
 
 var MiddlewareProviderSet = wire.NewSet(
@@ -28,7 +30,7 @@ var OutboundProviderSet = wire.NewSet(
 	postgres.NewSubmissionRepository,
 	postgres.NewSubmissionResultRepository,
 	problem.NewProblemAccessChecker,
-	judge.NewNoopJudgePublisher,
+	judge.NewKafkaJudgePublisher,
 )
 
 var UseCaseProviderSet = wire.NewSet(

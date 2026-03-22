@@ -3,6 +3,7 @@ module go-judge-system/pkg
 go 1.24.0
 
 require (
+	github.com/IBM/sarama v1.46.2
 	github.com/gin-gonic/gin v1.11.0
 	github.com/redis/go-redis/v9 v9.17.3
 	github.com/spf13/viper v1.21.0

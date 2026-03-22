@@ -14,6 +14,7 @@ type Config struct {
 	Logger   LoggerConfig   `mapstructure:"logger"`
 	SMTP     SMTPConfig     `mapstructure:"smtp"`
 	JWT      JWTConfig      `mapstructure:"jwt"`
+	Kafka    KafkaConfig    `mapstructure:"kafka"`
 }
 
 type ServerConfig struct {
@@ -53,6 +54,14 @@ type LoggerConfig struct {
 	MaxBackups int    `mapstructure:"max_backups"`
 	MaxAge     int    `mapstructure:"max_age"`
 	Compress   bool   `mapstructure:"compress"`
+}
+
+type KafkaConfig struct {
+	Brokers       string `mapstructure:"brokers"`
+	JobTopic      string `mapstructure:"job_topic"`
+	ResultTopic   string `mapstructure:"result_topic"`
+	DLTTopic      string `mapstructure:"dlt_topic"`
+	ConsumerGroup string `mapstructure:"consumer_group"`
 }
 
 type SMTPConfig struct {
