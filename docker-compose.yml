@@ -131,13 +131,9 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
-    env_file:
-      - ./environment/service.env
-    entrypoint: ["/bin/bash", "-ec"]
-    command: >
-      /opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic $${KAFKA_JUDGE_JOB_TOPIC} --partitions 3 --replication-factor 1 &&
-      /opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic $${KAFKA_JUDGE_DLT_TOPIC} --partitions 1 --replication-factor 1 &&
-      /opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic $${KAFKA_JUDGE_RESULT_TOPIC} --partitions 3 --replication-factor 1
+    entrypoint: ["/bin/bash", "/scripts/kafka-init.sh"]
+    volumes:
+      - ./infra/kafka-init.sh:/scripts/kafka-init.sh:ro
     networks:
       - judge_internal
     restart: "no"
@@ -256,6 +252,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     networks:
       - judge_internal
     logging: *default-logging
@@ -275,6 +273,8 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
       go-judge:
         condition: service_started
       submission-service:
