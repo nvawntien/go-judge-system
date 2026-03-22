@@ -1,4 +1,4 @@
-# 🧩 Go Judge System - Problem Service
+# Go Judge System - Problem Service
 
 ![Go Version](https://img.shields.io/badge/Go-1.24-00ADD8?style=flat&logo=go)
 ![Architecture](https://img.shields.io/badge/Architecture-Hexagonal-8A2BE2)
@@ -11,7 +11,7 @@ Built with **Go**, this service follows **Hexagonal Architecture (Ports and Adap
 
 ---
 
-## ✨ Key Features
+## Key Features
 
 - **Public problem catalog**: List published problems and retrieve problem details by slug.
 - **Admin problem management**: Create, update, hide, publish, and delete problems using stable numeric IDs.
@@ -24,7 +24,7 @@ Built with **Go**, this service follows **Hexagonal Architecture (Ports and Adap
 
 ---
 
-## 🏗️ Architecture & Design Patterns
+## Architecture & Design Patterns
 
 This service uses **Hexagonal Architecture** so the problem domain remains isolated from Gin, PostgreSQL, and gateway-specific concerns.
 
@@ -47,7 +47,7 @@ graph TD
 
 ---
 
-## 💻 Technology Stack
+## Technology Stack
 
 | Category | Technology |
 | :--- | :--- |
@@ -59,11 +59,10 @@ graph TD
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 - Docker Engine and Docker Compose
-- Go 1.24+
 
 ### Quick Start (Docker Compose)
 
@@ -72,35 +71,17 @@ graph TD
    ```bash
    docker compose up -d problem-service
    ```
-3. Verify the service:
-   - API: `http://localhost:8082`
-   - Health check: `http://localhost:8082/health`
-
-### Local Development Setup
-
-1. Install dependencies:
-   ```bash
-   go mod download
-   ```
-2. Regenerate Wire code when constructor wiring changes:
-   ```bash
-   cd cmd/server
-   wire
-   ```
-3. Run the server:
-   ```bash
-   export DATABASE_PASSWORD=your_db_password
-
-   go run ./cmd/server
-   ```
+3. Verify the service from inside the Docker network or through the gateway:
+   - Public API: `http://localhost:8080/api/v1/problems`
+   - Health check: use `docker compose exec problem-service wget -qO- http://localhost:8082/health`
 
 ### Local Access Note
 
-Protected routes in this service expect `X-User-ID`, `X-Username`, and `X-Role` headers injected by the API gateway. For realistic local testing of authenticated endpoints, call the service through the gateway on `http://localhost:8080` or provide those headers manually in direct requests.
+Protected routes in this service expect `X-User-ID`, `X-Username`, and `X-Role` headers injected by the API gateway. For realistic local testing of authenticated endpoints, call the service through the gateway on `http://localhost:8080` or provide those headers manually in direct requests. In the Docker Compose setup, the service port is internal to the network.
 
 ---
 
-## 📡 API Reference
+## API Reference
 
 ### Public Endpoints
 
@@ -144,12 +125,13 @@ Protected routes in this service expect `X-User-ID`, `X-Username`, and `X-Role` 
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
 The service uses a hybrid configuration model:
 
 1. `config/config.yaml` stores non-sensitive settings such as server mode, port, logger configuration, and database host/pool parameters.
 2. Environment variables override secret fields such as `database.password`.
+3. The application loads configuration from `/app/config` at runtime, so Docker Compose is the supported execution path without additional path remapping.
 
 Current default runtime profile:
 

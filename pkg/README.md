@@ -1,4 +1,4 @@
-# 📦 Go Judge System - Shared Package Library
+# Go Judge System - Shared Package Library
 
 ![Go Version](https://img.shields.io/badge/Go-1.24-00ADD8?style=flat&logo=go)
 ![Module](https://img.shields.io/badge/Module-go--judge--system%2Fpkg-4C8EDA)
@@ -10,18 +10,21 @@ This module is intentionally kept focused on **cross-service infrastructure and 
 
 ---
 
-## ✨ What This Module Provides
+## What This Module Provides
 
 - **Shared configuration loading** with Viper.
 - **PostgreSQL connection bootstrap** with GORM.
 - **Redis client bootstrap** with connectivity validation.
+- **Kafka producer and consumer helpers** with Sarama.
 - **Reusable auth claims helpers** for Gin contexts.
 - **Centralized API response format** and business error mapping.
 - **Structured logging setup** with Zap and log rotation.
+- **Judge contract models** for submission jobs and results.
+- **Sandbox execution metadata** for language-specific run commands.
 
 ---
 
-## 🧱 Package Overview
+## Package Overview
 
 ### `auth/`
 
@@ -32,6 +35,15 @@ Utilities for working with authenticated user context inside Gin handlers and mi
 - Provides convenience helpers such as `IsAdmin`, `IsSuperAdmin`, and `CanManage`.
 
 Used by services that receive identity information from the API gateway and need consistent authorization checks.
+
+### `judge/`
+
+Kafka payload contracts shared between the submission service and judge worker.
+
+- Defines the typed submission job message sent to the worker.
+- Defines the typed result message sent back to the submission service.
+
+Used when services need a stable schema for judge pipeline events.
 
 ### `cache/`
 
@@ -64,6 +76,26 @@ PostgreSQL connection bootstrap for GORM.
 
 Used by services that persist data in PostgreSQL.
 
+### `gojudge/`
+
+Sandbox execution metadata for the go-judge runtime.
+
+- Defines language-specific compile and run commands.
+- Provides default source file and executable naming helpers.
+- Encapsulates the request/response shapes used by the executor runtime.
+
+Used by the judge worker when preparing code for execution inside the sandbox.
+
+### `kafka/`
+
+Sarama-based Kafka helpers.
+
+- Creates a configured synchronous producer.
+- Creates a configured consumer group.
+- Parses and validates broker lists from configuration.
+
+Used by services that publish or consume judge-related messages.
+
 ### `logger/`
 
 Structured logging bootstrap with Zap.
@@ -87,7 +119,7 @@ This package is especially important because it standardizes how all services re
 
 ---
 
-## 🏗️ Design Intent
+## Design Intent
 
 The `pkg/` module is meant for **generic, reusable, service-agnostic code**.
 
@@ -106,18 +138,21 @@ As a rule: if the code contains domain behavior for only one service, it should 
 
 ---
 
-## 📁 Directory Map
+## Directory Map
 
 - `auth/`: Gin auth claims helpers.
 - `cache/`: Redis client factory.
 - `config/`: Shared config structs and loader.
 - `database/`: GORM PostgreSQL connector.
+- `gojudge/`: Sandbox runtime config and request/response models.
+- `kafka/`: Sarama producer and consumer helpers.
 - `logger/`: Zap logger factory.
+- `judge/`: Job and result message contracts shared across services.
 - `response/`: API responses, codes, errors, and request-binding helpers.
 
 ---
 
-## 🚀 Usage Pattern
+## Usage Pattern
 
 Typical service startup flow using `pkg/` looks like this:
 
@@ -129,11 +164,12 @@ Typical service startup flow using `pkg/` looks like this:
 
 ---
 
-## 💻 Module Dependencies
+## Module Dependencies
 
 Core external libraries used by this shared module:
 
 - `github.com/gin-gonic/gin`
+- `github.com/IBM/sarama`
 - `github.com/redis/go-redis/v9`
 - `github.com/spf13/viper`
 - `go.uber.org/zap`
@@ -143,7 +179,7 @@ Core external libraries used by this shared module:
 
 ---
 
-## ⚠️ Notes
+## Notes
 
 - `pkg/` is a standalone Go module: `go-judge-system/pkg`.
 - Service-specific code should depend on this module, not the other way around.

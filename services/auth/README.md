@@ -1,4 +1,4 @@
-# 🔐 Go Judge System - Authentication Service
+# Go Judge System - Authentication Service
 
 ![Go Version](https://img.shields.io/badge/Go-1.24-00ADD8?style=flat&logo=go)
 ![Architecture](https://img.shields.io/badge/Architecture-Hexagonal-8A2BE2)
@@ -12,7 +12,7 @@ Built with **Go**, this service follows **Hexagonal Architecture (Ports and Adap
 
 ---
 
-## ✨ Key Features
+## Key Features
 
 - **JWT-based authentication**: Short-lived access tokens and refresh-token flow.
 - **OTP verification flows**: Account activation and password reset via SMTP email.
@@ -24,7 +24,7 @@ Built with **Go**, this service follows **Hexagonal Architecture (Ports and Adap
 
 ---
 
-## 🏗️ Architecture & Design Patterns
+## Architecture & Design Patterns
 
 This service is structured around **Hexagonal Architecture**, allowing business rules to stay independent from Gin, PostgreSQL, Redis, and SMTP.
 
@@ -47,7 +47,7 @@ graph TD
 
 ---
 
-## 💻 Technology Stack
+## Technology Stack
 
 | Category | Technology |
 | :--- | :--- |
@@ -62,11 +62,10 @@ graph TD
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 - Docker Engine and Docker Compose
-- Go 1.24+
 
 ### Quick Start (Docker Compose)
 
@@ -75,35 +74,14 @@ graph TD
    ```bash
    docker compose up -d auth-service
    ```
-3. Verify the service:
-   - API: `http://localhost:8081`
-   - Health check: `http://localhost:8081/health`
-   - MailHog UI: `http://localhost:8025`
-
-### Local Development Setup
-
-1. Install dependencies:
-   ```bash
-   go mod download
-   ```
-2. Regenerate Wire code when constructor wiring changes:
-   ```bash
-   cd cmd/server
-   wire
-   ```
-3. Run the server:
-   ```bash
-   export DATABASE_PASSWORD=your_db_password
-   export REDIS_PASSWORD=your_redis_password
-   export JWT_ACCESS_SECRET=your_access_secret
-   export JWT_REFRESH_SECRET=your_refresh_secret
-
-   go run ./cmd/server
-   ```
+3. Verify the service from inside the Docker network or through the gateway:
+   - Public API: `http://localhost:8080/api/v1/auth/...`
+   - Health check: use `docker compose exec auth-service wget -qO- http://localhost:8081/health`
+   - MailHog UI (dev profile): `http://localhost:8025`
 
 ---
 
-## 📡 API Reference
+## API Reference
 
 ### Public Endpoints
 
@@ -137,12 +115,21 @@ Send the token via `Authorization: Bearer <token>` or the `access_token` cookie.
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
 The service uses a hybrid configuration model:
 
 1. `config/config.yaml` contains non-sensitive runtime configuration such as server settings, logging, database host, Redis host, SMTP host, and JWT TTLs.
 2. Environment variables override secret fields such as `database.password`, `redis.password`, `jwt.access_secret`, and `jwt.refresh_secret`.
+3. The application loads configuration from `/app/config` at runtime, so Docker Compose is the supported execution path without additional path remapping.
+
+Current default runtime profile:
+
+- Service name: `auth-service`
+- Port: `8081`
+- Database: `auth_db`
+- Redis: `redis:6379`
+- MailHog SMTP: `mailhog:1025`
 
 ---
 Built for the Go Judge System.
