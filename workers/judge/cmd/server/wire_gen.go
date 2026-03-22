@@ -35,7 +35,8 @@ func InitializeApp(cfg *config.Config) (*container.App, func(), error) {
 	}
 	kafkaResultPublisher := judge.NewKafkaResultPublisher(syncProducer, kafkaConfig, zapLogger)
 	processJudgeJobUseCase := judge2.NewProcessJudgeJobUseCase(goJudgeClient, kafkaResultPublisher, zapLogger)
-	judgeJobConsumer := kafka2.NewJudgeJobConsumer(consumerGroup, kafkaConfig, processJudgeJobUseCase, zapLogger)
+	dltPublisher := kafka2.NewDLTPublisher(syncProducer, kafkaConfig, zapLogger)
+	judgeJobConsumer := kafka2.NewJudgeJobConsumer(consumerGroup, kafkaConfig, processJudgeJobUseCase, dltPublisher, zapLogger)
 	app := container.NewApp(cfg, judgeJobConsumer, zapLogger, syncProducer)
 	return app, func() {
 	}, nil

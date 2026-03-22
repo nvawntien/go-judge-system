@@ -35,6 +35,7 @@ var UseCaseProviderSet = wire.NewSet()
 var InboundProviderSet = wire.NewSet(
 	judgeuc.NewProcessJudgeJobUseCase,
 	wire.Bind(new(inbound.ProcessJudgeJobUseCase), new(*judgeuc.ProcessJudgeJobUseCase)),
+	kafkain.NewDLTPublisher,
 	kafkain.NewJudgeJobConsumer,
 )
 
