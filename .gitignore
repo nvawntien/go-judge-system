@@ -6,6 +6,5 @@ logs/
 *.log
 *.log.*
 
-*.sh
 api-tests/
 
