@@ -7,8 +7,8 @@ type ResultStatus string
 const (
 	ResultAccepted     ResultStatus = "ACCEPTED"
 	ResultWrongAnswer  ResultStatus = "WRONG_ANSWER"
-	ResultTimeLimit    ResultStatus = "TLE"
-	ResultMemoryLimit  ResultStatus = "MLE"
+	ResultTimeLimit    ResultStatus = "TIME_LIMIT_EXCEEDED"
+	ResultMemoryLimit  ResultStatus = "MEMORY_LIMIT_EXCEEDED"
 	ResultRuntimeError ResultStatus = "RUNTIME_ERROR"
 )
 

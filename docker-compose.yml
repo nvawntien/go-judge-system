@@ -177,6 +177,8 @@ services:
       - ES_ENABLE_GRPC=true
       - ES_ENABLE_DEBUG=false
       - ES_LOG_LEVEL=info
+      - ES_SRC_PREFIX=/cache/testcases
+      - ES_PARALLELISM=8
     volumes:
       - testcase_cache:/cache/testcases:ro
     tmpfs:
@@ -189,7 +191,7 @@ services:
       resources:
         limits:
           cpus: "2.00"
-          memory: 1024M
+          memory: 2048M
 
   mailhog:
     container_name: judge_mailhog

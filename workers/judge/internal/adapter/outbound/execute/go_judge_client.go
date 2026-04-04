@@ -24,7 +24,7 @@ type GoJudgeClient struct {
 
 func NewGoJudgeClient(baseURL string, logger *zap.Logger) *GoJudgeClient {
 	return &GoJudgeClient{
-		client: resty.New().SetBaseURL(baseURL).SetTimeout(30 * time.Second),
+		client: resty.New().SetBaseURL(baseURL).SetTimeout(120 * time.Second),
 		logger: logger,
 	}
 }
@@ -61,7 +61,7 @@ func (c *GoJudgeClient) Execute(ctx context.Context, language, sourceCode string
 					Args: langCfg.Compile.Command,
 					Env:  langCfg.Compile.Env,
 					Files: []*gojudge.File{
-						{Content: stringPtr("")},                          // stdin
+						{Content: stringPtr("")},                            // stdin
 						{Name: stringPtr("stdout"), Max: int64Ptr(1048576)}, // stdout
 						{Name: stringPtr("stderr"), Max: int64Ptr(1048576)}, // stderr
 					},
@@ -118,64 +118,91 @@ func (c *GoJudgeClient) Execute(ctx context.Context, language, sourceCode string
 		exeFileID = fileID
 	}
 
-	// Step 2: Build run commands for all test cases
-	// Key change: stdin uses Src field (file path on shared volume) instead of Content (string in RAM)
-	runReq := gojudge.Request{
-		Cmd: make([]*gojudge.Cmd, 0, bundle.TestCount),
-	}
+	// Step 2: Run test cases in batches to avoid overwhelming go-judge
+	const batchSize = 50
+	allResponses := make(gojudge.Response, 0, bundle.TestCount)
 
-	for i := 1; i <= bundle.TestCount; i++ {
-		// Path to .in file — go-judge reads DIRECTLY from shared volume
-		// Worker does NOT need to load .in file into RAM!
-		inputPath := filepath.Join(bundle.Dir, fmt.Sprintf("%d.in", i))
-
-		runCmd := &gojudge.Cmd{
-			Args: langCfg.Run.Command,
-			Env:  langCfg.Run.Env,
-			Files: []*gojudge.File{
-				{Src: stringPtr(inputPath)},                             // stdin: go-judge reads file directly
-				{Name: stringPtr("stdout"), Max: int64Ptr(10485760)},     // stdout
-				{Name: stringPtr("stderr"), Max: int64Ptr(10485760)},     // stderr
-			},
-			CopyOut:     []string{"stdout"},
-			MemoryLimit: runMemLimit,
-			CPULimit:    runTimeLimit,
-			ProcLimit:   50,
+	for batchStart := 1; batchStart <= bundle.TestCount; batchStart += batchSize {
+		batchEnd := batchStart + batchSize - 1
+		if batchEnd > bundle.TestCount {
+			batchEnd = bundle.TestCount
 		}
 
-		if hasCompile {
-			runCmd.CopyIn = map[string]*gojudge.File{
-				gojudge.GetExeFileName(language): {FileID: stringPtr(exeFileID)},
-			}
-		} else {
-			runCmd.CopyIn = map[string]*gojudge.File{
-				gojudge.GetSourceFileName(language): {Content: &sourceCode},
-			}
+		runReq := gojudge.Request{
+			Cmd: make([]*gojudge.Cmd, 0, batchEnd-batchStart+1),
 		}
 
-		runReq.Cmd = append(runReq.Cmd, runCmd)
+		for i := batchStart; i <= batchEnd; i++ {
+			inputPath := filepath.Join(bundle.Dir, fmt.Sprintf("%d.in", i))
+
+			runCmd := &gojudge.Cmd{
+				Args: langCfg.Run.Command,
+				Env:  langCfg.Run.Env,
+				Files: []*gojudge.File{
+					{Src: stringPtr(inputPath)},
+					{Name: stringPtr("stdout"), Max: int64Ptr(2 * 1024 * 1024)},
+					{Name: stringPtr("stderr"), Max: int64Ptr(2 * 1024 * 1024)},
+				},
+				CopyOut:     []string{"stdout"},
+				MemoryLimit: runMemLimit,
+				CPULimit:    runTimeLimit,
+				ProcLimit:   50,
+			}
+
+			if hasCompile {
+				runCmd.CopyIn = map[string]*gojudge.File{
+					gojudge.GetExeFileName(language): {FileID: stringPtr(exeFileID)},
+				}
+			} else {
+				runCmd.CopyIn = map[string]*gojudge.File{
+					gojudge.GetSourceFileName(language): {Content: &sourceCode},
+				}
+			}
+
+			runReq.Cmd = append(runReq.Cmd, runCmd)
+		}
+
+		var runResp gojudge.Response
+		resp, err := c.client.R().
+			SetContext(ctx).
+			SetBody(runReq).
+			SetResult(&runResp).
+			Post("/run")
+
+		if err != nil {
+			c.logger.Error("failed to call go-judge API",
+				zap.Int("batch_start", batchStart),
+				zap.Int("batch_end", batchEnd),
+				zap.Error(err),
+			)
+			return nil, fmt.Errorf("call go-judge run API (batch %d-%d): %w", batchStart, batchEnd, err)
+		}
+
+		expectedLen := batchEnd - batchStart + 1
+		if resp.IsError() || len(runResp) != expectedLen {
+			return nil, fmt.Errorf("go-judge run status %d, expected %d results got %d",
+				resp.StatusCode(), expectedLen, len(runResp))
+		}
+
+		allResponses = append(allResponses, runResp...)
+
+		// Early termination: if any test in this batch failed, stop immediately
+		for _, res := range runResp {
+			status := mapJudgeStatus(res.Status, res.ExitStatus)
+			if status != "ACCEPTED" {
+				c.logger.Info("early termination: non-ACCEPTED result detected, skipping remaining batches",
+					zap.Int("tests_run", len(allResponses)),
+					zap.Int("tests_total", bundle.TestCount),
+					zap.String("failing_status", status),
+				)
+				return c.parseJudgeResult(allResponses, bundle), nil
+			}
+		}
 	}
 
-	var runResp gojudge.Response
-	resp, err := c.client.R().
-		SetContext(ctx).
-		SetBody(runReq).
-		SetResult(&runResp).
-		Post("/run")
+	c.logger.Info("go-judge run completed", zap.Int("total_tests", len(allResponses)))
 
-	if err != nil {
-		c.logger.Error("failed to call go-judge API for execution", zap.Error(err))
-		return nil, fmt.Errorf("call go-judge run API: %w", err)
-	}
-
-	if resp.IsError() || len(runResp) != bundle.TestCount {
-		return nil, fmt.Errorf("go-judge run returned status: %d or mismatched response length (expected %d, got %d)",
-			resp.StatusCode(), bundle.TestCount, len(runResp))
-	}
-
-	c.logger.Info("go-judge run raw status", zap.Any("resp", runResp))
-
-	return c.parseJudgeResult(runResp, bundle), nil
+	return c.parseJudgeResult(allResponses, bundle), nil
 }
 
 // parseJudgeResult processes go-judge responses and compares output with expected.
