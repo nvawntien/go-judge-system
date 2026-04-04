@@ -17,12 +17,3 @@ type ProblemRepository interface {
 	ListByAuthor(ctx context.Context, authorID string, offset, limit int, difficulty, search string) ([]*entity.Problem, error)
 	CountByAuthor(ctx context.Context, authorID string, difficulty, search string) (int64, error)
 }
-
-type TestCaseRepository interface {
-	Create(ctx context.Context, testCase *entity.TestCase) error
-	GetByID(ctx context.Context, id int64) (*entity.TestCase, error)
-	Update(ctx context.Context, testCase *entity.TestCase) error
-	Delete(ctx context.Context, id int64) error
-	GetByProblemID(ctx context.Context, problemID int64) ([]*entity.TestCase, error)
-	CountByProblemID(ctx context.Context, problemID int64) (int, error)
-}

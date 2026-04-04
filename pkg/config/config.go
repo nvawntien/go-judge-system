@@ -15,6 +15,7 @@ type Config struct {
 	SMTP     SMTPConfig     `mapstructure:"smtp"`
 	JWT      JWTConfig      `mapstructure:"jwt"`
 	Kafka    KafkaConfig    `mapstructure:"kafka"`
+	MinIO    MinIOConfig    `mapstructure:"minio"`
 }
 
 type ServerConfig struct {
@@ -62,6 +63,14 @@ type KafkaConfig struct {
 	ResultTopic   string `mapstructure:"result_topic"`
 	DLTTopic      string `mapstructure:"dlt_topic"`
 	ConsumerGroup string `mapstructure:"consumer_group"`
+}
+
+type MinIOConfig struct {
+	Endpoint  string `mapstructure:"endpoint"`
+	AccessKey string `mapstructure:"access_key"`
+	SecretKey string `mapstructure:"secret_key"`
+	Bucket    string `mapstructure:"bucket"`
+	UseSSL    bool   `mapstructure:"use_ssl"`
 }
 
 type SMTPConfig struct {

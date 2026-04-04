@@ -14,17 +14,18 @@ import (
 	"go.uber.org/zap"
 )
 
-// everyone can get this problem
+// getProblemUseCase — public (by slug) and admin (by id) views.
+// Examples now live on the Problem entity; no need to query TestCase for public view.
 type getProblemUseCase struct {
-	problemRepo  outbound.ProblemRepository
-	testCaseRepo outbound.TestCaseRepository
-	logger       *zap.Logger
+	problemRepo outbound.ProblemRepository
+	logger      *zap.Logger
 }
 
-func NewGetProblemUseCase(problemRepo outbound.ProblemRepository, testCaseRepo outbound.TestCaseRepository, logger *zap.Logger) inbound.GetProblemUseCase {
-	return &getProblemUseCase{problemRepo: problemRepo, testCaseRepo: testCaseRepo, logger: logger}
+func NewGetProblemUseCase(problemRepo outbound.ProblemRepository, logger *zap.Logger) inbound.GetProblemUseCase {
+	return &getProblemUseCase{problemRepo: problemRepo, logger: logger}
 }
 
+// Execute — public view (by slug). Returns problem with examples from entity.
 func (uc *getProblemUseCase) Execute(ctx context.Context, params dto.ProblemSlugRequest) (dto.ProblemDetailResponse, error) {
 	problem, err := uc.problemRepo.GetBySlug(ctx, params.Slug)
 	if err != nil {
@@ -38,27 +39,12 @@ func (uc *getProblemUseCase) Execute(ctx context.Context, params dto.ProblemSlug
 		return dto.ProblemDetailResponse{}, domain.ErrProblemNotFound
 	}
 
-	testCases, err := uc.testCaseRepo.GetByProblemID(ctx, problem.ID)
-	if err != nil {
-		uc.logger.Error("failed to get test cases", zap.Error(err))
-		return dto.ProblemDetailResponse{}, domain.ErrInternalServer.Wrap(err)
-	}
-
-	// Public: only show example test cases
-	examples := make([]dto.TestCaseResponse, 0)
-	for _, tc := range testCases {
-		if tc.IsExample {
-			examples = append(examples, usecase.MapTestCaseToResponse(tc))
-		}
-	}
-
 	return dto.ProblemDetailResponse{
 		ProblemResponse: usecase.MapProblemToResponse(problem, false),
-		TestCases:       examples,
 	}, nil
 }
 
-// only admin can get by id
+// ExecuteAdmin — admin view (by id). Returns problem including private fields.
 func (uc *getProblemUseCase) ExecuteAdmin(ctx context.Context, claims auth.Claims, params dto.ProblemIDRequest) (dto.ProblemDetailResponse, error) {
 	problem, err := uc.problemRepo.GetByID(ctx, params.ID)
 	if err != nil {
@@ -68,23 +54,11 @@ func (uc *getProblemUseCase) ExecuteAdmin(ctx context.Context, claims auth.Claim
 		return dto.ProblemDetailResponse{}, domain.ErrProblemNotFound
 	}
 
-	if !claims.CanManage(problem.AuthorID) {
-		return dto.ProblemDetailResponse{}, domain.ErrNotOwner
-	}
-
-	testCases, err := uc.testCaseRepo.GetByProblemID(ctx, problem.ID)
-	if err != nil {
-		uc.logger.Error("failed to get test cases", zap.Error(err))
-		return dto.ProblemDetailResponse{}, domain.ErrInternalServer.Wrap(err)
-	}
-
-	all := make([]dto.TestCaseResponse, 0, len(testCases))
-	for _, tc := range testCases {
-		all = append(all, usecase.MapTestCaseToResponse(tc))
+	if problem.IsHidden && !claims.CanManage(problem.AuthorID) {
+		return dto.ProblemDetailResponse{}, domain.ErrProblemNotFound
 	}
 
 	return dto.ProblemDetailResponse{
 		ProblemResponse: usecase.MapProblemToResponse(problem, true),
-		TestCases:       all,
 	}, nil
 }

@@ -320,6 +320,37 @@ func HandleWithParamsAndBody[P any, B any, Res any](c *gin.Context, fn func(cont
 	Success(c, successCode, res)
 }
 
+// HandleWithParamsAndForm: URI params + multipart form/form-data + claims → data.
+// Identical to HandleWithParamsAndBody but uses ShouldBind (auto-detects content type)
+// instead of ShouldBindJSON. Used for file upload endpoints (e.g. Upload TestCase ZIP).
+func HandleWithParamsAndForm[P any, F any, Res any](c *gin.Context, fn func(context.Context, auth.Claims, P, F) (Res, error), successCode int) {
+	claims, ok := auth.GetClaims(c)
+	if !ok {
+		Error(c, CodeUnauthorized, "unauthorized")
+		return
+	}
+
+	var params P
+	if err := c.ShouldBindUri(&params); err != nil {
+		Error(c, CodeParamInvalid, "invalid uri params")
+		return
+	}
+
+	var form F
+	if err := c.ShouldBind(&form); err != nil {
+		Error(c, CodeBadRequest, "invalid form data")
+		return
+	}
+
+	res, err := fn(c.Request.Context(), claims, params, form)
+	if err != nil {
+		HandleError(c, err)
+		return
+	}
+
+	Success(c, successCode, res)
+}
+
 // HandleError: Handles errors and returns appropriate HTTP responses.
 func HandleError(c *gin.Context, err error) {
 	var appErr *AppError

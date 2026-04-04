@@ -10,39 +10,49 @@ import (
 	"go-judge-system/services/problem/internal/domain/entity"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type TestCaseDAO struct {
-	ID             int64     `gorm:"primaryKey;autoIncrement"`
-	ProblemID      int64     `gorm:"not null;index"`
-	Input          string    `gorm:"type:text;not null"`
-	ExpectedOutput string    `gorm:"type:text;not null"`
-	IsExample      bool      `gorm:"default:false"`
-	Order          int       `gorm:"not null"`
-	CreatedAt      time.Time `gorm:"autoCreateTime"`
+	ID           int64     `gorm:"primaryKey;autoIncrement"`
+	ProblemID    int64     `gorm:"uniqueIndex;not null"`
+	ZipObjectKey string    `gorm:"type:varchar(500);not null"`
+	TestCount    int       `gorm:"not null"`
+	Version      string    `gorm:"type:varchar(50);not null"`
+	CreatedAt    time.Time `gorm:"autoCreateTime"`
 }
 
 func (TestCaseDAO) TableName() string { return "test_cases" }
 
-type testCaseRepository struct{ db *gorm.DB }
+type testCaseRepository struct {
+	db *gorm.DB
+}
 
 func NewTestCaseRepository(db *gorm.DB) outbound.TestCaseRepository {
 	db.AutoMigrate(&TestCaseDAO{})
 	return &testCaseRepository{db: db}
 }
 
-func (r *testCaseRepository) Create(ctx context.Context, tc *entity.TestCase) error {
+func (r *testCaseRepository) Upsert(ctx context.Context, tc *entity.TestCase) error {
 	dao := toTestCaseDAO(tc)
-	if err := r.db.WithContext(ctx).Create(dao).Error; err != nil {
-		return err
+	err := r.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "problem_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"zip_object_key",
+			"test_count",
+			"version",
+		}),
+	}).Create(dao).Error
+
+	if err == nil {
+		tc.ID = dao.ID
 	}
-	tc.ID = dao.ID
-	return nil
+	return err
 }
 
-func (r *testCaseRepository) GetByID(ctx context.Context, id int64) (*entity.TestCase, error) {
+func (r *testCaseRepository) GetByProblemID(ctx context.Context, problemID int64) (*entity.TestCase, error) {
 	var dao TestCaseDAO
-	if err := r.db.WithContext(ctx).First(&dao, id).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where("problem_id = ?", problemID).First(&dao).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, domain.ErrTestCaseNotFound
 		}
@@ -51,50 +61,28 @@ func (r *testCaseRepository) GetByID(ctx context.Context, id int64) (*entity.Tes
 	return toTestCaseEntity(&dao), nil
 }
 
-func (r *testCaseRepository) Update(ctx context.Context, tc *entity.TestCase) error {
-	return r.db.WithContext(ctx).Model(&TestCaseDAO{}).Where("id = ?", tc.ID).
-		Updates(map[string]interface{}{
-			"input":           tc.Input,
-			"expected_output": tc.ExpectedOutput,
-			"is_example":      tc.IsExample,
-			"order":           tc.Order,
-		}).Error
-}
-
-func (r *testCaseRepository) Delete(ctx context.Context, id int64) error {
-	return r.db.WithContext(ctx).Delete(&TestCaseDAO{}, id).Error
-}
-
-func (r *testCaseRepository) GetByProblemID(ctx context.Context, problemID int64) ([]*entity.TestCase, error) {
-	var daos []TestCaseDAO
-	if err := r.db.WithContext(ctx).Where("problem_id = ?", problemID).Order(`"order" ASC`).Find(&daos).Error; err != nil {
-		return nil, err
-	}
-	results := make([]*entity.TestCase, 0, len(daos))
-	for _, dao := range daos {
-		results = append(results, toTestCaseEntity(&dao))
-	}
-	return results, nil
-}
-
-func (r *testCaseRepository) CountByProblemID(ctx context.Context, problemID int64) (int, error) {
-	var count int64
-	err := r.db.WithContext(ctx).Model(&TestCaseDAO{}).Where("problem_id = ?", problemID).Count(&count).Error
-	return int(count), err
+func (r *testCaseRepository) DeleteByProblemID(ctx context.Context, problemID int64) error {
+	return r.db.WithContext(ctx).Where("problem_id = ?", problemID).Delete(&TestCaseDAO{}).Error
 }
 
 func toTestCaseDAO(tc *entity.TestCase) *TestCaseDAO {
 	return &TestCaseDAO{
-		ID: tc.ID, ProblemID: tc.ProblemID, Input: tc.Input,
-		ExpectedOutput: tc.ExpectedOutput, IsExample: tc.IsExample, Order: tc.Order,
-		CreatedAt: tc.CreatedAt,
+		ID:           tc.ID,
+		ProblemID:    tc.ProblemID,
+		ZipObjectKey: tc.ZipObjectKey,
+		TestCount:    tc.TestCount,
+		Version:      tc.Version,
+		CreatedAt:    tc.CreatedAt,
 	}
 }
 
 func toTestCaseEntity(dao *TestCaseDAO) *entity.TestCase {
 	return &entity.TestCase{
-		ID: dao.ID, ProblemID: dao.ProblemID, Input: dao.Input,
-		ExpectedOutput: dao.ExpectedOutput, IsExample: dao.IsExample, Order: dao.Order,
-		CreatedAt: dao.CreatedAt,
+		ID:           dao.ID,
+		ProblemID:    dao.ProblemID,
+		ZipObjectKey: dao.ZipObjectKey,
+		TestCount:    dao.TestCount,
+		Version:      dao.Version,
+		CreatedAt:    dao.CreatedAt,
 	}
 }

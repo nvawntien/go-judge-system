@@ -25,3 +25,10 @@ database:
   max_open_conns: 30
   max_idle_conns: 10
   conn_max_lifetime: 3600
+
+minio:
+  endpoint: "minio:9000"
+  access_key: "" # overridden by MINIO_ACCESS_KEY env
+  secret_key: "" # overridden by MINIO_SECRET_KEY env
+  bucket: "testcases" 
+  use_ssl: false

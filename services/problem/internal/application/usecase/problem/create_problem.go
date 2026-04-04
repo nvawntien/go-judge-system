@@ -8,6 +8,7 @@ import (
 	"go-judge-system/services/problem/internal/application/dto"
 	"go-judge-system/services/problem/internal/application/port/inbound"
 	"go-judge-system/services/problem/internal/application/port/outbound"
+	"go-judge-system/services/problem/internal/application/usecase"
 	"go-judge-system/services/problem/internal/domain"
 	"go-judge-system/services/problem/internal/domain/entity"
 
@@ -28,16 +29,24 @@ func (uc *createProblemUseCase) Execute(ctx context.Context, claims auth.Claims,
 		return dto.CreateProblemResponse{}, domain.ErrForbidden
 	}
 
-	problem := entity.NewProblem(req.Title, req.Slug, req.Description, entity.Difficulty(req.Difficulty), req.TimeLimit, req.MemoryLimit, claims.UserID)
+	examples := usecase.MapExampleDTOsToEntity(req.Examples)
+
+	problem := entity.NewProblem(
+		req.Title, req.Slug, req.Description,
+		entity.Difficulty(req.Difficulty),
+		examples, req.Constraints, req.Hints,
+		req.TimeLimit, req.MemoryLimit,
+		claims.UserID,
+	)
 
 	if err := uc.problemRepo.Create(ctx, problem); err != nil {
 		if errors.Is(err, domain.ErrProblemAlreadyExists) {
 			return dto.CreateProblemResponse{}, domain.ErrProblemAlreadyExists
 		}
-		
+
 		uc.logger.Error("failed to create problem", zap.Error(err))
 		return dto.CreateProblemResponse{}, domain.ErrInternalServer.Wrap(err)
 	}
 
-	return dto.CreateProblemResponse{ID: problem.ID, Slug: problem.Slug}, nil
+	return dto.CreateProblemResponse{ID: problem.ID, Slug: problem.TitleSlug}, nil
 }

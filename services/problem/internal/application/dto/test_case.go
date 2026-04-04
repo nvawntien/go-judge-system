@@ -1,37 +1,26 @@
 package dto
 
-type TestCaseIDRequest struct {
-	ID int64 `uri:"id" binding:"required,min=1"`
+import "mime/multipart"
+
+type UploadTestCaseRequest struct {
+	File *multipart.FileHeader `form:"file" binding:"required"`
 }
 
-type CreateTestCaseRequest struct {
-	Input          string `json:"input" binding:"required"`
-	ExpectedOutput string `json:"expected_output" binding:"required"`
-	IsExample      bool   `json:"is_example"`
-	Order          int    `json:"order" binding:"required,min=1"`
+type UploadTestCasesResponse struct {
+	TestCount int    `json:"test_count"`
+	Version   string `json:"version"`
 }
 
-type CreateTestCaseResponse struct {
-	ID int64 `json:"id"`
+type TestCaseMetadataResponse struct {
+	ProblemID   int64  `json:"problem_id"`
+	TestCount   int    `json:"test_count"`
+	Version     string `json:"version"`
+	DownloadURL string `json:"download_url,omitempty"`
+	CreatedAt   string `json:"created_at"`
 }
 
-type UpdateTestCaseRequest struct {
-	Input          *string `json:"input,omitempty"`
-	ExpectedOutput *string `json:"expected_output,omitempty"`
-	IsExample      *bool   `json:"is_example,omitempty"`
-	Order          *int    `json:"order,omitempty" binding:"omitempty,min=1"`
-}
-
-type TestCaseResponse struct {
-	ID             int64  `json:"id"`
-	ProblemID      int64  `json:"problem_id"`
-	Input          string `json:"input"`
-	ExpectedOutput string `json:"expected_output"`
-	IsExample      bool   `json:"is_example"`
-	Order          int    `json:"order"`
-}
-
-type TestCaseListResponse struct {
-	Items []TestCaseResponse `json:"items"`
-	Total int                `json:"total"`
+type GetTestCaseMetaResponse struct {
+	TestCount   int    `json:"test_count"`
+	Version     string `json:"version"`
+	DownloadURL string `json:"download_url,omitempty"`
 }

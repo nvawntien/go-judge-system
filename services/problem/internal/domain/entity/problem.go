@@ -10,14 +10,25 @@ const (
 	Hard   Difficulty = "HARD"
 )
 
+// ProblemExample represents a sample test case displayed to users on the problem page.
+type ProblemExample struct {
+	Input       string
+	Output      string
+	Explanation string
+}
+
 type Problem struct {
 	ID          int64
-	Slug        string
 	Title       string
+	TitleSlug   string
 	Description string
 	Difficulty  Difficulty
 
-	TimeLimit   int
+	Examples    []ProblemExample
+	Constraints string
+	Hints       []string
+
+	TimeLimit   float64
 	MemoryLimit int
 
 	AuthorID string
@@ -28,12 +39,24 @@ type Problem struct {
 	DeletedAt *time.Time
 }
 
-func NewProblem(title, slug, desc string, diff Difficulty, timeLimit, memLimit int, authorID string) *Problem {
+func NewProblem(
+	title, slug, desc string,
+	diff Difficulty,
+	examples []ProblemExample,
+	constraints string,
+	hints []string,
+	timeLimit float64,
+	memLimit int,
+	authorID string,
+) *Problem {
 	return &Problem{
 		Title:       title,
-		Slug:        slug,
+		TitleSlug:   slug,
 		Description: desc,
 		Difficulty:  diff,
+		Examples:    examples,
+		Constraints: constraints,
+		Hints:       hints,
 		TimeLimit:   timeLimit,
 		MemoryLimit: memLimit,
 		AuthorID:    authorID,

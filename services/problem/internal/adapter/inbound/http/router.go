@@ -7,25 +7,22 @@ import (
 )
 
 type Router struct {
-	engine                  *gin.Engine
-	problemHandler          *handler.ProblemHandler
-	testcaseHandler         *handler.TestCaseHandler
-	internalTestCaseHandler *handler.InternalTestCaseHandler
-	authMiddleware          gin.HandlerFunc
+	engine          *gin.Engine
+	problemHandler  *handler.ProblemHandler
+	testcaseHandler *handler.TestCaseHandler
+	authMiddleware  gin.HandlerFunc
 }
 
 func NewRouter(
 	problemHandler *handler.ProblemHandler,
 	testcaseHandler *handler.TestCaseHandler,
-	internalTestCaseHandler *handler.InternalTestCaseHandler,
 	authMiddleware gin.HandlerFunc,
 ) *Router {
 	return &Router{
-		engine:                  gin.Default(),
-		problemHandler:          problemHandler,
-		testcaseHandler:         testcaseHandler,
-		internalTestCaseHandler: internalTestCaseHandler,
-		authMiddleware:          authMiddleware,
+		engine:          gin.Default(),
+		problemHandler:  problemHandler,
+		testcaseHandler: testcaseHandler,
+		authMiddleware:  authMiddleware,
 	}
 }
 
@@ -65,16 +62,7 @@ func (r *Router) SetupRoutes() {
 		admin.PUT("/problems/:id/hide", r.problemHandler.HideProblem.Handle)
 
 		// TestCase management (problem-scoped)
-		admin.POST("/problems/:id/testcases", r.testcaseHandler.CreateTestCase.Handle)
-		admin.GET("/problems/:id/testcases", r.testcaseHandler.ListTestCases.Handle)
-		admin.PUT("/testcases/:id", r.testcaseHandler.UpdateTestCase.Handle)
-		admin.DELETE("/testcases/:id", r.testcaseHandler.DeleteTestCase.Handle)
-	}
-
-	// ---- Internal routes (service-to-service, no auth, Docker network only) ----
-	internal := r.engine.Group("/internal/v1")
-	{
-		internal.GET("/problems/:id/testcases", r.internalTestCaseHandler.Handle)
+		admin.POST("/problems/:id/testcases", r.testcaseHandler.UploadTestCase.Handle)
 	}
 }
 

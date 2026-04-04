@@ -90,7 +90,31 @@ services:
         limits:
           cpus: "0.50"
           memory: 192M
-
+  minio:
+    container_name: judge_minio
+    image: minio/minio:RELEASE.2024-01-18T22-51-28Z
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - judge_internal
+    logging: *default-logging
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
+      interval: 5s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 512M
   kafka:
     container_name: judge_kafka
     image: bitnamilegacy/kafka:4.0.0-debian-12-r10
@@ -133,7 +157,7 @@ services:
         condition: service_healthy
     entrypoint: ["/bin/bash", "/scripts/kafka-init.sh"]
     volumes:
-      - ./infra/kafka-init.sh:/scripts/kafka-init.sh:ro
+      - ./infra/kafka/kafka-init.sh:/scripts/kafka-init.sh:ro
     networks:
       - judge_internal
     restart: "no"
@@ -155,7 +179,7 @@ services:
       - ES_ENABLE_DEBUG=false
       - ES_LOG_LEVEL=info
     volumes:
-      - ./test_cases:/judge/test_cases:ro
+      - testcase_cache:/cache/testcases:ro
     tmpfs:
       - /tmp:size=256M,exec,mode=777
       - /w:size=512M,exec,mode=777
@@ -232,6 +256,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      minio:
+        condition: service_healthy
     networks:
       - judge_internal
     logging: *default-logging
@@ -270,6 +296,10 @@ services:
     volumes:
       - ./workers/judge/config:/app/config:ro
       - ./workers/judge/logs:/app/logs
+      - testcase_cache:/cache/testcases
+    tmpfs:
+      - /tmp:size=256M,exec,mode=777
+      - /w:size=512M,exec,mode=777
     depends_on:
       kafka:
         condition: service_healthy
@@ -299,3 +329,8 @@ volumes:
     driver: local
   kafka_data:
     driver: local
+  minio_data:
+    driver: local
+  testcase_cache:
+    driver: local
+    

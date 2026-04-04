@@ -8,6 +8,7 @@ import (
 	"go-judge-system/services/problem/internal/application/dto"
 	"go-judge-system/services/problem/internal/application/port/inbound"
 	"go-judge-system/services/problem/internal/application/port/outbound"
+	"go-judge-system/services/problem/internal/application/usecase"
 	"go-judge-system/services/problem/internal/domain"
 	"go-judge-system/services/problem/internal/domain/entity"
 
@@ -32,6 +33,10 @@ func (uc *updateProblemUseCase) Execute(ctx context.Context, claims auth.Claims,
 		return domain.ErrProblemNotFound
 	}
 
+	if problem.IsHidden && !claims.CanManage(problem.AuthorID) {
+		return domain.ErrProblemNotFound
+	}
+
 	if !claims.CanManage(problem.AuthorID) {
 		return domain.ErrNotOwner
 	}
@@ -40,13 +45,22 @@ func (uc *updateProblemUseCase) Execute(ctx context.Context, claims auth.Claims,
 		problem.Title = *body.Title
 	}
 	if body.NewSlug != nil {
-		problem.Slug = *body.NewSlug
+		problem.TitleSlug = *body.NewSlug
 	}
 	if body.Description != nil {
 		problem.Description = *body.Description
 	}
 	if body.Difficulty != nil {
 		problem.Difficulty = entity.Difficulty(*body.Difficulty)
+	}
+	if body.Examples != nil {
+		problem.Examples = usecase.MapExampleDTOsToEntity(*body.Examples)
+	}
+	if body.Constraints != nil {
+		problem.Constraints = *body.Constraints
+	}
+	if body.Hints != nil {
+		problem.Hints = *body.Hints
 	}
 	if body.TimeLimit != nil {
 		problem.TimeLimit = *body.TimeLimit
