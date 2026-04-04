@@ -65,6 +65,12 @@ func (r *testCaseRepository) DeleteByProblemID(ctx context.Context, problemID in
 	return r.db.WithContext(ctx).Where("problem_id = ?", problemID).Delete(&TestCaseDAO{}).Error
 }
 
+func (r *testCaseRepository) ListAllZipObjectKeys(ctx context.Context) ([]string, error) {
+	var keys []string
+	err := r.db.WithContext(ctx).Model(&TestCaseDAO{}).Pluck("zip_object_key", &keys).Error
+	return keys, err
+}
+
 func toTestCaseDAO(tc *entity.TestCase) *TestCaseDAO {
 	return &TestCaseDAO{
 		ID:           tc.ID,

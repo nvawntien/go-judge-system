@@ -78,6 +78,26 @@ func (m *minioStorage) ListObjectsByPrefix(ctx context.Context, prefix string) (
 	return objectKeys, nil
 }
 
+func (m *minioStorage) ListObjectsWithInfo(ctx context.Context, prefix string) ([]outbound.ObjectInfo, error) {
+	var objects []outbound.ObjectInfo
+	opts := minio.ListObjectsOptions{
+		Prefix:    prefix,
+		Recursive: true,
+	}
+
+	for object := range m.client.ListObjects(ctx, m.bucket, opts) {
+		if object.Err != nil {
+			return nil, fmt.Errorf("error listing objects with prefix %s: %w", prefix, object.Err)
+		}
+		objects = append(objects, outbound.ObjectInfo{
+			Key:          object.Key,
+			LastModified: object.LastModified,
+		})
+	}
+
+	return objects, nil
+}
+
 func (m *minioStorage) EnsureBucket(ctx context.Context) error {
 	exists, err := m.client.BucketExists(ctx, m.bucket)
 	if err != nil {

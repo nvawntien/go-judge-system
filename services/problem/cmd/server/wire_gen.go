@@ -66,7 +66,9 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	testCaseHandler := handler.NewTestCaseHandler(uploadTestCaseHandler, getTestCaseForWorkerHandler)
 	handlerFunc := middleware.NewAuthMiddleware()
 	router := http.NewRouter(problemHandler, testCaseHandler, handlerFunc)
-	app := container.NewApp(cfg, router, zapLogger)
+	gcOrphanZipsUseCase := testcase.NewGCOrphanZipsUseCase(testCaseRepository, objectStorage, zapLogger)
+	gcRunner := testcase.NewGCRunner(gcOrphanZipsUseCase, zapLogger)
+	app := container.NewApp(cfg, router, zapLogger, gcRunner)
 	return app, nil
 }
 

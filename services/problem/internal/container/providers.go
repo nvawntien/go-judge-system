@@ -44,6 +44,8 @@ var UseCaseProviderSet = wire.NewSet(
 
 	testuc.NewUploadTestCaseUseCase,
 	testuc.NewGetTestCaseForWorkerUseCase,
+	testuc.NewGCOrphanZipsUseCase,
+	testuc.NewGCRunner,
 )
 
 var InboundProviderSet = wire.NewSet(

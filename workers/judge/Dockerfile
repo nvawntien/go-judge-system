@@ -41,7 +41,7 @@ RUN apk add --no-cache \
 
 WORKDIR /app
 
-RUN mkdir -p /app/logs && chown -R appuser:appgroup /app
+RUN mkdir -p /app/logs /cache/testcases && chown -R appuser:appgroup /app /cache/testcases
 
 COPY --from=builder --chown=appuser:appgroup /workspace/judge-worker ./app
 
