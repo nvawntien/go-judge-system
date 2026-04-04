@@ -15,34 +15,35 @@ type ExecutionResult struct {
 }
 
 type TestCaseResult struct {
-	TestCaseID    int64
+	Index         int
 	Status        string
 	ActualOutput  *string
 	ExecutionTime int // milliseconds
 	MemoryUsed    int // kilobytes
-	Order         int
 }
 
-// CodeExecutor executes submitted code against test cases
+// TestCaseBundle represents a set of testcases cached on local disk.
+// Dir points to the extracted directory containing {N}.in / {N}.out files.
+// Worker does NOT call Cleanup — cache is kept for future requests.
+type TestCaseBundle struct {
+	Dir       string // e.g. /cache/testcases/problem_42/
+	TestCount int
+}
+
+// TestCaseFetcher handles downloading & caching testcases.
+// Uses local disk cache — only downloads from MinIO on cache miss or version change.
+type TestCaseFetcher interface {
+	FetchTestCases(ctx context.Context, problemID int64) (*TestCaseBundle, error)
+}
+
+// CodeExecutor executes submitted code against test cases.
+// Receives a TestCaseBundle (disk path) instead of []TestCase (in-memory).
 type CodeExecutor interface {
-	Execute(ctx context.Context, language, sourceCode string, testCases []TestCase) (*ExecutionResult, error)
-}
-
-type TestCase struct {
-	ID     int64
-	Input  string
-	Output string
-	Order  int
+	Execute(ctx context.Context, language, sourceCode string, bundle *TestCaseBundle) (*ExecutionResult, error)
 }
 
 // ResultPublisher publishes judge results back to submission service.
 // attemptID is forwarded from the original job for idempotency tracking.
 type ResultPublisher interface {
 	PublishResult(ctx context.Context, submissionID int64, attemptID string, result *ExecutionResult) error
-}
-
-// TestCaseFetcher retrieves test cases for a problem from an external source
-// (e.g., Problem Service internal API).
-type TestCaseFetcher interface {
-	FetchTestCases(ctx context.Context, problemID int64) ([]TestCase, error)
 }

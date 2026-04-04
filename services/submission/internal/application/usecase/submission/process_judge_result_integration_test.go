@@ -24,18 +24,16 @@ func TestProcessJudgeResult_IdempotentPersist(t *testing.T) {
 		MemoryUsed:    ptrInt(32768),
 		Results: []dto.JudgeTestCaseResult{
 			{
-				TestCaseID:    1,
+				Index:         1,
 				Status:        "ACCEPTED",
 				ExecutionTime: ptrInt(50),
 				MemoryUsed:    ptrInt(10240),
-				Order:         1,
 			},
 			{
-				TestCaseID:    2,
+				Index:         2,
 				Status:        "ACCEPTED",
 				ExecutionTime: ptrInt(100),
 				MemoryUsed:    ptrInt(22528),
-				Order:         2,
 			},
 		},
 	}
@@ -116,20 +114,18 @@ func TestProcessJudgeResult_PartialResults(t *testing.T) {
 		MemoryUsed:    ptrInt(51200),
 		Results: []dto.JudgeTestCaseResult{
 			{
-				TestCaseID:    1,
+				Index:         1,
 				Status:        "ACCEPTED",
 				ExecutionTime: ptrInt(50),
 				MemoryUsed:    ptrInt(10240),
 				ActualOutput:  ptrString("42"),
-				Order:         1,
 			},
 			{
-				TestCaseID:    2,
+				Index:         2,
 				Status:        "WRONG_ANSWER",
 				ExecutionTime: ptrInt(150),
 				MemoryUsed:    ptrInt(40960),
 				ActualOutput:  ptrString("43"),
-				Order:         2,
 			},
 		},
 	}

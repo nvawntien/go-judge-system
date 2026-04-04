@@ -20,11 +20,7 @@ type KafkaResultPublisher struct {
 	logger   *zap.Logger
 }
 
-func NewKafkaResultPublisher(
-	producer sarama.SyncProducer,
-	kafkaCfg config.KafkaConfig,
-	logger *zap.Logger,
-) *KafkaResultPublisher {
+func NewKafkaResultPublisher(producer sarama.SyncProducer, kafkaCfg config.KafkaConfig, logger *zap.Logger) *KafkaResultPublisher {
 	topic := strings.TrimSpace(kafkaCfg.ResultTopic)
 	if topic == "" {
 		topic = "judge.submission.results"
@@ -42,12 +38,11 @@ func (p *KafkaResultPublisher) PublishResult(ctx context.Context, submissionID i
 	tcResults := make([]pkgjudge.TestCaseResultItem, 0, len(result.TestCases))
 	for _, tc := range result.TestCases {
 		tcResults = append(tcResults, pkgjudge.TestCaseResultItem{
-			TestCaseID:    tc.TestCaseID,
+			Index:         tc.Index,
 			Status:        tc.Status,
 			ActualOutput:  tc.ActualOutput,
 			ExecutionTime: intPtr(tc.ExecutionTime),
 			MemoryUsed:    intPtr(tc.MemoryUsed),
-			Order:         tc.Order,
 		})
 	}
 

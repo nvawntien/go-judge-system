@@ -3,6 +3,9 @@ package execute
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"go-judge-system/pkg/gojudge"
@@ -12,7 +15,8 @@ import (
 	"go.uber.org/zap"
 )
 
-// GoJudgeClient executes code using go-judge service
+// GoJudgeClient executes code using go-judge service.
+// Uses shared volume for testcase input (Src field) instead of Content (in-memory).
 type GoJudgeClient struct {
 	client *resty.Client
 	logger *zap.Logger
@@ -25,16 +29,14 @@ func NewGoJudgeClient(baseURL string, logger *zap.Logger) *GoJudgeClient {
 	}
 }
 
-func (c *GoJudgeClient) Execute(ctx context.Context, language, sourceCode string, testCases []outbound.TestCase) (*outbound.ExecutionResult, error) {
+func (c *GoJudgeClient) Execute(ctx context.Context, language, sourceCode string, bundle *outbound.TestCaseBundle) (*outbound.ExecutionResult, error) {
 	if language == "" {
 		return nil, fmt.Errorf("language not specified")
 	}
-
 	if sourceCode == "" {
 		return nil, fmt.Errorf("source code is empty")
 	}
-
-	if len(testCases) == 0 {
+	if bundle == nil || bundle.TestCount == 0 {
 		return nil, fmt.Errorf("no test cases provided")
 	}
 
@@ -59,7 +61,7 @@ func (c *GoJudgeClient) Execute(ctx context.Context, language, sourceCode string
 					Args: langCfg.Compile.Command,
 					Env:  langCfg.Compile.Env,
 					Files: []*gojudge.File{
-						{Content: stringPtr("")}, // stdin
+						{Content: stringPtr("")},                          // stdin
 						{Name: stringPtr("stdout"), Max: int64Ptr(1048576)}, // stdout
 						{Name: stringPtr("stderr"), Max: int64Ptr(1048576)}, // stderr
 					},
@@ -90,12 +92,11 @@ func (c *GoJudgeClient) Execute(ctx context.Context, language, sourceCode string
 		if resp.IsError() || len(compileResp) == 0 {
 			return nil, fmt.Errorf("go-judge compile returned status: %d", resp.StatusCode())
 		}
-		
+
 		c.logger.Info("go-judge compile raw status", zap.Any("resp", compileResp))
 
 		res := compileResp[0]
 		if res.Status != "Accepted" {
-			// Compilation failed
 			errStr := res.Error
 			compileOutput := &errStr
 			if f, ok := res.Files["stderr"]; ok && f != "" {
@@ -110,7 +111,6 @@ func (c *GoJudgeClient) Execute(ctx context.Context, language, sourceCode string
 			}, nil
 		}
 
-		// Extract compiled binary file ID
 		fileID, ok := res.FileIDs[gojudge.GetExeFileName(language)]
 		if !ok {
 			return nil, fmt.Errorf("compile succeeded but exe fileId not found in response")
@@ -118,24 +118,29 @@ func (c *GoJudgeClient) Execute(ctx context.Context, language, sourceCode string
 		exeFileID = fileID
 	}
 
-	// Step 2: Execution for each testcase
+	// Step 2: Build run commands for all test cases
+	// Key change: stdin uses Src field (file path on shared volume) instead of Content (string in RAM)
 	runReq := gojudge.Request{
-		Cmd: make([]*gojudge.Cmd, 0, len(testCases)),
+		Cmd: make([]*gojudge.Cmd, 0, bundle.TestCount),
 	}
 
-	for _, tc := range testCases {
+	for i := 1; i <= bundle.TestCount; i++ {
+		// Path to .in file — go-judge reads DIRECTLY from shared volume
+		// Worker does NOT need to load .in file into RAM!
+		inputPath := filepath.Join(bundle.Dir, fmt.Sprintf("%d.in", i))
+
 		runCmd := &gojudge.Cmd{
 			Args: langCfg.Run.Command,
 			Env:  langCfg.Run.Env,
 			Files: []*gojudge.File{
-				{Content: stringPtr(tc.Input)}, // stdin
-				{Name: stringPtr("stdout"), Max: int64Ptr(10485760)}, // stdout
-				{Name: stringPtr("stderr"), Max: int64Ptr(10485760)}, // stderr
+				{Src: stringPtr(inputPath)},                             // stdin: go-judge reads file directly
+				{Name: stringPtr("stdout"), Max: int64Ptr(10485760)},     // stdout
+				{Name: stringPtr("stderr"), Max: int64Ptr(10485760)},     // stderr
 			},
 			CopyOut:     []string{"stdout"},
 			MemoryLimit: runMemLimit,
 			CPULimit:    runTimeLimit,
-			ProcLimit:   50, // Let the Go Runtime spawn threads
+			ProcLimit:   50,
 		}
 
 		if hasCompile {
@@ -143,7 +148,6 @@ func (c *GoJudgeClient) Execute(ctx context.Context, language, sourceCode string
 				gojudge.GetExeFileName(language): {FileID: stringPtr(exeFileID)},
 			}
 		} else {
-			// Interpreted languages pass source directly
 			runCmd.CopyIn = map[string]*gojudge.File{
 				gojudge.GetSourceFileName(language): {Content: &sourceCode},
 			}
@@ -164,21 +168,24 @@ func (c *GoJudgeClient) Execute(ctx context.Context, language, sourceCode string
 		return nil, fmt.Errorf("call go-judge run API: %w", err)
 	}
 
-	if resp.IsError() || len(runResp) != len(testCases) {
-		return nil, fmt.Errorf("go-judge run returned status: %d or mismatched response length", resp.StatusCode())
+	if resp.IsError() || len(runResp) != bundle.TestCount {
+		return nil, fmt.Errorf("go-judge run returned status: %d or mismatched response length (expected %d, got %d)",
+			resp.StatusCode(), bundle.TestCount, len(runResp))
 	}
-	
+
 	c.logger.Info("go-judge run raw status", zap.Any("resp", runResp))
 
-	return parseJudgeResult(runResp, testCases), nil
+	return c.parseJudgeResult(runResp, bundle), nil
 }
 
-func parseJudgeResult(responses gojudge.Response, testCases []outbound.TestCase) *outbound.ExecutionResult {
+// parseJudgeResult processes go-judge responses and compares output with expected.
+// Reads expected output from disk (only the .out files need to be read into RAM for comparison).
+func (c *GoJudgeClient) parseJudgeResult(responses gojudge.Response, bundle *outbound.TestCaseBundle) *outbound.ExecutionResult {
 	result := &outbound.ExecutionResult{
 		Status:        "ACCEPTED",
 		ExecutionTime: 0,
 		MemoryUsed:    0,
-		TestCases:     make([]outbound.TestCaseResult, 0, len(testCases)),
+		TestCases:     make([]outbound.TestCaseResult, 0, bundle.TestCount),
 	}
 
 	maxTime := 0
@@ -186,8 +193,8 @@ func parseJudgeResult(responses gojudge.Response, testCases []outbound.TestCase)
 	allAccepted := true
 
 	for i, res := range responses {
-		tc := testCases[i]
-		
+		testIndex := i + 1
+
 		status := mapJudgeStatus(res.Status, res.ExitStatus)
 		if status != "ACCEPTED" {
 			allAccepted = false
@@ -206,17 +213,15 @@ func parseJudgeResult(responses gojudge.Response, testCases []outbound.TestCase)
 		}
 
 		result.TestCases = append(result.TestCases, outbound.TestCaseResult{
-			TestCaseID:    tc.ID,
+			Index:         testIndex,
 			Status:        status,
 			ActualOutput:  actualOutput,
-			ExecutionTime: int(res.Time / 1000000), // ns to ms
-			MemoryUsed:    int(res.Memory / 1024),  // bytes to KB
-			Order:         tc.Order,
+			ExecutionTime: int(res.Time / 1000000),
+			MemoryUsed:    int(res.Memory / 1024),
 		})
 	}
 
 	if !allAccepted {
-		// Just find the first failed test case status to represent the overall status
 		for _, tc := range result.TestCases {
 			if tc.Status != "ACCEPTED" {
 				result.Status = tc.Status
@@ -224,15 +229,27 @@ func parseJudgeResult(responses gojudge.Response, testCases []outbound.TestCase)
 			}
 		}
 	} else {
-		// Verify expected output
+		// Compare actual output with expected output from disk
 		for i, tcRes := range result.TestCases {
-			expected := testCases[i].Output
+			expectedPath := filepath.Join(bundle.Dir, fmt.Sprintf("%d.out", tcRes.Index))
+			expectedBytes, err := os.ReadFile(expectedPath)
+			if err != nil {
+				c.logger.Error("failed to read expected output",
+					zap.Int("test_index", tcRes.Index),
+					zap.Error(err),
+				)
+				result.TestCases[i].Status = "SYSTEM_ERROR"
+				allAccepted = false
+				continue
+			}
+
+			expected := strings.TrimRight(string(expectedBytes), "\n\r ")
 			actual := ""
 			if tcRes.ActualOutput != nil {
-				actual = *tcRes.ActualOutput
+				actual = strings.TrimRight(*tcRes.ActualOutput, "\n\r ")
 			}
-			
-			if actual != expected { // NOTE: Should use right trim for strict matching
+
+			if actual != expected {
 				result.TestCases[i].Status = "WRONG_ANSWER"
 				allAccepted = false
 			}

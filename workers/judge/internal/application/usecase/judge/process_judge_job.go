@@ -16,12 +16,8 @@ type ProcessJudgeJobUseCase struct {
 	logger          *zap.Logger
 }
 
-func NewProcessJudgeJobUseCase(
-	executor outbound.CodeExecutor,
-	resultPublisher outbound.ResultPublisher,
-	testCaseFetcher outbound.TestCaseFetcher,
-	logger *zap.Logger,
-) *ProcessJudgeJobUseCase {
+func NewProcessJudgeJobUseCase(executor outbound.CodeExecutor, resultPublisher outbound.ResultPublisher,
+	testCaseFetcher outbound.TestCaseFetcher, logger *zap.Logger) *ProcessJudgeJobUseCase {
 	return &ProcessJudgeJobUseCase{
 		executor:        executor,
 		resultPublisher: resultPublisher,
@@ -39,7 +35,8 @@ func (u *ProcessJudgeJobUseCase) Execute(ctx context.Context, jobMsg *judge.JobM
 		zap.String("language", jobMsg.Language),
 	)
 
-	testCases, err := u.testCaseFetcher.FetchTestCases(ctx, jobMsg.ProblemID)
+	// 1. Fetch testcases (cache-aware, only downloads on cache miss)
+	bundle, err := u.testCaseFetcher.FetchTestCases(ctx, jobMsg.ProblemID)
 	if err != nil {
 		u.logger.Error(
 			"failed to fetch test cases",
@@ -52,16 +49,17 @@ func (u *ProcessJudgeJobUseCase) Execute(ctx context.Context, jobMsg *judge.JobM
 			Status: "SYSTEM_ERROR",
 			Error:  &errMsg,
 		}
-		
+
 		if pubErr := u.resultPublisher.PublishResult(ctx, jobMsg.SubmissionID, jobMsg.AttemptID, result); pubErr != nil {
 			u.logger.Error("failed to publish system error result", zap.Error(pubErr))
 		}
-		
+
 		return err
 	}
+	// No defer Cleanup() — cache is kept for future requests
 
-	// Execute code
-	result, err := u.executor.Execute(ctx, jobMsg.Language, jobMsg.SourceCode, testCases)
+	// 2. Execute code against testcase bundle
+	result, err := u.executor.Execute(ctx, jobMsg.Language, jobMsg.SourceCode, bundle)
 	if err != nil {
 		u.logger.Error(
 			"code execution failed",
@@ -75,7 +73,7 @@ func (u *ProcessJudgeJobUseCase) Execute(ctx context.Context, jobMsg *judge.JobM
 		}
 	}
 
-	// Publish result
+	// 3. Publish result
 	if err := u.resultPublisher.PublishResult(ctx, jobMsg.SubmissionID, jobMsg.AttemptID, result); err != nil {
 		u.logger.Error(
 			"failed to publish judge result",

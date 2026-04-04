@@ -13,12 +13,11 @@ import (
 type SubmissionResultDAO struct {
 	ID            int64     `gorm:"primaryKey;autoIncrement"`
 	SubmissionID  int64     `gorm:"not null;index"`
-	TestCaseID    int64     `gorm:"not null;index"`
+	TestIndex     int       `gorm:"not null"`
 	Status        string    `gorm:"type:varchar(30);not null"`
 	ActualOutput  *string   `gorm:"type:text"`
 	ExecutionTime *int      `gorm:"type:int"`
 	MemoryUsed    *int      `gorm:"type:int"`
-	Order         int       `gorm:"not null;index"`
 	CreatedAt     time.Time `gorm:"autoCreateTime"`
 }
 
@@ -37,7 +36,7 @@ func (r *submissionResultRepository) GetBySubmissionID(ctx context.Context, subm
 	var daos []SubmissionResultDAO
 	db := getDB(ctx, r.db)
 	if err := db.Where("submission_id = ?", submissionID).
-		Order("\"order\" ASC").
+		Order("test_index ASC").
 		Find(&daos).Error; err != nil {
 		return nil, err
 	}
@@ -70,12 +69,11 @@ func (r *submissionResultRepository) ReplaceBySubmissionID(ctx context.Context, 
 		for _, item := range results {
 			daos = append(daos, SubmissionResultDAO{
 				SubmissionID:  submissionID,
-				TestCaseID:    item.TestCaseID,
+				TestIndex:     item.TestIndex,
 				Status:        string(item.Status),
 				ActualOutput:  item.ActualOutput,
 				ExecutionTime: item.ExecutionTime,
 				MemoryUsed:    item.MemoryUsed,
-				Order:         item.Order,
 			})
 		}
 
@@ -87,12 +85,11 @@ func toSubmissionResultEntity(dao *SubmissionResultDAO) *entity.SubmissionResult
 	return &entity.SubmissionResult{
 		ID:            dao.ID,
 		SubmissionID:  dao.SubmissionID,
-		TestCaseID:    dao.TestCaseID,
+		TestIndex:     dao.TestIndex,
 		Status:        entity.ResultStatus(dao.Status),
 		ActualOutput:  dao.ActualOutput,
 		ExecutionTime: dao.ExecutionTime,
 		MemoryUsed:    dao.MemoryUsed,
-		Order:         dao.Order,
 		CreatedAt:     dao.CreatedAt,
 	}
 }

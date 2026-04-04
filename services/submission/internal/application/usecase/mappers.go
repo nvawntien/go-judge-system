@@ -21,12 +21,11 @@ func MapSubmissionToResponse(s *entity.Submission) dto.SubmissionResponse {
 func MapSubmissionResultToResponse(r *entity.SubmissionResult) dto.SubmissionResultResponse {
 	return dto.SubmissionResultResponse{
 		ID:            r.ID,
-		TestCaseID:    r.TestCaseID,
+		TestIndex:     r.TestIndex,
 		Status:        string(r.Status),
 		ActualOutput:  r.ActualOutput,
 		ExecutionTime: r.ExecutionTime,
 		MemoryUsed:    r.MemoryUsed,
-		Order:         r.Order,
 	}
 }
 

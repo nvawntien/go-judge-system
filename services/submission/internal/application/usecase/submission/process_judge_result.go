@@ -55,12 +55,11 @@ func (uc *processJudgeResultUseCase) Execute(ctx context.Context, message dto.Ju
 
 		results = append(results, &entity.SubmissionResult{
 			SubmissionID:  submission.ID,
-			TestCaseID:    item.TestCaseID,
+			TestIndex:     item.Index,
 			Status:        itemStatus,
 			ActualOutput:  item.ActualOutput,
 			ExecutionTime: item.ExecutionTime,
 			MemoryUsed:    item.MemoryUsed,
-			Order:         item.Order,
 		})
 	}
 

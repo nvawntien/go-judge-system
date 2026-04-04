@@ -10,10 +10,9 @@ type JudgeResultMessage struct {
 }
 
 type JudgeTestCaseResult struct {
-	TestCaseID    int64   `json:"test_case_id"`
+	Index         int     `json:"index"`
 	Status        string  `json:"status"`
 	ActualOutput  *string `json:"actual_output,omitempty"`
 	ExecutionTime *int    `json:"execution_time,omitempty"`
 	MemoryUsed    *int    `json:"memory_used,omitempty"`
-	Order         int     `json:"order"`
 }
