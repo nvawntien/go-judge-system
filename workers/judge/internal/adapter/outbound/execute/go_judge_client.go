@@ -206,25 +206,27 @@ func (c *GoJudgeClient) Execute(ctx context.Context, language, sourceCode string
 }
 
 // parseJudgeResult processes go-judge responses and compares output with expected.
-// Reads expected output from disk (only the .out files need to be read into RAM for comparison).
+// For failed tests, reads input and expected output from disk to include in the result.
 func (c *GoJudgeClient) parseJudgeResult(responses gojudge.Response, bundle *outbound.TestCaseBundle) *outbound.ExecutionResult {
 	result := &outbound.ExecutionResult{
 		Status:        "ACCEPTED",
 		ExecutionTime: 0,
 		MemoryUsed:    0,
-		TestCases:     make([]outbound.TestCaseResult, 0, bundle.TestCount),
+		TestCases:     make([]outbound.TestCaseResult, 0, len(responses)),
 	}
 
 	maxTime := 0
 	maxMem := 0
 	allAccepted := true
+	firstFailIndex := -1
 
 	for i, res := range responses {
 		testIndex := i + 1
 
 		status := mapJudgeStatus(res.Status, res.ExitStatus)
-		if status != "ACCEPTED" {
+		if status != "ACCEPTED" && firstFailIndex == -1 {
 			allAccepted = false
+			firstFailIndex = i
 		}
 
 		if int(res.Time/1000000) > maxTime {
@@ -249,14 +251,12 @@ func (c *GoJudgeClient) parseJudgeResult(responses gojudge.Response, bundle *out
 	}
 
 	if !allAccepted {
-		for _, tc := range result.TestCases {
-			if tc.Status != "ACCEPTED" {
-				result.Status = tc.Status
-				break
-			}
-		}
+		// Set overall status to first failure
+		result.Status = result.TestCases[firstFailIndex].Status
+		// Attach input + expected output for the first failed test
+		c.attachTestData(&result.TestCases[firstFailIndex], bundle)
 	} else {
-		// Compare actual output with expected output from disk
+		// All execution statuses are ACCEPTED — compare output with expected
 		for i, tcRes := range result.TestCases {
 			expectedPath := filepath.Join(bundle.Dir, fmt.Sprintf("%d.out", tcRes.Index))
 			expectedBytes, err := os.ReadFile(expectedPath)
@@ -267,6 +267,9 @@ func (c *GoJudgeClient) parseJudgeResult(responses gojudge.Response, bundle *out
 				)
 				result.TestCases[i].Status = "SYSTEM_ERROR"
 				allAccepted = false
+				if firstFailIndex == -1 {
+					firstFailIndex = i
+				}
 				continue
 			}
 
@@ -278,11 +281,17 @@ func (c *GoJudgeClient) parseJudgeResult(responses gojudge.Response, bundle *out
 
 			if actual != expected {
 				result.TestCases[i].Status = "WRONG_ANSWER"
+				expectedStr := expected
+				result.TestCases[i].ExpectedOutput = &expectedStr
 				allAccepted = false
+				if firstFailIndex == -1 {
+					firstFailIndex = i
+				}
 			}
 		}
 		if !allAccepted {
-			result.Status = "WRONG_ANSWER"
+			result.Status = result.TestCases[firstFailIndex].Status
+			c.attachTestData(&result.TestCases[firstFailIndex], bundle)
 		}
 	}
 
@@ -291,6 +300,56 @@ func (c *GoJudgeClient) parseJudgeResult(responses gojudge.Response, bundle *out
 
 	return result
 }
+
+// attachTestData reads input and expected output files for a failed test case.
+// Data is truncated to 10KB to avoid bloating Kafka messages.
+func (c *GoJudgeClient) attachTestData(tc *outbound.TestCaseResult, bundle *outbound.TestCaseBundle) {
+	const maxSize = 10 * 1024 // 10KB
+
+	// Read input
+	inputPath := filepath.Join(bundle.Dir, fmt.Sprintf("%d.in", tc.Index))
+	if data, err := os.ReadFile(inputPath); err == nil {
+		s := string(data)
+		if len(s) > maxSize {
+			s = s[:maxSize] + "...(truncated)"
+		}
+		tc.Input = &s
+		c.logger.Info("attachTestData: input read OK", zap.Int("index", tc.Index), zap.Int("len", len(s)))
+	} else {
+		c.logger.Error("attachTestData: failed to read input", zap.String("path", inputPath), zap.Error(err))
+	}
+
+	// Read expected output (if not already set)
+	if tc.ExpectedOutput == nil {
+		expectedPath := filepath.Join(bundle.Dir, fmt.Sprintf("%d.out", tc.Index))
+		if data, err := os.ReadFile(expectedPath); err == nil {
+			s := strings.TrimRight(string(data), "\n\r ")
+			if len(s) > maxSize {
+				s = s[:maxSize] + "...(truncated)"
+			}
+			tc.ExpectedOutput = &s
+			c.logger.Info("attachTestData: expected read OK", zap.Int("index", tc.Index), zap.Int("len", len(s)))
+		} else {
+			c.logger.Error("attachTestData: failed to read expected", zap.String("path", expectedPath), zap.Error(err))
+		}
+	} else {
+		c.logger.Info("attachTestData: expected already set", zap.Int("index", tc.Index), zap.Int("len", len(*tc.ExpectedOutput)))
+	}
+
+	// Truncate actual output if needed
+	if tc.ActualOutput != nil && len(*tc.ActualOutput) > maxSize {
+		s := (*tc.ActualOutput)[:maxSize] + "...(truncated)"
+		tc.ActualOutput = &s
+	}
+
+	c.logger.Info("attachTestData: final state",
+		zap.Int("index", tc.Index),
+		zap.Bool("has_input", tc.Input != nil),
+		zap.Bool("has_expected", tc.ExpectedOutput != nil),
+		zap.Bool("has_actual", tc.ActualOutput != nil),
+	)
+}
+
 
 func mapJudgeStatus(status string, exitStatus int) string {
 	switch status {
@@ -305,7 +364,7 @@ func mapJudgeStatus(status string, exitStatus int) string {
 		return "TIME_LIMIT_EXCEEDED"
 	case "Output Limit Exceeded":
 		return "OUTPUT_LIMIT_EXCEEDED"
-	case "File Error", "Non Zero Exit Status", "Signalled", "Run Error":
+	case "File Error", "Nonzero Exit Status", "Signalled", "Run Error":
 		return "RUNTIME_ERROR"
 	case "Internal Error":
 		return "SYSTEM_ERROR"

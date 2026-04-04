@@ -38,11 +38,13 @@ func (p *KafkaResultPublisher) PublishResult(ctx context.Context, submissionID i
 	tcResults := make([]pkgjudge.TestCaseResultItem, 0, len(result.TestCases))
 	for _, tc := range result.TestCases {
 		tcResults = append(tcResults, pkgjudge.TestCaseResultItem{
-			Index:         tc.Index,
-			Status:        tc.Status,
-			ActualOutput:  tc.ActualOutput,
-			ExecutionTime: intPtr(tc.ExecutionTime),
-			MemoryUsed:    intPtr(tc.MemoryUsed),
+			Index:          tc.Index,
+			Status:         tc.Status,
+			ActualOutput:   tc.ActualOutput,
+			Input:          tc.Input,
+			ExpectedOutput: tc.ExpectedOutput,
+			ExecutionTime:  intPtr(tc.ExecutionTime),
+			MemoryUsed:     intPtr(tc.MemoryUsed),
 		})
 	}
 

@@ -71,19 +71,22 @@ type ListSubmissionsResponse struct {
 }
 
 type SubmissionResultResponse struct {
-	ID            int64   `json:"id"`
-	TestIndex     int     `json:"test_index"`
-	Status        string  `json:"status"`
-	ActualOutput  *string `json:"actual_output,omitempty"`
-	ExecutionTime *int    `json:"execution_time,omitempty"`
-	MemoryUsed    *int    `json:"memory_used,omitempty"`
+	TestIndex      int     `json:"test_index"`
+	Status         string  `json:"status"`
+	Input          *string `json:"input,omitempty"`
+	ExpectedOutput *string `json:"expected_output,omitempty"`
+	ActualOutput   *string `json:"actual_output,omitempty"`
+	ExecutionTime  *int    `json:"execution_time_ms,omitempty"`
+	MemoryUsed     *int    `json:"memory_used_kb,omitempty"`
 }
 
 type SubmissionDetailResponse struct {
 	SubmissionResponse
-	SourceCode    string                     `json:"source_code"`
-	ExecutionTime *int                       `json:"execution_time,omitempty"`
-	MemoryUsed    *int                       `json:"memory_used,omitempty"`
-	CompileOutput *string                    `json:"compile_output,omitempty"`
-	Results       []SubmissionResultResponse `json:"results"`
+	SourceCode      string                    `json:"source_code"`
+	ExecutionTimeMs *int                      `json:"execution_time_ms,omitempty"`
+	MemoryUsedKB    *int                      `json:"memory_used_kb,omitempty"`
+	CompileOutput   *string                   `json:"compile_output,omitempty"`
+	TotalTests      int                       `json:"total_tests"`
+	FailedTestIndex *int                      `json:"failed_test_index,omitempty"`
+	FailedTest      *SubmissionResultResponse `json:"failed_test,omitempty"`
 }

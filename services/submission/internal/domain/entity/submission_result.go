@@ -10,15 +10,18 @@ const (
 	ResultTimeLimit    ResultStatus = "TIME_LIMIT_EXCEEDED"
 	ResultMemoryLimit  ResultStatus = "MEMORY_LIMIT_EXCEEDED"
 	ResultRuntimeError ResultStatus = "RUNTIME_ERROR"
+	ResultSystemError  ResultStatus = "SYSTEM_ERROR"
 )
 
 type SubmissionResult struct {
-	ID            int64
-	SubmissionID  int64
-	TestIndex     int
-	Status        ResultStatus
-	ActualOutput  *string
-	ExecutionTime *int
-	MemoryUsed    *int
-	CreatedAt     time.Time
+	ID             int64
+	SubmissionID   int64
+	TestIndex      int
+	Status         ResultStatus
+	ActualOutput   *string
+	Input          *string
+	ExpectedOutput *string
+	ExecutionTime  *int
+	MemoryUsed     *int
+	CreatedAt      time.Time
 }

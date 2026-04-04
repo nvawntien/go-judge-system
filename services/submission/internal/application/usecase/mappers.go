@@ -18,29 +18,35 @@ func MapSubmissionToResponse(s *entity.Submission) dto.SubmissionResponse {
 	}
 }
 
-func MapSubmissionResultToResponse(r *entity.SubmissionResult) dto.SubmissionResultResponse {
-	return dto.SubmissionResultResponse{
-		ID:            r.ID,
-		TestIndex:     r.TestIndex,
-		Status:        string(r.Status),
-		ActualOutput:  r.ActualOutput,
-		ExecutionTime: r.ExecutionTime,
-		MemoryUsed:    r.MemoryUsed,
-	}
-}
-
 func MapSubmissionToDetailResponse(s *entity.Submission, results []*entity.SubmissionResult) dto.SubmissionDetailResponse {
-	res := make([]dto.SubmissionResultResponse, 0, len(results))
-	for _, r := range results {
-		res = append(res, MapSubmissionResultToResponse(r))
-	}
-
-	return dto.SubmissionDetailResponse{
+	resp := dto.SubmissionDetailResponse{
 		SubmissionResponse: MapSubmissionToResponse(s),
 		SourceCode:         s.SourceCode,
-		ExecutionTime:      s.ExecutionTime,
-		MemoryUsed:         s.MemoryUsed,
+		ExecutionTimeMs:    s.ExecutionTime,
+		MemoryUsedKB:       s.MemoryUsed,
 		CompileOutput:      s.CompileOutput,
-		Results:            res,
+		TotalTests:         len(results),
 	}
+
+	// For non-ACCEPTED results: find the first failed test case
+	if s.Status != entity.StatusAccepted && s.Status != entity.StatusPending && s.Status != entity.StatusJudging {
+		for _, r := range results {
+			if r.Status != entity.ResultAccepted {
+				idx := r.TestIndex
+				resp.FailedTestIndex = &idx
+				resp.FailedTest = &dto.SubmissionResultResponse{
+					TestIndex:      r.TestIndex,
+					Status:         string(r.Status),
+					Input:          r.Input,
+					ExpectedOutput: r.ExpectedOutput,
+					ActualOutput:   r.ActualOutput,
+					ExecutionTime:  r.ExecutionTime,
+					MemoryUsed:     r.MemoryUsed,
+				}
+				break
+			}
+		}
+	}
+
+	return resp
 }

@@ -54,12 +54,14 @@ func (uc *processJudgeResultUseCase) Execute(ctx context.Context, message dto.Ju
 		}
 
 		results = append(results, &entity.SubmissionResult{
-			SubmissionID:  submission.ID,
-			TestIndex:     item.Index,
-			Status:        itemStatus,
-			ActualOutput:  item.ActualOutput,
-			ExecutionTime: item.ExecutionTime,
-			MemoryUsed:    item.MemoryUsed,
+			SubmissionID:   submission.ID,
+			TestIndex:      item.Index,
+			Status:         itemStatus,
+			ActualOutput:   item.ActualOutput,
+			Input:          item.Input,
+			ExpectedOutput: item.ExpectedOutput,
+			ExecutionTime:  item.ExecutionTime,
+			MemoryUsed:     item.MemoryUsed,
 		})
 	}
 
@@ -97,7 +99,8 @@ func parseResultStatus(raw string) (entity.ResultStatus, error) {
 		entity.ResultWrongAnswer,
 		entity.ResultTimeLimit,
 		entity.ResultMemoryLimit,
-		entity.ResultRuntimeError:
+		entity.ResultRuntimeError,
+		entity.ResultSystemError:
 		return entity.ResultStatus(raw), nil
 	default:
 		return "", fmt.Errorf("invalid judge testcase status: %s", raw)

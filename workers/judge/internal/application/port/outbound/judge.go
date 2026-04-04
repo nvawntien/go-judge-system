@@ -15,11 +15,13 @@ type ExecutionResult struct {
 }
 
 type TestCaseResult struct {
-	Index         int
-	Status        string
-	ActualOutput  *string
-	ExecutionTime int // milliseconds
-	MemoryUsed    int // kilobytes
+	Index          int
+	Status         string
+	ActualOutput   *string
+	Input          *string // populated for failed tests only
+	ExpectedOutput *string // populated for failed tests only
+	ExecutionTime  int     // milliseconds
+	MemoryUsed     int     // kilobytes
 }
 
 // TestCaseBundle represents a set of testcases cached on local disk.

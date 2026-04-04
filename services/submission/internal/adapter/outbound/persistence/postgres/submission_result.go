@@ -11,14 +11,16 @@ import (
 )
 
 type SubmissionResultDAO struct {
-	ID            int64     `gorm:"primaryKey;autoIncrement"`
-	SubmissionID  int64     `gorm:"not null;index"`
-	TestIndex     int       `gorm:"not null"`
-	Status        string    `gorm:"type:varchar(30);not null"`
-	ActualOutput  *string   `gorm:"type:text"`
-	ExecutionTime *int      `gorm:"type:int"`
-	MemoryUsed    *int      `gorm:"type:int"`
-	CreatedAt     time.Time `gorm:"autoCreateTime"`
+	ID             int64     `gorm:"primaryKey;autoIncrement"`
+	SubmissionID   int64     `gorm:"not null;index"`
+	TestIndex      int       `gorm:"not null"`
+	Status         string    `gorm:"type:varchar(30);not null"`
+	ActualOutput   *string   `gorm:"type:text"`
+	Input          *string   `gorm:"type:text"`
+	ExpectedOutput *string   `gorm:"type:text"`
+	ExecutionTime  *int      `gorm:"type:int"`
+	MemoryUsed     *int      `gorm:"type:int"`
+	CreatedAt      time.Time `gorm:"autoCreateTime"`
 }
 
 func (SubmissionResultDAO) TableName() string { return "submission_results" }
@@ -68,12 +70,14 @@ func (r *submissionResultRepository) ReplaceBySubmissionID(ctx context.Context, 
 		daos := make([]SubmissionResultDAO, 0, len(results))
 		for _, item := range results {
 			daos = append(daos, SubmissionResultDAO{
-				SubmissionID:  submissionID,
-				TestIndex:     item.TestIndex,
-				Status:        string(item.Status),
-				ActualOutput:  item.ActualOutput,
-				ExecutionTime: item.ExecutionTime,
-				MemoryUsed:    item.MemoryUsed,
+				SubmissionID:   submissionID,
+				TestIndex:      item.TestIndex,
+				Status:         string(item.Status),
+				ActualOutput:   item.ActualOutput,
+				Input:          item.Input,
+				ExpectedOutput: item.ExpectedOutput,
+				ExecutionTime:  item.ExecutionTime,
+				MemoryUsed:     item.MemoryUsed,
 			})
 		}
 
@@ -83,13 +87,15 @@ func (r *submissionResultRepository) ReplaceBySubmissionID(ctx context.Context, 
 
 func toSubmissionResultEntity(dao *SubmissionResultDAO) *entity.SubmissionResult {
 	return &entity.SubmissionResult{
-		ID:            dao.ID,
-		SubmissionID:  dao.SubmissionID,
-		TestIndex:     dao.TestIndex,
-		Status:        entity.ResultStatus(dao.Status),
-		ActualOutput:  dao.ActualOutput,
-		ExecutionTime: dao.ExecutionTime,
-		MemoryUsed:    dao.MemoryUsed,
-		CreatedAt:     dao.CreatedAt,
+		ID:             dao.ID,
+		SubmissionID:   dao.SubmissionID,
+		TestIndex:      dao.TestIndex,
+		Status:         entity.ResultStatus(dao.Status),
+		ActualOutput:   dao.ActualOutput,
+		Input:          dao.Input,
+		ExpectedOutput: dao.ExpectedOutput,
+		ExecutionTime:  dao.ExecutionTime,
+		MemoryUsed:     dao.MemoryUsed,
+		CreatedAt:      dao.CreatedAt,
 	}
 }

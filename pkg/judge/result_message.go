@@ -17,9 +17,11 @@ type ResultMessage struct {
 // TestCaseResultItem represents an individual testcase execution result.
 // Index is 1-based, matching the ZIP naming convention ({N}.in/{N}.out).
 type TestCaseResultItem struct {
-	Index         int     `json:"index"`
-	Status        string  `json:"status"`
-	ActualOutput  *string `json:"actual_output,omitempty"`
-	ExecutionTime *int    `json:"execution_time,omitempty"`
-	MemoryUsed    *int    `json:"memory_used,omitempty"`
+	Index          int     `json:"index"`
+	Status         string  `json:"status"`
+	ActualOutput   *string `json:"actual_output,omitempty"`
+	Input          *string `json:"input,omitempty"`
+	ExpectedOutput *string `json:"expected_output,omitempty"`
+	ExecutionTime  *int    `json:"execution_time,omitempty"`
+	MemoryUsed     *int    `json:"memory_used,omitempty"`
 }
