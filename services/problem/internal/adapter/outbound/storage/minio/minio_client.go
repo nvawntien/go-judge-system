@@ -1,11 +1,13 @@
-package storage
+package minio
 
 import (
 	"context"
 	"fmt"
-	"go-judge-system/services/problem/internal/application/port/outbound"
 	"os"
 	"time"
+
+	"go-judge-system/pkg/config"
+	"go-judge-system/services/problem/internal/application/port/outbound"
 
 	"github.com/minio/minio-go/v7"
 )
@@ -15,8 +17,8 @@ type minioStorage struct {
 	bucket string
 }
 
-func NewMinioStorage(client *minio.Client, bucket string) outbound.ObjectStorage {
-	return &minioStorage{client: client, bucket: bucket}
+func NewMinioStorage(client *minio.Client, cfg config.MinIOConfig) outbound.ObjectStorage {
+	return &minioStorage{client: client, bucket: cfg.Bucket}
 }
 
 func (m *minioStorage) UploadFromFile(ctx context.Context, objectKey string, filePath string) error {

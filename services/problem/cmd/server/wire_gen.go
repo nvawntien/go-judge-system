@@ -17,7 +17,7 @@ import (
 	testcase2 "go-judge-system/services/problem/internal/adapter/inbound/http/handler/test_case"
 	"go-judge-system/services/problem/internal/adapter/inbound/http/middleware"
 	"go-judge-system/services/problem/internal/adapter/outbound/persistence/postgres"
-	"go-judge-system/services/problem/internal/adapter/outbound/storage/minio"
+	minio2 "go-judge-system/services/problem/internal/adapter/outbound/storage/minio"
 	"go-judge-system/services/problem/internal/application/usecase/problem"
 	"go-judge-system/services/problem/internal/application/usecase/test_case"
 	"go-judge-system/services/problem/internal/container"
@@ -57,7 +57,8 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	if err != nil {
 		return nil, err
 	}
-	objectStorage := storage.NewMinioStorage(client, string2)
+	configMinIOConfig := cfg.MinIO
+	objectStorage := minio2.NewMinioStorage(client, configMinIOConfig)
 	uploadTestCaseUseCase := testcase.NewUploadTestCaseUseCase(problemRepository, testCaseRepository, objectStorage, zapLogger)
 	uploadTestCaseHandler := testcase2.NewUploadTestCaseHandler(uploadTestCaseUseCase)
 	testCaseHandler := handler.NewTestCaseHandler(uploadTestCaseHandler)
