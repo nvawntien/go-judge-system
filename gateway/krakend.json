@@ -539,6 +539,7 @@
                 {
                     "url_pattern": "/api/v1/admin/problems/{id}/testcases",
                     "encoding": "no-op",
+                    "is_stream": true,
                     "host": [
                         "http://problem-service:8082"
                     ]

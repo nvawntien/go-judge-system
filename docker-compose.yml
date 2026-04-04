@@ -92,7 +92,7 @@ services:
           memory: 192M
   minio:
     container_name: judge_minio
-    image: minio/minio:RELEASE.2024-01-18T22-51-28Z
+    image: minio/minio:latest
     restart: unless-stopped
     command: server /data --console-address ":9001"
     env_file:

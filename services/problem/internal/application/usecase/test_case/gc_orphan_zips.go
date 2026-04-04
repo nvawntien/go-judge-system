@@ -33,6 +33,12 @@ func NewGCOrphanZipsUseCase(tcRepo outbound.TestCaseRepository, storage outbound
 //
 // This is safe to run concurrently — worst case, an orphan survives one extra cycle.
 func (uc *gcOrphanZipsUseCase) Execute(ctx context.Context) error {
+	// Ensure the bucket exists before sweeping
+	if err := uc.storage.EnsureBucket(ctx); err != nil {
+		uc.logger.Error("gc: failed to ensure bucket exists", zap.Error(err))
+		return err
+	}
+
 	// Get all active zip_object_keys from DB
 	activeKeys, err := uc.tcRepo.ListAllZipObjectKeys(ctx)
 	if err != nil {

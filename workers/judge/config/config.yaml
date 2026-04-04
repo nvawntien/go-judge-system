@@ -1,6 +1,14 @@
 server:
   port: 0  # not used, judge worker is event-driven
 
+logger:
+  level: debug
+  filename: logs/worker.log
+  max_size: 10
+  max_backups: 5
+  max_age: 30
+  compress: true
+
 kafka:
   brokers: "kafka:9092"
   consumer_group: "judge-worker-v1"

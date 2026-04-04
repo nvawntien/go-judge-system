@@ -22,6 +22,10 @@ func NewMinioStorage(client *minio.Client, cfg config.MinIOConfig) outbound.Obje
 }
 
 func (m *minioStorage) UploadFromFile(ctx context.Context, objectKey string, filePath string) error {
+	if err := m.EnsureBucket(ctx); err != nil {
+		return fmt.Errorf("failed to ensure bucket %s: %w", m.bucket, err)
+	}
+
 	file, err := os.Open(filePath)
 	if err != nil {
 		return fmt.Errorf("failed to open file %s: %w", filePath, err)
