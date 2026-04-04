@@ -19,8 +19,9 @@ type TestCaseMetadataResponse struct {
 	CreatedAt   string `json:"created_at"`
 }
 
-type GetTestCaseMetaResponse struct {
-	TestCount   int    `json:"test_count"`
-	Version     string `json:"version"`
-	DownloadURL string `json:"download_url,omitempty"`
+type InternalTestCaseResponse struct {
+	ProblemID      int64  `json:"problem_id"`
+	TestCount      int    `json:"test_count"`
+	Version        string `json:"version"`
+	ZipDownloadURL string `json:"zip_download_url"`
 }

@@ -43,6 +43,7 @@ var UseCaseProviderSet = wire.NewSet(
 	probuc.NewHideProblemUseCase,
 
 	testuc.NewUploadTestCaseUseCase,
+	testuc.NewGetTestCaseForWorkerUseCase,
 )
 
 var InboundProviderSet = wire.NewSet(
@@ -55,6 +56,7 @@ var InboundProviderSet = wire.NewSet(
 	probhd.NewHideProblemHandler,
 
 	testhd.NewUploadTestCaseHandler,
+	testhd.NewGetTestCaseForWorkerHandler,
 
 	handler.NewProblemHandler,
 	handler.NewTestCaseHandler,

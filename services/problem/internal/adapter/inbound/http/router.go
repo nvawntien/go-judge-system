@@ -64,6 +64,12 @@ func (r *Router) SetupRoutes() {
 		// TestCase management (problem-scoped)
 		admin.POST("/problems/:id/testcases", r.testcaseHandler.UploadTestCase.Handle)
 	}
+
+	// ---- Internal routes (service-to-service, no auth — secured by network) ----
+	internal := r.engine.Group("/internal/v1")
+	{
+		internal.GET("/problems/:id/testcases", r.testcaseHandler.GetTestCaseForWorker.Handle)
+	}
 }
 
 func (r *Router) Start(port string) error {
