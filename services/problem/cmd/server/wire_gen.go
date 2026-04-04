@@ -10,12 +10,14 @@ import (
 	"go-judge-system/pkg/config"
 	"go-judge-system/pkg/database"
 	"go-judge-system/pkg/logger"
+	"go-judge-system/pkg/minio"
 	"go-judge-system/services/problem/internal/adapter/inbound/http"
 	"go-judge-system/services/problem/internal/adapter/inbound/http/handler"
 	problem2 "go-judge-system/services/problem/internal/adapter/inbound/http/handler/problem"
 	testcase2 "go-judge-system/services/problem/internal/adapter/inbound/http/handler/test_case"
 	"go-judge-system/services/problem/internal/adapter/inbound/http/middleware"
 	"go-judge-system/services/problem/internal/adapter/outbound/persistence/postgres"
+	"go-judge-system/services/problem/internal/adapter/outbound/storage/minio"
 	"go-judge-system/services/problem/internal/application/usecase/problem"
 	"go-judge-system/services/problem/internal/application/usecase/test_case"
 	"go-judge-system/services/problem/internal/container"
@@ -40,8 +42,7 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	updateProblemHandler := problem2.NewUpdateProblemHandler(updateProblemUseCase)
 	deleteProblemUseCase := problem.NewDeleteProblemUseCase(problemRepository, zapLogger)
 	deleteProblemHandler := problem2.NewDeleteProblemHandler(deleteProblemUseCase)
-	testCaseRepository := postgres.NewTestCaseRepository(db)
-	getProblemUseCase := problem.NewGetProblemUseCase(problemRepository, testCaseRepository, zapLogger)
+	getProblemUseCase := problem.NewGetProblemUseCase(problemRepository, zapLogger)
 	getProblemHandler := problem2.NewGetProblemHandler(getProblemUseCase)
 	listProblemsUseCase := problem.NewListProblemsUseCase(problemRepository, zapLogger)
 	listProblemsHandler := problem2.NewListProblemsHandler(listProblemsUseCase)
@@ -50,18 +51,18 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	hideProblemUseCase := problem.NewHideProblemUseCase(problemRepository, zapLogger)
 	hideProblemHandler := problem2.NewHideProblemHandler(hideProblemUseCase)
 	problemHandler := handler.NewProblemHandler(createProblemHandler, updateProblemHandler, deleteProblemHandler, getProblemHandler, listProblemsHandler, publishProblemHandler, hideProblemHandler)
-	createTestCaseUseCase := testcase.NewCreateTestCaseUseCase(problemRepository, testCaseRepository, zapLogger)
-	createTestCaseHandler := testcase2.NewCreateTestCaseHandler(createTestCaseUseCase)
-	listTestCasesUseCase := testcase.NewListTestCasesUseCase(problemRepository, testCaseRepository, zapLogger)
-	listTestCasesHandler := testcase2.NewListTestCasesHandler(listTestCasesUseCase)
-	updateTestCaseUseCase := testcase.NewUpdateTestCaseUseCase(problemRepository, testCaseRepository, zapLogger)
-	updateTestCaseHandler := testcase2.NewUpdateTestCaseHandler(updateTestCaseUseCase)
-	deleteTestCaseUseCase := testcase.NewDeleteTestCaseUseCase(problemRepository, testCaseRepository, zapLogger)
-	deleteTestCaseHandler := testcase2.NewDeleteTestCaseHandler(deleteTestCaseUseCase)
-	testCaseHandler := handler.NewTestCaseHandler(createTestCaseHandler, listTestCasesHandler, updateTestCaseHandler, deleteTestCaseHandler)
-	internalTestCaseHandler := handler.NewInternalTestCaseHandler(testCaseRepository, zapLogger)
+	testCaseRepository := postgres.NewTestCaseRepository(db)
+	minIOConfig := &cfg.MinIO
+	client, err := minio.NewMinioClient(minIOConfig)
+	if err != nil {
+		return nil, err
+	}
+	objectStorage := storage.NewMinioStorage(client, string2)
+	uploadTestCaseUseCase := testcase.NewUploadTestCaseUseCase(problemRepository, testCaseRepository, objectStorage, zapLogger)
+	uploadTestCaseHandler := testcase2.NewUploadTestCaseHandler(uploadTestCaseUseCase)
+	testCaseHandler := handler.NewTestCaseHandler(uploadTestCaseHandler)
 	handlerFunc := middleware.NewAuthMiddleware()
-	router := http.NewRouter(problemHandler, testCaseHandler, internalTestCaseHandler, handlerFunc)
+	router := http.NewRouter(problemHandler, testCaseHandler, handlerFunc)
 	app := container.NewApp(cfg, router, zapLogger)
 	return app, nil
 }
