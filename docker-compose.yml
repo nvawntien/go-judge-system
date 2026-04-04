@@ -53,7 +53,7 @@ services:
     logging: *default-logging
     healthcheck:
       <<: *healthcheck-defaults
-      test: ["CMD-SHELL", "pg_isready -U admin -d auth_db"]
+      test: [ "CMD-SHELL", "pg_isready -U admin -d auth_db" ]
       interval: 5s
     deploy:
       resources:
@@ -83,7 +83,7 @@ services:
     logging: *default-logging
     healthcheck:
       <<: *healthcheck-defaults
-      test: ["CMD-SHELL", "redis-cli -a $$REDIS_PASSWORD ping | grep PONG"]
+      test: [ "CMD-SHELL", "redis-cli -a $$REDIS_PASSWORD ping | grep PONG" ]
       interval: 5s
     deploy:
       resources:
@@ -95,9 +95,8 @@ services:
     image: minio/minio:RELEASE.2024-01-18T22-51-28Z
     restart: unless-stopped
     command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    env_file:
+      - ./environment/service.env
     ports:
       - "127.0.0.1:9000:9000"
       - "127.0.0.1:9001:9001"
@@ -108,7 +107,7 @@ services:
     logging: *default-logging
     healthcheck:
       <<: *healthcheck-defaults
-      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
+      test: [ "CMD-SHELL", "mc ready local" ]
       interval: 5s
     deploy:
       resources:
@@ -141,7 +140,7 @@ services:
     logging: *default-logging
     healthcheck:
       <<: *healthcheck-defaults
-      test: ["CMD", "bash", "-lc", "/opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list > /dev/null 2>&1"]
+      test: [ "CMD", "bash", "-lc", "/opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list > /dev/null 2>&1" ]
       interval: 10s
     deploy:
       resources:
@@ -155,7 +154,7 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
-    entrypoint: ["/bin/bash", "/scripts/kafka-init.sh"]
+    entrypoint: [ "/bin/bash", "/scripts/kafka-init.sh" ]
     volumes:
       - ./infra/kafka/kafka-init.sh:/scripts/kafka-init.sh:ro
     networks:
@@ -168,7 +167,7 @@ services:
       context: .
       dockerfile: build/sandbox/Dockerfile
     restart: unless-stopped
-    privileged: true 
+    privileged: true
     ports:
       - "127.0.0.1:5050:5050"
       - "127.0.0.1:5051:5051"
@@ -195,7 +194,7 @@ services:
   mailhog:
     container_name: judge_mailhog
     image: mailhog/mailhog:v1.0.1
-    profiles: ["dev"]
+    profiles: [ "dev" ]
     restart: unless-stopped
     ports:
       - "127.0.0.1:1025:1025"
@@ -207,7 +206,7 @@ services:
   kafka-ui:
     container_name: judge_kafka_ui
     image: provectuslabs/kafka-ui:v0.7.2
-    profiles: ["dev"]
+    profiles: [ "dev" ]
     restart: unless-stopped
     ports:
       - "127.0.0.1:8081:8080"
@@ -286,7 +285,7 @@ services:
 
   judge-worker:
     container_name: judge_worker
-    profiles: ["worker"]
+    profiles: [ "worker" ]
     build:
       context: .
       dockerfile: workers/judge/Dockerfile
@@ -333,4 +332,3 @@ volumes:
     driver: local
   testcase_cache:
     driver: local
-    
