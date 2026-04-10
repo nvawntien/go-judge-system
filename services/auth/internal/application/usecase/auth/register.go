@@ -1,4 +1,4 @@
-package usecase
+package auth
 
 import (
 	"context"
@@ -74,6 +74,7 @@ func (uc *registerUseCase) Execute(ctx context.Context, req dto.RegisterRequest)
 	passwordVO := valueobject.NewPasswordFromHash(hashedPassword)
 
 	user := entity.NewUser(
+		req.FullName,
 		req.Username,
 		emailVO,
 		passwordVO,

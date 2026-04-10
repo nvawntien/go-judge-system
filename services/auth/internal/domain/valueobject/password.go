@@ -14,7 +14,7 @@ func NewPasswordFromHash(hash string) Password {
 
 func ValidatePlainPassword(plain string) error {
 	if len(plain) < minPasswordLength {
-		return domain.ErrPasswordTooShort
+		return domain.ErrPasswordTooWeak
 	}
 	return nil
 }

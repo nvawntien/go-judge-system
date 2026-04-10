@@ -30,25 +30,25 @@ func (r *Router) SetupRoutes() {
 	v1 := r.engine.Group("/api/v1/auth")
 	{
 		v1.POST("/register", r.authHandler.RegisterHandler.Handle)
-		v1.POST("/verify-activation", r.authHandler.VerifyActivationHandler.Handle)
-		v1.POST("/resend-otp", r.authHandler.ResendOTPHandler.Handle)
-
-		v1.POST("/forgot-password", r.authHandler.ForgotPasswordHandler.Handle)
-		v1.POST("/verify-forgot-password", r.authHandler.VerifyForgotPasswordHandler.Handle)
-		v1.POST("/reset-password", r.authHandler.ResetPasswordHandler.Handle)
-
 		v1.POST("/login", r.authHandler.LoginHandler.Handle)
 		v1.POST("/refresh-token", r.authHandler.RefreshTokenHandler.Handle)
-		v1.GET("/profile/:username", r.authHandler.GetProfileHandler.HandlePublic)
+
+		v1.POST("/verify-acti", r.authHandler.VerifyActivationHandler.Handle)
+		v1.POST("/resend-otp", r.authHandler.ResendOTPHandler.Handle)
+
+		v1.POST("password/forgot", r.authHandler.ForgotPasswordHandler.Handle)
+		v1.POST("password/reset", r.authHandler.ResetPasswordHandler.Handle)
+
+		v1.POST("/email/verify", r.authHandler.VerifyEmailHandler.Handle)
+		v1.POST("email/resend-verification", r.authHandler.ResendVerificationEmailHandler.Handle)
 	}
 
 	// Authenticated routes
 	authenticated := v1.Group("")
 	authenticated.Use(r.authMiddleware)
 	{
-		authenticated.PUT("/change-password", r.authHandler.ChangePasswordHandler.Handle)
+		authenticated.PUT("/password/change", r.authHandler.ChangePasswordHandler.Handle)
 		authenticated.POST("/logout", r.authHandler.LogoutHandler.Handle)
-		authenticated.GET("/profile", r.authHandler.GetProfileHandler.HandleMe)
 	}
 
 	// Super Admin routes

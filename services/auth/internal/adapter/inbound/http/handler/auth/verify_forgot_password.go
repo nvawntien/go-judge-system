@@ -1,4 +1,4 @@
-package handler
+package auth
 
 import (
 	"go-judge-system/pkg/response"
