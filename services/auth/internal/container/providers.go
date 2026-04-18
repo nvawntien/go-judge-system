@@ -6,28 +6,31 @@ import (
 	"go-judge-system/pkg/logger"
 	"go-judge-system/services/auth/internal/adapter/inbound/http"
 	"go-judge-system/services/auth/internal/adapter/inbound/http/handler"
+	authhandler "go-judge-system/services/auth/internal/adapter/inbound/http/handler/auth"
 	"go-judge-system/services/auth/internal/adapter/inbound/http/middleware"
 	"go-judge-system/services/auth/internal/adapter/outbound/cache/redis"
 	"go-judge-system/services/auth/internal/adapter/outbound/crypto"
-	"go-judge-system/services/auth/internal/adapter/outbound/jwt"
 	"go-judge-system/services/auth/internal/adapter/outbound/mail"
-	"go-judge-system/services/auth/internal/adapter/outbound/otp"
 	"go-judge-system/services/auth/internal/adapter/outbound/persistence/postgres"
 	"go-judge-system/services/auth/internal/adapter/outbound/security"
-	"go-judge-system/services/auth/internal/application/usecase"
+	authusecase "go-judge-system/services/auth/internal/application/usecase/auth"
 
 	"github.com/google/wire"
 )
 
+var InfrastructureProviderSet = wire.NewSet(
+	database.ConnectDatabase,
+	cache.ConnectRedis,
+	logger.NewLogger,
+)
+
 var OutboundProviderSet = wire.NewSet(
 	postgres.NewUserRepository,
-	redis.NewResetTokenRepository,
-	crypto.NewResetTokenGenerator,
-	redis.NewCacheRepository,
-	mail.NewSMTPProvider,
+	redis.NewTokenRepository,
+	//jwt.NewJWTProvider,
+	crypto.NewTokenGenerator,
 	security.NewBcryptHasher,
-	jwt.NewJWTProvider,
-	otp.NewOTPService,
+	mail.NewSMTPProvider,
 )
 
 var MiddlewareProviderSet = wire.NewSet(
@@ -35,38 +38,13 @@ var MiddlewareProviderSet = wire.NewSet(
 )
 
 var UseCaseProviderSet = wire.NewSet(
-	usecase.NewRegisterUseCase,
-	usecase.NewVerifyForgotPasswordUseCase,
-	usecase.NewForgotPasswordUseCase,
-	usecase.NewVerifyActivationUseCase,
-	usecase.NewResendOTPUseCase,
-	usecase.NewResetPasswordUseCase,
-	usecase.NewLoginUseCase,
-	usecase.NewChangePasswordUseCase,
-	usecase.NewRefreshTokenUseCase,
-	usecase.NewGetProfileUseCase,
-	usecase.NewUpdateUserRoleUseCase,
+	authusecase.NewRegisterUseCase,
+	authusecase.NewVerifyEmailUseCase,
 )
 
 var InboundProviderSet = wire.NewSet(
-	handler.NewLoginHandler,
-	handler.NewRegisterHandler,
-	handler.NewVerifyActivationHandler,
-	handler.NewResetPasswordHandler,
-	handler.NewResendOTPHandler,
-	handler.NewVerifyForgotPasswordHandler,
-	handler.NewForgotPasswordHandler,
-	handler.NewChangePasswordHandler,
-	handler.NewLogoutHandler,
-	handler.NewRefreshTokenHandler,
-	handler.NewGetProfileHandler,
-	handler.NewUpdateUserRoleHandler,
+	authhandler.NewRegisterHandler,
+	authhandler.NewVerifyEmailHandler,
 	handler.NewAuthHandler,
 	http.NewRouter,
-)
-
-var InfrastructureProviderSet = wire.NewSet(
-	database.ConnectDatabase,
-	cache.ConnectRedis,
-	logger.NewLogger,
 )

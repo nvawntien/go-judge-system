@@ -3,8 +3,11 @@ package domain
 import "go-judge-system/pkg/response"
 
 var (
+	ErrDuplicateEntry        = response.NewAppError(response.CodeConflict, "duplicate entry", nil)
 	ErrUserInactive          = response.NewAppError(response.CodeForbidden, "user is not active", nil)
 	ErrUserAlreadyActive     = response.NewAppError(response.CodeConflict, "user is already active", nil)
+	ErrEmailAlreadyExists    = response.NewAppError(response.CodeConflict, "email already exists", nil)
+	ErrUsernameAlreadyExists = response.NewAppError(response.CodeConflict, "username already exists", nil)
 	ErrUserNotFound          = response.NewAppError(response.CodeAccountNotFound, "user not found", nil)
 	ErrInvalidEmail          = response.NewAppError(response.CodeBadRequest, "invalid email format", nil)
 	ErrPasswordTooWeak       = response.NewAppError(response.CodeBadRequest, "password is too weak", nil)

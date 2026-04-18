@@ -8,13 +8,13 @@ import (
 	"go-judge-system/services/auth/internal/application/port/outbound"
 	"go-judge-system/services/auth/internal/domain"
 	"go-judge-system/services/auth/internal/domain/entity"
-	"go-judge-system/services/auth/internal/domain/valueobject"
 
 	"gorm.io/gorm"
 )
 
 type UserDAO struct {
 	ID        string    `gorm:"primaryKey;type:uuid"`
+	FullName  string    `gorm:"size:255"`
 	Username  string    `gorm:"uniqueIndex;not null;size:100"`
 	Email     string    `gorm:"uniqueIndex;not null;size:255"`
 	Password  string    `gorm:"not null"`
@@ -39,7 +39,17 @@ func NewUserRepository(db *gorm.DB) outbound.UserRepository {
 }
 
 func (r *userRepository) CreateUser(ctx context.Context, user *entity.User) error {
-	return r.db.WithContext(ctx).Create(toUserDAO(user)).Error
+	if err := r.db.WithContext(ctx).Create(toUserDAO(user)).Error; err != nil {
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			return domain.ErrDuplicateEntry
+		}
+		return err
+	}
+	return nil
+}
+
+func (r *userRepository) DeleteUser(ctx context.Context, id string) error {
+	return r.db.WithContext(ctx).Where("id = ?", id).Delete(&UserDAO{}).Error
 }
 
 func (r *userRepository) GetUserByEmail(ctx context.Context, email string) (*entity.User, error) {
@@ -51,7 +61,7 @@ func (r *userRepository) GetUserByEmail(ctx context.Context, email string) (*ent
 		return nil, err
 	}
 
-	return toUserEntity(&dao)
+	return toUserEntity(&dao), nil
 }
 
 func (r *userRepository) GetUserByUsername(ctx context.Context, username string) (*entity.User, error) {
@@ -63,7 +73,7 @@ func (r *userRepository) GetUserByUsername(ctx context.Context, username string)
 		return nil, err
 	}
 
-	return toUserEntity(&dao)
+	return toUserEntity(&dao), nil
 }
 
 func (r *userRepository) GetUserById(ctx context.Context, id string) (*entity.User, error) {
@@ -75,15 +85,16 @@ func (r *userRepository) GetUserById(ctx context.Context, id string) (*entity.Us
 		return nil, err
 	}
 
-	return toUserEntity(&dao)
+	return toUserEntity(&dao), nil
 }
 
 func (r *userRepository) UpdateUser(ctx context.Context, user *entity.User) error {
 	return r.db.WithContext(ctx).Model(&UserDAO{}).
 		Where("id = ?", user.ID).
 		Updates(map[string]interface{}{
+			"full_name":  user.FullName,
 			"username":   user.Username,
-			"email":      user.Email.String(),
+			"email":      user.Email,
 			"password":   user.Password,
 			"role":       user.Role,
 			"rating":     user.Rating,
@@ -96,8 +107,9 @@ func (r *userRepository) UpdateUser(ctx context.Context, user *entity.User) erro
 func toUserDAO(user *entity.User) *UserDAO {
 	return &UserDAO{
 		ID:        user.ID,
+		FullName:  user.FullName,
 		Username:  user.Username,
-		Email:     user.Email.String(),
+		Email:     user.Email,
 		Password:  user.Password,
 		Role:      user.Role,
 		Rating:    user.Rating,
@@ -108,21 +120,17 @@ func toUserDAO(user *entity.User) *UserDAO {
 }
 
 // mapping dao to entity
-func toUserEntity(dao *UserDAO) (*entity.User, error) {
-	emailVO, err := valueobject.NewEmail(dao.Email)
-	if err != nil {
-		return nil, err
-	}
-
+func toUserEntity(dao *UserDAO) *entity.User {
 	return &entity.User{
 		ID:        dao.ID,
+		FullName:  dao.FullName,
 		Username:  dao.Username,
-		Email:     emailVO,
+		Email:     dao.Email,
 		Password:  dao.Password,
 		Role:      dao.Role,
 		Rating:    dao.Rating,
 		IsActive:  dao.IsActive,
 		CreatedAt: dao.CreatedAt,
 		UpdatedAt: dao.UpdatedAt,
-	}, nil
+	}
 }

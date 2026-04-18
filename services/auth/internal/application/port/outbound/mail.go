@@ -3,5 +3,6 @@ package outbound
 import "context"
 
 type MailProvider interface {
-	SendOTP(ctx context.Context, email string, otp string) error
+	SendVerificationEmail(ctx context.Context, email, token string) error
+	SendPasswordResetEmail(ctx context.Context, email, token string) error
 }
