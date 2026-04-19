@@ -30,7 +30,9 @@ func (r *Router) SetupRoutes() {
 	auth := r.engine.Group("/api/v1/auth")
 	{
 		auth.POST("/register", r.auth.Register.Handle)
-
+		auth.POST("/login", r.auth.Login.Handle)
+		auth.POST("/logout", r.middleware, r.auth.Logout.Handle)
+		
 		email := auth.Group("/email")
 		{
 			email.POST("/verify", r.auth.VerifyEmail.Handle)

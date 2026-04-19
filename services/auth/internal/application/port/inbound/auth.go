@@ -12,3 +12,7 @@ type RegisterUseCase interface {
 type VerifyEmailUseCase interface {
 	Execute(ctx context.Context, req dto.VerifyEmailRequest) error
 }
+
+type LoginUseCase interface {
+	Execute(ctx context.Context, req dto.LoginRequest) (*dto.LoginResponse, error)
+}

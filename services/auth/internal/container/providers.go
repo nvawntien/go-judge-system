@@ -10,6 +10,7 @@ import (
 	"go-judge-system/services/auth/internal/adapter/inbound/http/middleware"
 	"go-judge-system/services/auth/internal/adapter/outbound/cache/redis"
 	"go-judge-system/services/auth/internal/adapter/outbound/crypto"
+	"go-judge-system/services/auth/internal/adapter/outbound/jwt"
 	"go-judge-system/services/auth/internal/adapter/outbound/mail"
 	"go-judge-system/services/auth/internal/adapter/outbound/persistence/postgres"
 	"go-judge-system/services/auth/internal/adapter/outbound/security"
@@ -27,7 +28,7 @@ var InfrastructureProviderSet = wire.NewSet(
 var OutboundProviderSet = wire.NewSet(
 	postgres.NewUserRepository,
 	redis.NewTokenRepository,
-	//jwt.NewJWTProvider,
+	jwt.NewJWTProvider,
 	crypto.NewTokenGenerator,
 	security.NewBcryptHasher,
 	mail.NewSMTPProvider,
@@ -40,11 +41,14 @@ var MiddlewareProviderSet = wire.NewSet(
 var UseCaseProviderSet = wire.NewSet(
 	authusecase.NewRegisterUseCase,
 	authusecase.NewVerifyEmailUseCase,
+	authusecase.NewLoginUseCase,
 )
 
 var InboundProviderSet = wire.NewSet(
 	authhandler.NewRegisterHandler,
 	authhandler.NewVerifyEmailHandler,
+	authhandler.NewLoginHandler,
+	authhandler.NewLogoutHandler,
 	handler.NewAuthHandler,
 	http.NewRouter,
 )
