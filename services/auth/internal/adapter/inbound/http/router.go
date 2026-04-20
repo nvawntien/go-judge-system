@@ -36,6 +36,7 @@ func (r *Router) SetupRoutes() {
 		email := auth.Group("/email")
 		{
 			email.POST("/verify", r.auth.VerifyEmail.Handle)
+			email.POST("/resend-verification", r.auth.ResendVerification.Handle)
 		}
 	}
 }

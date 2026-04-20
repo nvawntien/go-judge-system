@@ -13,6 +13,10 @@ type VerifyEmailUseCase interface {
 	Execute(ctx context.Context, req dto.VerifyEmailRequest) error
 }
 
+type ResendVerificationUseCase interface {
+	Execute(ctx context.Context, req dto.ResendVerificationRequest) error
+}
+
 type LoginUseCase interface {
 	Execute(ctx context.Context, req dto.LoginRequest) (*dto.LoginResponse, error)
 }

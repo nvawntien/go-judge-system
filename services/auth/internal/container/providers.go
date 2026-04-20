@@ -41,12 +41,14 @@ var MiddlewareProviderSet = wire.NewSet(
 var UseCaseProviderSet = wire.NewSet(
 	authusecase.NewRegisterUseCase,
 	authusecase.NewVerifyEmailUseCase,
+	authusecase.NewResendVerificationUseCase,
 	authusecase.NewLoginUseCase,
 )
 
 var InboundProviderSet = wire.NewSet(
 	authhandler.NewRegisterHandler,
 	authhandler.NewVerifyEmailHandler,
+	authhandler.NewResendVerificationHandler,
 	authhandler.NewLoginHandler,
 	authhandler.NewLogoutHandler,
 	handler.NewAuthHandler,
