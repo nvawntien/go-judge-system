@@ -3,6 +3,7 @@ package domain
 import "go-judge-system/pkg/response"
 
 var (
+	ErrPasswordMismatch      = response.NewAppError(response.CodeBadRequest, "password and confirm password do not match", nil)
 	ErrDuplicateEntry        = response.NewAppError(response.CodeConflict, "duplicate entry", nil)
 	ErrUserInactive          = response.NewAppError(response.CodeForbidden, "user is not active", nil)
 	ErrUserAlreadyActive     = response.NewAppError(response.CodeConflict, "user is already active", nil)

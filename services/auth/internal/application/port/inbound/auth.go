@@ -24,3 +24,7 @@ type LoginUseCase interface {
 type ForgotPasswordUseCase interface {
 	Execute(ctx context.Context, req dto.ForgotPasswordRequest) error
 }
+
+type ResetPasswordUseCase interface {
+	Execute(ctx context.Context, req dto.ResetPasswordRequest) error
+}

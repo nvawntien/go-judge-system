@@ -42,6 +42,7 @@ func (r *Router) SetupRoutes() {
 		password := auth.Group("/password")
 		{
 			password.POST("/forgot", r.auth.ForgotPassword.Handle)
+			password.POST("/reset", r.auth.ResetPassword.Handle)
 		}
 	}
 }
