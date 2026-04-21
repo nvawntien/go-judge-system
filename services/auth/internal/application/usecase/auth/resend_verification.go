@@ -47,18 +47,7 @@ func (uc *resendVerificationUseCase) Execute(ctx context.Context, req dto.Resend
 	}
 
 	email := emailVO.String()
-
-	allowed, err := uc.tokenRepo.TryAcquireResendCooldown(ctx, email, resendVerificationCooldownTTL)
-	if err != nil {
-		uc.logger.Error("failed to apply resend verification cooldown", zap.String("email", email), zap.Error(err))
-		return domain.ErrInternalServer.Wrap(err)
-	}
-
-	// Silent cooldown: return success response from handler without sending another email.
-	if !allowed {
-		return nil
-	}
-
+	
 	user, err := uc.userRepo.GetUserByEmail(ctx, email)
 	if err != nil {
 		// Do not leak whether an email exists in the system.
@@ -75,16 +64,26 @@ func (uc *resendVerificationUseCase) Execute(ctx context.Context, req dto.Resend
 		return nil
 	}
 
+	allowed, err := uc.tokenRepo.TryAcquireResendCooldown(ctx, user.ID, resendVerificationCooldownTTL)
+	if err != nil {
+		uc.logger.Error("failed to apply resend verification cooldown", zap.String("user_id", user.ID), zap.Error(err))
+		return domain.ErrInternalServer.Wrap(err)
+	}
+
+	if !allowed {
+		return domain.ErrRateLimitExceeded
+	}
+
 	rawToken := uc.tokenGenerator.Generate(user.ID)
 	hashedToken := uc.tokenGenerator.Hash(rawToken)
 
-	if err := uc.tokenRepo.Save(ctx, hashedToken, user.Email, verificationTokenTTL); err != nil {
-		uc.logger.Error("failed to save resend verification token", zap.String("email", email), zap.Error(err))
+	if err := uc.tokenRepo.Save(ctx, hashedToken, user.ID, verificationTokenTTL); err != nil {
+		uc.logger.Error("failed to save resend verification token", zap.String("user_id", user.ID), zap.Error(err))
 		return domain.ErrInternalServer.Wrap(err)
 	}
 
 	if err := uc.mailProvider.SendVerificationEmail(ctx, user.Email, rawToken); err != nil {
-		uc.logger.Error("failed to send resend verification email", zap.String("email", email), zap.Error(err))
+		uc.logger.Error("failed to send resend verification email", zap.String("user_id", user.ID), zap.Error(err))
 		// Do not return an error; clients should still receive the same generic response.
 	}
 

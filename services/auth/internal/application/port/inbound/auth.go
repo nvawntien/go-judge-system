@@ -20,3 +20,7 @@ type ResendVerificationUseCase interface {
 type LoginUseCase interface {
 	Execute(ctx context.Context, req dto.LoginRequest) (*dto.LoginResponse, error)
 }
+
+type ForgotPasswordUseCase interface {
+	Execute(ctx context.Context, req dto.ForgotPasswordRequest) error
+}

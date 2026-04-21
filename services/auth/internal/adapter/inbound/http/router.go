@@ -38,6 +38,11 @@ func (r *Router) SetupRoutes() {
 			email.POST("/verify", r.auth.VerifyEmail.Handle)
 			email.POST("/resend-verification", r.auth.ResendVerification.Handle)
 		}
+
+		password := auth.Group("/password")
+		{
+			password.POST("/forgot", r.auth.ForgotPassword.Handle)
+		}
 	}
 }
 

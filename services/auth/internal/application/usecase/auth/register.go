@@ -94,7 +94,7 @@ func (r *register) Execute(ctx context.Context, req dto.RegisterRequest) error {
 	rawToken := r.tokenGenerator.Generate(user.ID)
 	hashedToken := r.tokenGenerator.Hash(rawToken)
 
-	if err := r.tokenRepo.Save(ctx, hashedToken, user.Email, verificationTokenTTL); err != nil {
+	if err := r.tokenRepo.Save(ctx, hashedToken, user.ID, verificationTokenTTL); err != nil {
 		r.logger.Error("failed to save verification token, rolling back user creation", 
 			zap.String("user_id", user.ID),
 			zap.String("email", user.Email), 

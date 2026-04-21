@@ -136,7 +136,7 @@ func (s *smtpProvider) SendVerificationEmail(ctx context.Context, toEmail, token
 	return s.sendMail(toEmail, "Xác thực tài khoản Go-Judge", body.Bytes())
 }
 
-func (s *smtpProvider) SendPasswordResetEmail(ctx context.Context, toEmail, token string) error {
+func (s *smtpProvider) SendForgotPasswordEmail(ctx context.Context, toEmail, token string) error {
 	link := fmt.Sprintf("%s/reset-password?token=%s", s.appCfg.FrontendURL, token)
 	data := struct {
 		Link string

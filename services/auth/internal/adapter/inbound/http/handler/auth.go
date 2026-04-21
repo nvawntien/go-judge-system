@@ -8,6 +8,7 @@ type AuthHandler struct {
 	ResendVerification *auth.ResendVerificationHandler
 	Login              *auth.LoginHandler
 	Logout             *auth.LogoutHandler
+	ForgotPassword     *auth.ForgotPasswordHandler
 }
 
 func NewAuthHandler(
@@ -16,6 +17,8 @@ func NewAuthHandler(
 	resendVerificationHandler *auth.ResendVerificationHandler,
 	loginHandler *auth.LoginHandler,
 	logoutHandler *auth.LogoutHandler,
+	forgotPasswordHandler *auth.ForgotPasswordHandler,
+
 ) *AuthHandler {
 	return &AuthHandler{
 		Register:           registerHandler,
@@ -23,5 +26,6 @@ func NewAuthHandler(
 		ResendVerification: resendVerificationHandler,
 		Login:              loginHandler,
 		Logout:             logoutHandler,
+		ForgotPassword:     forgotPasswordHandler,
 	}
 }

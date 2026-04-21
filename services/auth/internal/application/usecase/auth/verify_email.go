@@ -38,7 +38,7 @@ func (uc *verifyEmail) Execute(ctx context.Context, req dto.VerifyEmailRequest) 
 	hashedToken := uc.tokenGenerator.Hash(req.Token)
 
 	// Find the associated email
-	email, err := uc.tokenRepo.FindByToken(ctx, hashedToken)
+	userID, err := uc.tokenRepo.FindByToken(ctx, hashedToken)
 	if err != nil {
 		if errors.Is(err, domain.ErrInvalidOrExpiredToken) {
 			return domain.ErrInvalidOrExpiredToken
@@ -48,12 +48,12 @@ func (uc *verifyEmail) Execute(ctx context.Context, req dto.VerifyEmailRequest) 
 	}
 
 	// Find the user
-	user, err := uc.userRepo.GetUserByEmail(ctx, email)
+	user, err := uc.userRepo.GetUserById(ctx, userID)
 	if err != nil {
 		if errors.Is(err, domain.ErrUserNotFound) {
 			return domain.ErrUserNotFound
 		}
-		uc.logger.Error("failed to get user by email", zap.String("email", email), zap.Error(err))
+		uc.logger.Error("failed to get user by ID", zap.String("user_id", userID), zap.Error(err))
 		return domain.ErrInternalServer.Wrap(err)
 	}
 
@@ -65,15 +65,15 @@ func (uc *verifyEmail) Execute(ctx context.Context, req dto.VerifyEmailRequest) 
 	// Activate user
 	user.Activate()
 	if err := uc.userRepo.UpdateUser(ctx, user); err != nil {
-		uc.logger.Error("failed to activate user", zap.String("email", email), zap.Error(err))
+		uc.logger.Error("failed to activate user", zap.String("user_id", userID), zap.Error(err))
 		return domain.ErrInternalServer.Wrap(err)
 	}
 
 	// Clean up token
 	if err := uc.tokenRepo.Delete(ctx, hashedToken); err != nil {
-		uc.logger.Warn("failed to delete verification token after activation", zap.String("email", email), zap.Error(err))
+		uc.logger.Warn("failed to delete verification token after activation", zap.String("user_id", userID), zap.Error(err))
 	}
 
-	uc.logger.Info("user email verified successfully", zap.String("email", email))
+	uc.logger.Info("user email verified successfully", zap.String("user_id", userID))
 	return nil
 }
