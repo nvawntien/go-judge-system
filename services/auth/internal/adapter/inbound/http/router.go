@@ -43,6 +43,7 @@ func (r *Router) SetupRoutes() {
 		{
 			password.POST("/forgot", r.auth.ForgotPassword.Handle)
 			password.POST("/reset", r.auth.ResetPassword.Handle)
+			password.PUT("/change", r.middleware, r.auth.ChangePassword.Handle)
 		}
 	}
 }

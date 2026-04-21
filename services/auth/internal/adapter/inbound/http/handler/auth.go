@@ -10,6 +10,7 @@ type AuthHandler struct {
 	Logout             *auth.LogoutHandler
 	ForgotPassword     *auth.ForgotPasswordHandler
 	ResetPassword      *auth.ResetPasswordHandler
+	ChangePassword     *auth.ChangePasswordHandler
 }
 
 func NewAuthHandler(
@@ -20,6 +21,7 @@ func NewAuthHandler(
 	logoutHandler *auth.LogoutHandler,
 	forgotPasswordHandler *auth.ForgotPasswordHandler,
 	resetPasswordHandler *auth.ResetPasswordHandler,
+	changePasswordHandler *auth.ChangePasswordHandler,
 
 ) *AuthHandler {
 	return &AuthHandler{
@@ -30,5 +32,6 @@ func NewAuthHandler(
 		Logout:             logoutHandler,
 		ForgotPassword:     forgotPasswordHandler,
 		ResetPassword:      resetPasswordHandler,
+		ChangePassword:     changePasswordHandler,
 	}
 }

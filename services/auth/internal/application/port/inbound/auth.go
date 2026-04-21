@@ -2,6 +2,7 @@ package inbound
 
 import (
 	"context"
+	"go-judge-system/pkg/auth"
 	"go-judge-system/services/auth/internal/application/dto"
 )
 
@@ -27,4 +28,8 @@ type ForgotPasswordUseCase interface {
 
 type ResetPasswordUseCase interface {
 	Execute(ctx context.Context, req dto.ResetPasswordRequest) error
+}
+
+type ChangePasswordUseCase interface {
+	Execute(ctx context.Context, claims auth.Claims, req dto.ChangePasswordRequest) error
 }
