@@ -33,3 +33,7 @@ type ResetPasswordUseCase interface {
 type ChangePasswordUseCase interface {
 	Execute(ctx context.Context, claims auth.Claims, req dto.ChangePasswordRequest) error
 }
+
+type RefreshTokenUseCase interface {
+	Execute(ctx context.Context, refreshToken string) (*dto.LoginResponse, error)
+}

@@ -28,7 +28,7 @@ func NewChangePasswordUseCase(
 
 func (uc *changePasswordUseCase) Execute(ctx context.Context, claims auth.Claims, req dto.ChangePasswordRequest) error {
 	if err := valueobject.ValidatePlainPassword(req.NewPassword); err != nil {
-		return err
+		return domain.ErrPasswordTooWeak.Wrap(err)
 	}
 
 	userID := claims.UserID
@@ -37,22 +37,22 @@ func (uc *changePasswordUseCase) Execute(ctx context.Context, claims auth.Claims
 	user, err := uc.userRepo.GetUserById(ctx, userID)
 	if err != nil {
 		if errors.Is(err, domain.ErrUserNotFound) {
-			return domain.ErrUserNotFound
+			return domain.ErrUserNotFound.Wrap(err)
 		}
 		return domain.ErrInternalServer.Wrap(err)
 	}
 
 	// Check if the current password is correct
 	if check := uc.passwordEncoder.ComparePasswords(user.Password, []byte(req.CurrentPassword)); !check {
-		return domain.ErrIncorrectCurrentPassword
+		return domain.ErrIncorrectCurrentPassword.Wrap(errors.New("current password does not match stored password"))
 	}
 
 	if req.CurrentPassword == req.NewPassword {
-		return domain.ErrNewPasswordSameAsCurrent
+		return domain.ErrNewPasswordSameAsCurrent.Wrap(errors.New("new password equals current password"))
 	}
 
 	if req.NewPassword != req.ConfirmPassword {
-		return domain.ErrPasswordMismatch
+		return domain.ErrPasswordMismatch.Wrap(errors.New("new password and confirm password do not match"))
 	}
 
 	// Hash the new password

@@ -18,7 +18,7 @@ func NewLoginHandler(uc inbound.LoginUseCase) *LoginHandler {
 func (h *LoginHandler) Handle(c *gin.Context) {
 	var req dto.LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, response.CodeBadRequest, "invalid request payload")
+		response.HandleError(c, response.NewAppError(response.CodeBadRequest, "invalid request payload", err))
 		return
 	}
 

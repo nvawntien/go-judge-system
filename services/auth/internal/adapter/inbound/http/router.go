@@ -17,7 +17,7 @@ type Router struct {
 
 func NewRouter(authHandler *handler.AuthHandler, authMiddleware gin.HandlerFunc, logger *zap.Logger) *Router {
 	r := gin.New()
-	r.Use(pkgmiddleware.RequestLogger(logger))
+	r.Use(pkgmiddleware.UnifiedLogger(logger))
 	r.Use(pkgmiddleware.Recovery(logger))
 
 	return &Router{
@@ -38,7 +38,8 @@ func (r *Router) SetupRoutes() {
 		auth.POST("/register", r.auth.Register.Handle)
 		auth.POST("/login", r.auth.Login.Handle)
 		auth.POST("/logout", r.middleware, r.auth.Logout.Handle)
-		
+		auth.POST("/refresh-token", r.auth.RefreshToken.Handle)
+
 		email := auth.Group("/email")
 		{
 			email.POST("/verify", r.auth.VerifyEmail.Handle)

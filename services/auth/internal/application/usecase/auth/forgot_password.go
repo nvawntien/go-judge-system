@@ -12,8 +12,8 @@ import (
 )
 
 const (
-    forgotPasswordTokenTTL    = 5 * time.Minute
-    forgotPasswordCooldownTTL = 60 * time.Second
+	forgotPasswordTokenTTL    = 5 * time.Minute
+	forgotPasswordCooldownTTL = 60 * time.Second
 )
 
 type forgotPasswordUseCase struct {
@@ -40,11 +40,11 @@ func NewForgotPasswordUseCase(
 func (uc *forgotPasswordUseCase) Execute(ctx context.Context, req dto.ForgotPasswordRequest) error {
 	emailVO, err := valueobject.NewEmail(req.Email)
 	if err != nil {
-		return err
+		return domain.ErrInvalidEmail.Wrap(err)
 	}
 
 	email := emailVO.String()
-	
+
 	user, err := uc.userRepo.GetUserByEmail(ctx, email)
 	if err != nil {
 		if errors.Is(err, domain.ErrUserNotFound) {
@@ -59,7 +59,7 @@ func (uc *forgotPasswordUseCase) Execute(ctx context.Context, req dto.ForgotPass
 	}
 
 	if !allowed {
-		return domain.ErrRateLimitExceeded
+		return domain.ErrRateLimitExceeded.Wrap(errors.New("forgot-password resend cooldown not elapsed"))
 	}
 
 	rawToken := uc.tokenGenerator.Generate(user.ID)
