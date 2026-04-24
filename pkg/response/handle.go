@@ -6,7 +6,16 @@ import (
 	"go-judge-system/pkg/auth"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
+
+var errorLogger *zap.Logger
+
+// SetErrorLogger configures the global logger used by HandleError
+// to automatically log root cause errors. Call once at application startup.
+func SetErrorLogger(l *zap.Logger) {
+	errorLogger = l
+}
 
 // HandleVoid: Used for APIs that receive JSON body data, but do not return data.
 func HandleVoid[Req any](c *gin.Context, fn func(context.Context, Req) error, successCode int, successMsg string) {
@@ -352,12 +361,33 @@ func HandleWithParamsAndForm[P any, F any, Res any](c *gin.Context, fn func(cont
 }
 
 // HandleError: Handles errors and returns appropriate HTTP responses.
+// If an AppError carries a root cause (via Wrap), it is automatically logged
+// with request context and origin stack trace.
 func HandleError(c *gin.Context, err error) {
 	var appErr *AppError
 	if errors.As(err, &appErr) {
+		// Log internal root cause if present (server errors wrapped via .Wrap())
+		if appErr.Err != nil && errorLogger != nil {
+			errorLogger.Error("request error",
+				zap.String("method", c.Request.Method),
+				zap.String("path", c.Request.URL.Path),
+				zap.Int("code", appErr.Code),
+				zap.String("message", appErr.Message),
+				zap.String("origin", appErr.Stack),
+				zap.Error(appErr.Err),
+			)
+		}
 		Error(c, appErr.Code, appErr.Message)
 		return
 	}
 
+	// Unknown error type — log as unhandled
+	if errorLogger != nil {
+		errorLogger.Error("unhandled error",
+			zap.String("method", c.Request.Method),
+			zap.String("path", c.Request.URL.Path),
+			zap.Error(err),
+		)
+	}
 	Error(c, CodeInternalServer, "internal server error")
 }
