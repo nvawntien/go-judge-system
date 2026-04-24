@@ -18,7 +18,9 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./gateway/krakend.json:/etc/krakend/krakend.json:ro
+      - ./gateway/krakend.tmpl:/etc/krakend/krakend.tmpl:ro
+      - ./gateway/settings:/etc/krakend/settings:ro
+      - ./gateway/templates:/etc/krakend/templates:ro
       - ./gateway/symmetric.json:/etc/krakend/symmetric.json:ro
     networks:
       - judge_internal
@@ -31,6 +33,11 @@ services:
         condition: service_healthy
     restart: unless-stopped
     logging: *default-logging
+    environment:
+      - FC_ENABLE=1
+      - FC_SETTINGS=/etc/krakend/settings
+      - FC_TEMPLATES=/etc/krakend/templates
+    command: [ "run", "-c", "/etc/krakend/krakend.tmpl" ]
     deploy:
       resources:
         limits:

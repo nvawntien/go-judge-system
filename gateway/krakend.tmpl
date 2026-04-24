@@ -1,0 +1,28 @@
+{
+  "$schema": "https://www.krakend.io/schema/krakend.json",
+  "version": 3,
+  "name": "{{ .service.name }}",
+  "port": {{ .service.port }},
+  "timeout": "{{ .service.timeout }}",
+  "cache_ttl": "{{ .service.cache_ttl }}",
+  "output_encoding": "{{ .service.output_encoding }}",
+  "extra_config": {{ marshal .service.extra_config }},
+  "endpoints": [
+{{- $first := true -}}
+{{- range $endpoint := .auth.endpoints }}
+{{- if not $first }},{{ end }}
+{{ template "endpoint.tmpl" (dict "service" $.service "endpoint" $endpoint) }}
+{{- $first = false -}}
+{{- end }}
+{{- range $endpoint := .problem.endpoints }}
+{{- if not $first }},{{ end }}
+{{ template "endpoint.tmpl" (dict "service" $.service "endpoint" $endpoint) }}
+{{- $first = false -}}
+{{- end }}
+{{- range $endpoint := .submission.endpoints }}
+{{- if not $first }},{{ end }}
+{{ template "endpoint.tmpl" (dict "service" $.service "endpoint" $endpoint) }}
+{{- $first = false -}}
+{{- end }}
+  ]
+}
