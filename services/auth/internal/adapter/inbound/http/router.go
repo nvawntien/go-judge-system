@@ -4,6 +4,9 @@ import (
 	"go-judge-system/services/auth/internal/adapter/inbound/http/handler"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
+
+	pkgmiddleware "go-judge-system/pkg/middleware"
 )
 
 type Router struct {
@@ -12,8 +15,11 @@ type Router struct {
 	middleware gin.HandlerFunc
 }
 
-func NewRouter(authHandler *handler.AuthHandler, authMiddleware gin.HandlerFunc) *Router {
-	r := gin.Default()
+func NewRouter(authHandler *handler.AuthHandler, authMiddleware gin.HandlerFunc, logger *zap.Logger) *Router {
+	r := gin.New()
+	r.Use(pkgmiddleware.RequestLogger(logger))
+	r.Use(pkgmiddleware.Recovery(logger))
+
 	return &Router{
 		engine:     r,
 		auth:       authHandler,

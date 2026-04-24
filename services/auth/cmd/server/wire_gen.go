@@ -11,10 +11,10 @@ import (
 	"go-judge-system/pkg/config"
 	"go-judge-system/pkg/database"
 	"go-judge-system/pkg/logger"
+	"go-judge-system/pkg/middleware"
 	"go-judge-system/services/auth/internal/adapter/inbound/http"
 	"go-judge-system/services/auth/internal/adapter/inbound/http/handler"
 	auth2 "go-judge-system/services/auth/internal/adapter/inbound/http/handler/auth"
-	"go-judge-system/services/auth/internal/adapter/inbound/http/middleware"
 	"go-judge-system/services/auth/internal/adapter/outbound/cache/redis"
 	"go-judge-system/services/auth/internal/adapter/outbound/crypto"
 	"go-judge-system/services/auth/internal/adapter/outbound/jwt"
@@ -49,26 +49,26 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	}
 	tokenRepository := redis.NewTokenRepository(client)
 	passwordEncoder := security.NewBcryptHasher()
-	registerUseCase := auth.NewRegisterUseCase(userRepository, mailProvider, tokenGenerator, tokenRepository, passwordEncoder, zapLogger)
+	registerUseCase := auth.NewRegisterUseCase(userRepository, mailProvider, tokenGenerator, tokenRepository, passwordEncoder)
 	registerHandler := auth2.NewRegisterHandler(registerUseCase)
-	verifyEmailUseCase := auth.NewVerifyEmailUseCase(tokenGenerator, tokenRepository, userRepository, zapLogger)
+	verifyEmailUseCase := auth.NewVerifyEmailUseCase(tokenGenerator, tokenRepository, userRepository)
 	verifyEmailHandler := auth2.NewVerifyEmailHandler(verifyEmailUseCase)
-	resendVerificationUseCase := auth.NewResendVerificationUseCase(userRepository, mailProvider, tokenGenerator, tokenRepository, zapLogger)
+	resendVerificationUseCase := auth.NewResendVerificationUseCase(userRepository, mailProvider, tokenGenerator, tokenRepository)
 	resendVerificationHandler := auth2.NewResendVerificationHandler(resendVerificationUseCase)
 	jwtConfig := cfg.JWT
 	jwtProvider := jwt.NewJWTProvider(jwtConfig)
-	loginUseCase := auth.NewLoginUseCase(userRepository, passwordEncoder, jwtProvider, zapLogger)
+	loginUseCase := auth.NewLoginUseCase(userRepository, passwordEncoder, jwtProvider)
 	loginHandler := auth2.NewLoginHandler(loginUseCase)
 	logoutHandler := auth2.NewLogoutHandler()
-	forgotPasswordUseCase := auth.NewForgotPasswordUseCase(userRepository, tokenRepository, tokenGenerator, mailProvider, zapLogger)
+	forgotPasswordUseCase := auth.NewForgotPasswordUseCase(userRepository, tokenRepository, tokenGenerator, mailProvider)
 	forgotPasswordHandler := auth2.NewForgotPasswordHandler(forgotPasswordUseCase)
-	resetPasswordUseCase := auth.NewResetPasswordUseCase(userRepository, tokenRepository, tokenGenerator, passwordEncoder, zapLogger)
+	resetPasswordUseCase := auth.NewResetPasswordUseCase(userRepository, tokenRepository, tokenGenerator, passwordEncoder)
 	resetPasswordHandler := auth2.NewResetPasswordHandler(resetPasswordUseCase)
-	changePasswordUseCase := auth.NewChangePasswordUseCase(userRepository, passwordEncoder, zapLogger)
+	changePasswordUseCase := auth.NewChangePasswordUseCase(userRepository, passwordEncoder)
 	changePasswordHandler := auth2.NewChangePasswordHandler(changePasswordUseCase)
 	authHandler := handler.NewAuthHandler(registerHandler, verifyEmailHandler, resendVerificationHandler, loginHandler, logoutHandler, forgotPasswordHandler, resetPasswordHandler, changePasswordHandler)
 	handlerFunc := middleware.NewAuthMiddleware()
-	router := http.NewRouter(authHandler, handlerFunc)
+	router := http.NewRouter(authHandler, handlerFunc, zapLogger)
 	app := container.NewApp(cfg, router, zapLogger)
 	return app, nil
 }

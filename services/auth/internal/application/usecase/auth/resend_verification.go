@@ -10,8 +10,6 @@ import (
 	"go-judge-system/services/auth/internal/application/port/outbound"
 	"go-judge-system/services/auth/internal/domain"
 	"go-judge-system/services/auth/internal/domain/valueobject"
-
-	"go.uber.org/zap"
 )
 
 const resendVerificationCooldownTTL = 60 * time.Second
@@ -21,7 +19,6 @@ type resendVerificationUseCase struct {
 	mailProvider   outbound.MailProvider
 	tokenGenerator outbound.TokenGenerator
 	tokenRepo      outbound.TokenRepository
-	logger         *zap.Logger
 }
 
 func NewResendVerificationUseCase(
@@ -29,14 +26,12 @@ func NewResendVerificationUseCase(
 	mailProvider outbound.MailProvider,
 	tokenGenerator outbound.TokenGenerator,
 	tokenRepo outbound.TokenRepository,
-	logger *zap.Logger,
 ) inbound.ResendVerificationUseCase {
 	return &resendVerificationUseCase{
 		userRepo:       userRepo,
 		mailProvider:   mailProvider,
 		tokenGenerator: tokenGenerator,
 		tokenRepo:      tokenRepo,
-		logger:         logger,
 	}
 }
 
@@ -55,7 +50,6 @@ func (uc *resendVerificationUseCase) Execute(ctx context.Context, req dto.Resend
 			return nil
 		}
 
-		uc.logger.Error("failed to get user by email for resend verification", zap.String("email", email), zap.Error(err))
 		return domain.ErrInternalServer.Wrap(err)
 	}
 
@@ -66,7 +60,6 @@ func (uc *resendVerificationUseCase) Execute(ctx context.Context, req dto.Resend
 
 	allowed, err := uc.tokenRepo.TryAcquireResendCooldown(ctx, user.ID, resendVerificationCooldownTTL)
 	if err != nil {
-		uc.logger.Error("failed to apply resend verification cooldown", zap.String("user_id", user.ID), zap.Error(err))
 		return domain.ErrInternalServer.Wrap(err)
 	}
 
@@ -78,14 +71,11 @@ func (uc *resendVerificationUseCase) Execute(ctx context.Context, req dto.Resend
 	hashedToken := uc.tokenGenerator.Hash(rawToken)
 
 	if err := uc.tokenRepo.Save(ctx, hashedToken, user.ID, verificationTokenTTL); err != nil {
-		uc.logger.Error("failed to save resend verification token", zap.String("user_id", user.ID), zap.Error(err))
 		return domain.ErrInternalServer.Wrap(err)
 	}
 
-	if err := uc.mailProvider.SendVerificationEmail(ctx, user.Email, rawToken); err != nil {
-		uc.logger.Error("failed to send resend verification email", zap.String("user_id", user.ID), zap.Error(err))
-		// Do not return an error; clients should still receive the same generic response.
-	}
+	// Send verification email — failure is non-critical
+	_ = uc.mailProvider.SendVerificationEmail(ctx, user.Email, rawToken)
 
 	return nil
 }

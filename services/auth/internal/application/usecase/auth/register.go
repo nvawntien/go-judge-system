@@ -11,8 +11,6 @@ import (
 	"go-judge-system/services/auth/internal/domain"
 	"go-judge-system/services/auth/internal/domain/entity"
 	"go-judge-system/services/auth/internal/domain/valueobject"
-
-	"go.uber.org/zap"
 )
 
 const verificationTokenTTL = 24 * 7 * time.Hour
@@ -23,7 +21,6 @@ type register struct {
 	tokenGenerator  outbound.TokenGenerator
 	tokenRepo       outbound.TokenRepository
 	passwordEncoder outbound.PasswordEncoder
-	logger          *zap.Logger
 }
 
 func NewRegisterUseCase(
@@ -32,7 +29,6 @@ func NewRegisterUseCase(
 	tokenGenerator outbound.TokenGenerator,
 	tokenRepo outbound.TokenRepository,
 	passwordEncoder outbound.PasswordEncoder,
-	logger *zap.Logger,
 ) inbound.RegisterUseCase {
 	return &register{
 		userRepo:        userRepo,
@@ -40,7 +36,6 @@ func NewRegisterUseCase(
 		tokenGenerator:  tokenGenerator,
 		tokenRepo:       tokenRepo,
 		passwordEncoder: passwordEncoder,
-		logger:          logger,
 	}
 }
 
@@ -56,7 +51,6 @@ func (r *register) Execute(ctx context.Context, req dto.RegisterRequest) error {
 
 	_, err = r.userRepo.GetUserByEmail(ctx, req.Email)
 	if err != nil && !errors.Is(err, domain.ErrUserNotFound) {
-		r.logger.Error("failed to check email existence", zap.String("email", req.Email), zap.Error(err))
 		return domain.ErrInternalServer.Wrap(err)
 	}
 	if err == nil {
@@ -65,17 +59,14 @@ func (r *register) Execute(ctx context.Context, req dto.RegisterRequest) error {
 
 	_, err = r.userRepo.GetUserByUsername(ctx, req.Username)
 	if err != nil && !errors.Is(err, domain.ErrUserNotFound) {
-		r.logger.Error("failed to check username existence", zap.String("username", req.Username), zap.Error(err))
 		return domain.ErrInternalServer.Wrap(err)
 	}
 	if err == nil {
 		return domain.ErrUsernameAlreadyExists
 	}
 
-
 	hashedPwd, err := r.passwordEncoder.HashAndSalt([]byte(req.Password))
 	if err != nil {
-		r.logger.Error("failed to encode password", zap.String("email", req.Email), zap.Error(err))
 		return domain.ErrInternalServer.Wrap(err)
 	}
 
@@ -87,7 +78,6 @@ func (r *register) Execute(ctx context.Context, req dto.RegisterRequest) error {
 		if errors.Is(err, domain.ErrDuplicateEntry) {
 			return domain.ErrUserAlreadyActive
 		}
-		r.logger.Error("failed to create user", zap.String("email", user.Email), zap.Error(err))
 		return domain.ErrInternalServer.Wrap(err)
 	}
 
@@ -95,36 +85,16 @@ func (r *register) Execute(ctx context.Context, req dto.RegisterRequest) error {
 	hashedToken := r.tokenGenerator.Hash(rawToken)
 
 	if err := r.tokenRepo.Save(ctx, hashedToken, user.ID, verificationTokenTTL); err != nil {
-		r.logger.Error("failed to save verification token, rolling back user creation", 
-			zap.String("user_id", user.ID),
-			zap.String("email", user.Email), 
-			zap.Error(err),
-		)
 		// Rollback user creation
 		if rollbackErr := r.userRepo.DeleteUser(ctx, user.ID); rollbackErr != nil {
-			r.logger.Error("failed to rollback user creation", 
-				zap.String("user_id", user.ID),
-				zap.String("email", user.Email), 
-				zap.Error(rollbackErr),
-			)
+			// rollback failure is logged via middleware when the outer error is returned
+			_ = rollbackErr
 		}
 		return domain.ErrInternalServer.Wrap(err)
 	}
-	
-	if err := r.mailProvider.SendVerificationEmail(ctx, user.Email, rawToken); err != nil {
-		r.logger.Error("failed to send verification email",
-			zap.String("user_id", user.ID),
-			zap.String("email", user.Email), 
-			zap.Error(err),
-		)
-		// no rollback, user is already created and verification email can be resent
-	}
 
-	r.logger.Info("user account created successfully", 
-		zap.String("user_id", user.ID),
-		zap.String("email", user.Email), 
-		zap.String("username", user.Username),
-	)
-		
+	// Send verification email — failure is non-critical, user can resend
+	_ = r.mailProvider.SendVerificationEmail(ctx, user.Email, rawToken)
+
 	return nil
 }

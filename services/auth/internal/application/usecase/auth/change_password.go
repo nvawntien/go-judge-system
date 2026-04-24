@@ -9,25 +9,20 @@ import (
 	"go-judge-system/services/auth/internal/application/port/outbound"
 	"go-judge-system/services/auth/internal/domain"
 	"go-judge-system/services/auth/internal/domain/valueobject"
-
-	"go.uber.org/zap"
 )
 
 type changePasswordUseCase struct {
 	userRepo        outbound.UserRepository
 	passwordEncoder outbound.PasswordEncoder
-	logger          *zap.Logger
 }
 
 func NewChangePasswordUseCase(
 	userRepo outbound.UserRepository,
 	passwordEncoder outbound.PasswordEncoder,
-	logger *zap.Logger,
 ) inbound.ChangePasswordUseCase {
 	return &changePasswordUseCase{
 		userRepo:        userRepo,
 		passwordEncoder: passwordEncoder,
-		logger:          logger,
 	}
 }
 
@@ -44,7 +39,6 @@ func (uc *changePasswordUseCase) Execute(ctx context.Context, claims auth.Claims
 		if errors.Is(err, domain.ErrUserNotFound) {
 			return domain.ErrUserNotFound
 		}
-		uc.logger.Error("failed to get user by ID for change password", zap.String("user_id", userID), zap.Error(err))
 		return domain.ErrInternalServer.Wrap(err)
 	}
 
@@ -64,7 +58,6 @@ func (uc *changePasswordUseCase) Execute(ctx context.Context, claims auth.Claims
 	// Hash the new password
 	hashedPassword, err := uc.passwordEncoder.HashAndSalt([]byte(req.NewPassword))
 	if err != nil {
-		uc.logger.Error("failed to hash new password for change password", zap.String("user_id", userID), zap.Error(err))
 		return domain.ErrInternalServer.Wrap(err)
 	}
 
@@ -73,10 +66,8 @@ func (uc *changePasswordUseCase) Execute(ctx context.Context, claims auth.Claims
 	// Update the user's password
 	user.UpdatePassword(passwordVO)
 	if err := uc.userRepo.UpdateUser(ctx, user); err != nil {
-		uc.logger.Error("failed to update user password", zap.String("user_id", userID), zap.Error(err))
 		return domain.ErrInternalServer.Wrap(err)
 	}
 
-	uc.logger.Info("user password changed successfully", zap.String("user_id", userID))
 	return nil
 }

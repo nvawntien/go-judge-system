@@ -9,8 +9,6 @@ import (
 	"go-judge-system/services/auth/internal/domain"
 	"go-judge-system/services/auth/internal/domain/valueobject"
 	"time"
-
-	"go.uber.org/zap"
 )
 
 const (
@@ -23,7 +21,6 @@ type forgotPasswordUseCase struct {
 	tokenRepo      outbound.TokenRepository
 	tokenGenerator outbound.TokenGenerator
 	mailProvider   outbound.MailProvider
-	logger         *zap.Logger
 }
 
 func NewForgotPasswordUseCase(
@@ -31,14 +28,12 @@ func NewForgotPasswordUseCase(
 	tokenRepo outbound.TokenRepository,
 	tokenGenerator outbound.TokenGenerator,
 	mailProvider outbound.MailProvider,
-	logger *zap.Logger,
 ) inbound.ForgotPasswordUseCase {
 	return &forgotPasswordUseCase{
 		userRepo:       userRepo,
 		tokenRepo:      tokenRepo,
 		tokenGenerator: tokenGenerator,
 		mailProvider:   mailProvider,
-		logger:         logger,
 	}
 }
 
@@ -55,13 +50,11 @@ func (uc *forgotPasswordUseCase) Execute(ctx context.Context, req dto.ForgotPass
 		if errors.Is(err, domain.ErrUserNotFound) {
 			return nil
 		}
-		uc.logger.Error("failed to get user by email for forgot password", zap.String("email", email), zap.Error(err))
 		return domain.ErrInternalServer.Wrap(err)
 	}
 
 	allowed, err := uc.tokenRepo.TryAcquireResendCooldown(ctx, user.ID, forgotPasswordCooldownTTL)
 	if err != nil {
-		uc.logger.Error("failed to apply resend verification cooldown", zap.String("user_id", user.ID), zap.Error(err))
 		return domain.ErrInternalServer.Wrap(err)
 	}
 
@@ -73,15 +66,12 @@ func (uc *forgotPasswordUseCase) Execute(ctx context.Context, req dto.ForgotPass
 	hashedToken := uc.tokenGenerator.Hash(rawToken)
 
 	if err := uc.tokenRepo.Save(ctx, hashedToken, user.ID, forgotPasswordTokenTTL); err != nil {
-		uc.logger.Error("failed to save forgot password token", zap.String("user_id", user.ID), zap.Error(err))
 		return domain.ErrInternalServer.Wrap(err)
 	}
 
 	if err := uc.mailProvider.SendForgotPasswordEmail(ctx, user.Email, rawToken); err != nil {
-		uc.logger.Error("failed to send forgot password email", zap.String("user_id", user.ID), zap.Error(err))
 		return domain.ErrInternalServer.Wrap(err)
 	}
 
-	uc.logger.Info("sent forgot password email", zap.String("user_id", user.ID))
 	return nil
 }

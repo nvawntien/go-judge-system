@@ -8,8 +8,6 @@ import (
 	"go-judge-system/services/auth/internal/application/port/outbound"
 	"go-judge-system/services/auth/internal/domain"
 	"go-judge-system/services/auth/internal/domain/valueobject"
-
-	"go.uber.org/zap"
 )
 
 type resetPasswordUseCase struct {
@@ -17,7 +15,6 @@ type resetPasswordUseCase struct {
 	tokenRepo       outbound.TokenRepository
 	tokenGenerator  outbound.TokenGenerator
 	passwordEncoder outbound.PasswordEncoder
-	logger          *zap.Logger
 }
 
 func NewResetPasswordUseCase(
@@ -25,14 +22,12 @@ func NewResetPasswordUseCase(
 	tokenRepo outbound.TokenRepository,
 	tokenGenerator outbound.TokenGenerator,
 	passwordEncoder outbound.PasswordEncoder,
-	logger *zap.Logger,
 ) inbound.ResetPasswordUseCase {
 	return &resetPasswordUseCase{
 		userRepo:        userRepo,
 		tokenRepo:       tokenRepo,
 		tokenGenerator:  tokenGenerator,
 		passwordEncoder: passwordEncoder,
-		logger:          logger,
 	}
 }
 
@@ -50,7 +45,6 @@ func (uc *resetPasswordUseCase) Execute(ctx context.Context, req dto.ResetPasswo
 	// Find the associated user ID
 	userID, err := uc.tokenRepo.FindByToken(ctx, hashedToken)
 	if err != nil {
-		uc.logger.Error("failed to look up reset password token", zap.Error(err))
 		return domain.ErrInvalidOrExpiredToken
 	}
 
@@ -60,14 +54,12 @@ func (uc *resetPasswordUseCase) Execute(ctx context.Context, req dto.ResetPasswo
 		if errors.Is(err, domain.ErrUserNotFound) {
 			return domain.ErrUserNotFound
 		}
-		uc.logger.Error("failed to get user by ID for reset password", zap.String("user_id", userID), zap.Error(err))
 		return domain.ErrInternalServer.Wrap(err)
 	}
 
 	// Encode the new password
 	hashedPassword, err := uc.passwordEncoder.HashAndSalt([]byte(req.NewPassword))
 	if err != nil {
-		uc.logger.Error("failed to encode new password", zap.Error(err))
 		return domain.ErrInternalServer.Wrap(err)
 	}
 
@@ -76,16 +68,11 @@ func (uc *resetPasswordUseCase) Execute(ctx context.Context, req dto.ResetPasswo
 	user.UpdatePassword(passwordVO)
 	// Update the user's password
 	if err := uc.userRepo.UpdateUser(ctx, user); err != nil {
-		uc.logger.Error("failed to update user password", zap.String("user_id", user.ID), zap.Error(err))
 		return domain.ErrInternalServer.Wrap(err)
 	}
 
-	// Clean up token
-	if err := uc.tokenRepo.Delete(ctx, hashedToken); err != nil {
-		uc.logger.Warn("failed to delete verification token after activation", zap.String("user_id", userID), zap.Error(err))
-	}
-
-	uc.logger.Info("password reset successful", zap.String("user_id", user.ID))
+	// Clean up token — non-critical
+	_ = uc.tokenRepo.Delete(ctx, hashedToken)
 
 	return nil
 }
