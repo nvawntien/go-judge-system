@@ -40,7 +40,7 @@ func NewForgotPasswordUseCase(
 func (uc *forgotPasswordUseCase) Execute(ctx context.Context, req dto.ForgotPasswordRequest) error {
 	emailVO, err := valueobject.NewEmail(req.Email)
 	if err != nil {
-		return domain.ErrInvalidEmail.Wrap(err)
+		return domain.ErrInvalidEmail
 	}
 
 	email := emailVO.String()
@@ -59,7 +59,7 @@ func (uc *forgotPasswordUseCase) Execute(ctx context.Context, req dto.ForgotPass
 	}
 
 	if !allowed {
-		return domain.ErrRateLimitExceeded.Wrap(errors.New("forgot-password resend cooldown not elapsed"))
+		return domain.ErrRateLimitExceeded
 	}
 
 	rawToken := uc.tokenGenerator.Generate(user.ID)

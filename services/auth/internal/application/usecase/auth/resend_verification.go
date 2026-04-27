@@ -38,7 +38,7 @@ func NewResendVerificationUseCase(
 func (uc *resendVerificationUseCase) Execute(ctx context.Context, req dto.ResendVerificationRequest) error {
 	emailVO, err := valueobject.NewEmail(req.Email)
 	if err != nil {
-		return domain.ErrInvalidEmail.Wrap(err)
+		return domain.ErrInvalidEmail
 	}
 
 	email := emailVO.String()
@@ -64,7 +64,7 @@ func (uc *resendVerificationUseCase) Execute(ctx context.Context, req dto.Resend
 	}
 
 	if !allowed {
-		return domain.ErrRateLimitExceeded.Wrap(errors.New("verification resend cooldown not elapsed"))
+		return domain.ErrRateLimitExceeded
 	}
 
 	rawToken := uc.tokenGenerator.Generate(user.ID)

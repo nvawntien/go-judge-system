@@ -43,8 +43,8 @@ func UnifiedLogger(logger *zap.Logger) gin.HandlerFunc {
 					sugar.Errorf("%s %-25s | %3d | %s\n    ↳ ROOT:   %v\n    ↳ ORIGIN: %s",
 						coloredMethod, path, status, userTag, appErr.Err, appErr.Stack)
 				} else {
-					sugar.Warnf("%s %-25s | %3d | %s\n    ↳ ROOT:   %v",
-						coloredMethod, path, status, userTag, appErr.Err)
+					sugar.Warnf("%s %-25s | %3d | %s\n    ↳ CAUSE:   %v",
+						coloredMethod, path, status, userTag, appErr.Message)
 				}
 			} else {
 				if status >= 500 {
