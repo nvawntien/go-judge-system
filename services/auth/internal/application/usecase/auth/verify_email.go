@@ -36,7 +36,7 @@ func (uc *verifyEmail) Execute(ctx context.Context, req dto.VerifyEmailRequest) 
 	userID, err := uc.tokenRepo.FindByToken(ctx, hashedToken)
 	if err != nil {
 		if errors.Is(err, domain.ErrInvalidOrExpiredToken) {
-			return domain.ErrInvalidOrExpiredToken.Wrap(err)
+			return domain.ErrInvalidOrExpiredToken
 		}
 		return domain.ErrInternalServer.Wrap(err)
 	}
@@ -45,14 +45,14 @@ func (uc *verifyEmail) Execute(ctx context.Context, req dto.VerifyEmailRequest) 
 	user, err := uc.userRepo.GetUserById(ctx, userID)
 	if err != nil {
 		if errors.Is(err, domain.ErrUserNotFound) {
-			return domain.ErrUserNotFound.Wrap(err)
+			return domain.ErrUserNotFound
 		}
 		return domain.ErrInternalServer.Wrap(err)
 	}
 
 	// Check if already active
 	if user.IsActive {
-		return domain.ErrUserAlreadyActive.Wrap(errors.New("user is already active"))
+		return domain.ErrUserAlreadyActive
 	}
 
 	// Activate user

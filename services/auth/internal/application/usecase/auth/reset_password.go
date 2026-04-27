@@ -34,25 +34,25 @@ func NewResetPasswordUseCase(
 func (uc *resetPasswordUseCase) Execute(ctx context.Context, req dto.ResetPasswordRequest) error {
 	// Hash the raw token to look up in Redis
 	if err := valueobject.ValidatePlainPassword(req.NewPassword); err != nil {
-		return domain.ErrPasswordTooWeak.Wrap(err)
+		return domain.ErrPasswordTooWeak
 	}
 
 	if req.NewPassword != req.ConfirmPassword {
-		return domain.ErrPasswordMismatch.Wrap(errors.New("new password and confirm password do not match"))
+		return domain.ErrPasswordMismatch
 	}
 
 	hashedToken := uc.tokenGenerator.Hash(req.Token)
 	// Find the associated user ID
 	userID, err := uc.tokenRepo.FindByToken(ctx, hashedToken)
 	if err != nil {
-		return domain.ErrInvalidOrExpiredToken.Wrap(err)
+		return domain.ErrInvalidOrExpiredToken
 	}
 
 	// Find the user
 	user, err := uc.userRepo.GetUserById(ctx, userID)
 	if err != nil {
 		if errors.Is(err, domain.ErrUserNotFound) {
-			return domain.ErrUserNotFound.Wrap(err)
+			return domain.ErrUserNotFound
 		}
 		return domain.ErrInternalServer.Wrap(err)
 	}

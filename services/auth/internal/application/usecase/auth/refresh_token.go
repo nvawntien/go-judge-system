@@ -24,7 +24,7 @@ func NewRefreshTokenUseCase(jwt outbound.JWTProvider, logoutAllStore pkgauth.Log
 func (uc *refreshTokenUseCase) Execute(ctx context.Context, refreshToken string) (*dto.LoginResponse, error) {
 	id, username, role, refreshTokenIAT, err := uc.jwt.VerifyRefreshToken(ctx, refreshToken)
 	if err != nil {
-		return &dto.LoginResponse{}, domain.ErrInvalidOrExpiredToken.Wrap(err)
+		return &dto.LoginResponse{}, domain.ErrInvalidOrExpiredToken
 	}
 
 	logoutAllIAT, err := uc.logoutAllStore.GetLogoutAllIAT(ctx, id)
@@ -33,7 +33,7 @@ func (uc *refreshTokenUseCase) Execute(ctx context.Context, refreshToken string)
 	}
 
 	if logoutAllIAT > 0 && refreshTokenIAT <= logoutAllIAT {
-		return &dto.LoginResponse{}, domain.ErrInvalidOrExpiredToken.Wrap(nil)
+		return &dto.LoginResponse{}, domain.ErrInvalidOrExpiredToken
 	}
 
 	accessToken, accessExpire, err := uc.jwt.GenerateAccessToken(ctx, id, username, role)

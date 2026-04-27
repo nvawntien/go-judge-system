@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"errors"
 	pkgauth "go-judge-system/pkg/auth"
 	"go-judge-system/services/auth/internal/application/port/inbound"
 	"go-judge-system/services/auth/internal/domain"
@@ -21,7 +20,7 @@ func NewLogoutAllUseCase(logoutAllStore pkgauth.LogoutAllIATStore) inbound.Logou
 
 func (uc *logoutAllUseCase) Execute(ctx context.Context, userID string) error {
 	if userID == "" {
-		return domain.ErrForbidden.Wrap(errors.New("user ID is required"))
+		return domain.ErrForbidden
 	}
 	now := time.Now().Unix()
 

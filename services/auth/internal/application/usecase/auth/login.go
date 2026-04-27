@@ -25,17 +25,17 @@ func (uc *loginUseCase) Execute(ctx context.Context, req dto.LoginRequest) (*dto
 	user, err := uc.resolveUser(ctx, req.Identifier)
 	if err != nil {
 		if errors.Is(err, domain.ErrUserNotFound) {
-			return nil, domain.ErrInvalidCredentials.Wrap(err)
+			return nil, domain.ErrInvalidCredentials
 		}
 		return nil, domain.ErrInternalServer.Wrap(err)
 	}
 
 	if !user.IsActive {
-		return nil, domain.ErrUserInactive.Wrap(errors.New("user account is not active"))
+		return nil, domain.ErrUserInactive
 	}
 
 	if check := uc.passwordEncoder.ComparePasswords(user.Password, []byte(req.Password)); !check {
-		return nil, domain.ErrInvalidCredentials.Wrap(errors.New("password comparison failed"))
+		return nil, domain.ErrInvalidCredentials
 	}
 
 	accessToken, accessExpire, err := uc.jwtProvider.GenerateAccessToken(ctx, user.ID, user.Username, user.Role)

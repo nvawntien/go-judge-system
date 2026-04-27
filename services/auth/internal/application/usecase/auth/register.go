@@ -42,11 +42,11 @@ func NewRegisterUseCase(
 func (r *register) Execute(ctx context.Context, req dto.RegisterRequest) error {
 	emailVO, err := valueobject.NewEmail(req.Email)
 	if err != nil {
-		return domain.ErrInvalidEmail.Wrap(err)
+		return domain.ErrInvalidEmail
 	}
 
 	if err := valueobject.ValidatePlainPassword(req.Password); err != nil {
-		return domain.ErrPasswordTooWeak.Wrap(err)
+		return domain.ErrPasswordTooWeak
 	}
 
 	_, err = r.userRepo.GetUserByEmail(ctx, req.Email)
@@ -54,7 +54,7 @@ func (r *register) Execute(ctx context.Context, req dto.RegisterRequest) error {
 		return domain.ErrInternalServer.Wrap(err)
 	}
 	if err == nil {
-		return domain.ErrEmailAlreadyExists.Wrap(errors.New("email already exists"))
+		return domain.ErrEmailAlreadyExists
 	}
 
 	_, err = r.userRepo.GetUserByUsername(ctx, req.Username)
@@ -62,7 +62,7 @@ func (r *register) Execute(ctx context.Context, req dto.RegisterRequest) error {
 		return domain.ErrInternalServer.Wrap(err)
 	}
 	if err == nil {
-		return domain.ErrUsernameAlreadyExists.Wrap(errors.New("username already exists"))
+		return domain.ErrUsernameAlreadyExists
 	}
 
 	hashedPwd, err := r.passwordEncoder.HashAndSalt([]byte(req.Password))
@@ -76,7 +76,7 @@ func (r *register) Execute(ctx context.Context, req dto.RegisterRequest) error {
 
 	if err := r.userRepo.CreateUser(ctx, user); err != nil {
 		if errors.Is(err, domain.ErrDuplicateEntry) {
-			return domain.ErrUserAlreadyActive.Wrap(err)
+			return domain.ErrUserAlreadyActive
 		}
 		return domain.ErrInternalServer.Wrap(err)
 	}
