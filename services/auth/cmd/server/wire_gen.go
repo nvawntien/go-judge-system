@@ -7,21 +7,22 @@
 package main
 
 import (
+	auth3 "go-judge-system/pkg/auth"
 	"go-judge-system/pkg/cache"
 	"go-judge-system/pkg/config"
 	"go-judge-system/pkg/database"
 	"go-judge-system/pkg/logger"
+	"go-judge-system/pkg/middleware"
 	"go-judge-system/services/auth/internal/adapter/inbound/http"
 	"go-judge-system/services/auth/internal/adapter/inbound/http/handler"
-	"go-judge-system/services/auth/internal/adapter/inbound/http/middleware"
+	auth2 "go-judge-system/services/auth/internal/adapter/inbound/http/handler/auth"
 	"go-judge-system/services/auth/internal/adapter/outbound/cache/redis"
 	"go-judge-system/services/auth/internal/adapter/outbound/crypto"
 	"go-judge-system/services/auth/internal/adapter/outbound/jwt"
 	"go-judge-system/services/auth/internal/adapter/outbound/mail"
-	"go-judge-system/services/auth/internal/adapter/outbound/otp"
 	"go-judge-system/services/auth/internal/adapter/outbound/persistence/postgres"
 	"go-judge-system/services/auth/internal/adapter/outbound/security"
-	"go-judge-system/services/auth/internal/application/usecase"
+	"go-judge-system/services/auth/internal/application/usecase/auth"
 	"go-judge-system/services/auth/internal/container"
 )
 
@@ -34,50 +35,46 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 		return nil, err
 	}
 	userRepository := postgres.NewUserRepository(db)
-	passwordHasher := security.NewBcryptHasher()
+	smtpConfig := cfg.SMTP
+	appConfig := cfg.App
+	loggerConfig := cfg.Logger
+	serverConfig := cfg.Server
+	string2 := provideServerMode(serverConfig)
+	zapLogger := logger.NewLogger(loggerConfig, string2)
+	mailProvider := mail.NewSMTPProvider(smtpConfig, appConfig, zapLogger)
+	tokenGenerator := crypto.NewTokenGenerator()
 	redisConfig := cfg.Redis
 	client, err := cache.ConnectRedis(redisConfig)
 	if err != nil {
 		return nil, err
 	}
-	cacheRepository := redis.NewCacheRepository(client)
-	smtpConfig := cfg.SMTP
-	loggerConfig := cfg.Logger
-	serverConfig := cfg.Server
-	string2 := provideServerMode(serverConfig)
-	zapLogger := logger.NewLogger(loggerConfig, string2)
-	mailProvider := mail.NewSMTPProvider(smtpConfig, zapLogger)
-	otpService := otp.NewOTPService(cacheRepository, mailProvider, zapLogger)
-	registerUseCase := usecase.NewRegisterUseCase(userRepository, passwordHasher, otpService, zapLogger)
-	registerHandler := handler.NewRegisterHandler(registerUseCase)
-	verifyActivationUseCase := usecase.NewVerifyActivationUseCase(otpService, userRepository, zapLogger)
-	verifyActivationHandler := handler.NewVerifyActivationHandler(verifyActivationUseCase)
-	resendOTPUseCase := usecase.NewResendOTPUseCase(userRepository, otpService, zapLogger)
-	resendOTPHandler := handler.NewResendOTPHandler(resendOTPUseCase)
-	forgotPasswordUseCase := usecase.NewForgotPasswordUseCase(userRepository, otpService, zapLogger)
-	forgotPasswordHandler := handler.NewForgotPasswordHandler(forgotPasswordUseCase)
-	resetTokenRepository := redis.NewResetTokenRepository(client)
-	resetTokenGenerator := crypto.NewResetTokenGenerator()
-	verifyForgotPasswordUseCase := usecase.NewVerifyForgotPasswordUseCase(otpService, userRepository, resetTokenRepository, resetTokenGenerator, zapLogger)
-	verifyForgotPasswordHandler := handler.NewVerifyForgotPasswordHandler(verifyForgotPasswordUseCase)
-	resetPasswordUseCase := usecase.NewResetPasswordUseCase(userRepository, resetTokenRepository, resetTokenGenerator, passwordHasher, zapLogger)
-	resetPasswordHandler := handler.NewResetPasswordHandler(resetPasswordUseCase)
+	tokenRepository := redis.NewTokenRepository(client)
+	passwordEncoder := security.NewBcryptHasher()
+	registerUseCase := auth.NewRegisterUseCase(userRepository, mailProvider, tokenGenerator, tokenRepository, passwordEncoder)
+	registerHandler := auth2.NewRegisterHandler(registerUseCase)
+	verifyEmailUseCase := auth.NewVerifyEmailUseCase(tokenGenerator, tokenRepository, userRepository)
+	verifyEmailHandler := auth2.NewVerifyEmailHandler(verifyEmailUseCase)
+	resendVerificationUseCase := auth.NewResendVerificationUseCase(userRepository, mailProvider, tokenGenerator, tokenRepository)
+	resendVerificationHandler := auth2.NewResendVerificationHandler(resendVerificationUseCase)
 	jwtConfig := cfg.JWT
 	jwtProvider := jwt.NewJWTProvider(jwtConfig)
-	loginUseCase := usecase.NewLoginUseCase(userRepository, passwordHasher, jwtProvider, zapLogger)
-	loginHandler := handler.NewLoginHandler(loginUseCase)
-	changePasswordUseCase := usecase.NewChangePasswordUseCase(userRepository, passwordHasher, zapLogger)
-	changePasswordHandler := handler.NewChangePasswordHandler(changePasswordUseCase)
-	logoutHandler := handler.NewLogoutHandler()
-	refreshTokenUseCase := usecase.NewRefreshTokenUseCase(jwtProvider, zapLogger)
-	refreshTokenHandler := handler.NewRefreshTokenHandler(refreshTokenUseCase)
-	getProfileUseCase := usecase.NewGetProfileUseCase(userRepository, zapLogger)
-	getProfileHandler := handler.NewGetProfileHandler(getProfileUseCase)
-	updateUserRoleUseCase := usecase.NewUpdateUserRoleUseCase(userRepository, zapLogger)
-	updateUserRoleHandler := handler.NewUpdateUserRoleHandler(updateUserRoleUseCase)
-	authHandler := handler.NewAuthHandler(registerHandler, verifyActivationHandler, resendOTPHandler, forgotPasswordHandler, verifyForgotPasswordHandler, resetPasswordHandler, loginHandler, changePasswordHandler, logoutHandler, refreshTokenHandler, getProfileHandler, updateUserRoleHandler)
-	handlerFunc := middleware.NewAuthMiddleware()
-	router := http.NewRouter(authHandler, handlerFunc)
+	loginUseCase := auth.NewLoginUseCase(userRepository, passwordEncoder, jwtProvider)
+	loginHandler := auth2.NewLoginHandler(loginUseCase)
+	logoutHandler := auth2.NewLogoutHandler()
+	logoutAllIATStore := auth3.NewRedisLogoutAllIATStore(client, jwtConfig)
+	logoutAllUseCase := auth.NewLogoutAllUseCase(logoutAllIATStore)
+	logoutAllHandler := auth2.NewLogoutAllHandler(logoutAllUseCase)
+	forgotPasswordUseCase := auth.NewForgotPasswordUseCase(userRepository, tokenRepository, tokenGenerator, mailProvider)
+	forgotPasswordHandler := auth2.NewForgotPasswordHandler(forgotPasswordUseCase)
+	resetPasswordUseCase := auth.NewResetPasswordUseCase(userRepository, tokenRepository, tokenGenerator, passwordEncoder)
+	resetPasswordHandler := auth2.NewResetPasswordHandler(resetPasswordUseCase)
+	changePasswordUseCase := auth.NewChangePasswordUseCase(userRepository, passwordEncoder)
+	changePasswordHandler := auth2.NewChangePasswordHandler(changePasswordUseCase)
+	refreshTokenUseCase := auth.NewRefreshTokenUseCase(jwtProvider, logoutAllIATStore)
+	refreshTokenHandler := auth2.NewRefreshTokenHandler(refreshTokenUseCase)
+	authHandler := handler.NewAuthHandler(registerHandler, verifyEmailHandler, resendVerificationHandler, loginHandler, logoutHandler, logoutAllHandler, forgotPasswordHandler, resetPasswordHandler, changePasswordHandler, refreshTokenHandler)
+	handlerFunc := middleware.NewAuthMiddleware(logoutAllIATStore)
+	router := http.NewRouter(authHandler, handlerFunc, zapLogger)
 	app := container.NewApp(cfg, router, zapLogger)
 	return app, nil
 }

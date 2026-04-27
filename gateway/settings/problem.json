@@ -1,0 +1,556 @@
+{
+  "service": "problem",
+  "endpoints": [
+    {
+      "endpoint": "/api/v1/problems",
+      "method": "GET",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "*"
+      ],
+      "backend": [
+        {
+          "url_pattern": "/api/v1/problems",
+          "encoding": "no-op",
+          "host": [
+            "http://problem-service:8082"
+          ]
+        }
+      ]
+    },
+    {
+      "endpoint": "/api/v1/problems/{slug}",
+      "method": "GET",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "*"
+      ],
+      "backend": [
+        {
+          "url_pattern": "/api/v1/problems/{slug}",
+          "encoding": "no-op",
+          "host": [
+            "http://problem-service:8082"
+          ]
+        }
+      ]
+    },
+    {
+      "endpoint": "/api/v1/admin/problems",
+      "method": "POST",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "*"
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "HS256",
+          "jwk_local_path": "/etc/krakend/symmetric.json",
+          "disable_jwk_security": true,
+          "cookie_key": "access_token",
+          "propagate_claims": [
+            [
+              "sub",
+              "X-User-ID"
+            ],
+            [
+              "role",
+              "X-Role"
+            ],
+            [
+              "username",
+              "X-Username"
+            ],
+            [
+              "iat",
+              "X-Token-Iat"
+            ]
+          ]
+        }
+      },
+      "backend": [
+        {
+          "url_pattern": "/api/v1/admin/problems",
+          "encoding": "no-op",
+          "host": [
+            "http://problem-service:8082"
+          ]
+        }
+      ]
+    },
+    {
+      "endpoint": "/api/v1/admin/problems/{id}",
+      "method": "PUT",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "*"
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "HS256",
+          "jwk_local_path": "/etc/krakend/symmetric.json",
+          "disable_jwk_security": true,
+          "cookie_key": "access_token",
+          "propagate_claims": [
+            [
+              "sub",
+              "X-User-ID"
+            ],
+            [
+              "role",
+              "X-Role"
+            ],
+            [
+              "username",
+              "X-Username"
+            ],
+            [
+              "iat",
+              "X-Token-Iat"
+            ]
+          ]
+        }
+      },
+      "backend": [
+        {
+          "url_pattern": "/api/v1/admin/problems/{id}",
+          "encoding": "no-op",
+          "host": [
+            "http://problem-service:8082"
+          ]
+        }
+      ]
+    },
+    {
+      "endpoint": "/api/v1/admin/problems/{id}",
+      "method": "DELETE",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "*"
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "HS256",
+          "jwk_local_path": "/etc/krakend/symmetric.json",
+          "disable_jwk_security": true,
+          "cookie_key": "access_token",
+          "propagate_claims": [
+            [
+              "sub",
+              "X-User-ID"
+            ],
+            [
+              "role",
+              "X-Role"
+            ],
+            [
+              "username",
+              "X-Username"
+            ],
+            [
+              "iat",
+              "X-Token-Iat"
+            ]
+          ]
+        }
+      },
+      "backend": [
+        {
+          "url_pattern": "/api/v1/admin/problems/{id}",
+          "encoding": "no-op",
+          "host": [
+            "http://problem-service:8082"
+          ]
+        }
+      ]
+    },
+    {
+      "endpoint": "/api/v1/admin/problems/{id}/publish",
+      "method": "PUT",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "*"
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "HS256",
+          "jwk_local_path": "/etc/krakend/symmetric.json",
+          "disable_jwk_security": true,
+          "cookie_key": "access_token",
+          "propagate_claims": [
+            [
+              "sub",
+              "X-User-ID"
+            ],
+            [
+              "role",
+              "X-Role"
+            ],
+            [
+              "username",
+              "X-Username"
+            ],
+            [
+              "iat",
+              "X-Token-Iat"
+            ]
+          ]
+        }
+      },
+      "backend": [
+        {
+          "url_pattern": "/api/v1/admin/problems/{id}/publish",
+          "encoding": "no-op",
+          "host": [
+            "http://problem-service:8082"
+          ]
+        }
+      ]
+    },
+    {
+      "endpoint": "/api/v1/admin/problems/{id}/hide",
+      "method": "PUT",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "*"
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "HS256",
+          "jwk_local_path": "/etc/krakend/symmetric.json",
+          "disable_jwk_security": true,
+          "cookie_key": "access_token",
+          "propagate_claims": [
+            [
+              "sub",
+              "X-User-ID"
+            ],
+            [
+              "role",
+              "X-Role"
+            ],
+            [
+              "username",
+              "X-Username"
+            ],
+            [
+              "iat",
+              "X-Token-Iat"
+            ]
+          ]
+        }
+      },
+      "backend": [
+        {
+          "url_pattern": "/api/v1/admin/problems/{id}/hide",
+          "encoding": "no-op",
+          "host": [
+            "http://problem-service:8082"
+          ]
+        }
+      ]
+    },
+    {
+      "endpoint": "/api/v1/admin/problems/{id}/testcases",
+      "method": "POST",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "*"
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "HS256",
+          "jwk_local_path": "/etc/krakend/symmetric.json",
+          "disable_jwk_security": true,
+          "cookie_key": "access_token",
+          "propagate_claims": [
+            [
+              "sub",
+              "X-User-ID"
+            ],
+            [
+              "role",
+              "X-Role"
+            ],
+            [
+              "username",
+              "X-Username"
+            ],
+            [
+              "iat",
+              "X-Token-Iat"
+            ]
+          ]
+        }
+      },
+      "backend": [
+        {
+          "url_pattern": "/api/v1/admin/problems/{id}/testcases",
+          "encoding": "no-op",
+          "is_stream": true,
+          "host": [
+            "http://problem-service:8082"
+          ]
+        }
+      ]
+    },
+    {
+      "endpoint": "/api/v1/admin/problems/{id}/testcases",
+      "method": "GET",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "*"
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "HS256",
+          "jwk_local_path": "/etc/krakend/symmetric.json",
+          "disable_jwk_security": true,
+          "cookie_key": "access_token",
+          "propagate_claims": [
+            [
+              "sub",
+              "X-User-ID"
+            ],
+            [
+              "role",
+              "X-Role"
+            ],
+            [
+              "username",
+              "X-Username"
+            ],
+            [
+              "iat",
+              "X-Token-Iat"
+            ]
+          ]
+        }
+      },
+      "backend": [
+        {
+          "url_pattern": "/api/v1/admin/problems/{id}/testcases",
+          "encoding": "no-op",
+          "host": [
+            "http://problem-service:8082"
+          ]
+        }
+      ]
+    },
+    {
+      "endpoint": "/api/v1/admin/testcases/{id}",
+      "method": "PUT",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "*"
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "HS256",
+          "jwk_local_path": "/etc/krakend/symmetric.json",
+          "disable_jwk_security": true,
+          "cookie_key": "access_token",
+          "propagate_claims": [
+            [
+              "sub",
+              "X-User-ID"
+            ],
+            [
+              "role",
+              "X-Role"
+            ],
+            [
+              "username",
+              "X-Username"
+            ],
+            [
+              "iat",
+              "X-Token-Iat"
+            ]
+          ]
+        }
+      },
+      "backend": [
+        {
+          "url_pattern": "/api/v1/admin/testcases/{id}",
+          "encoding": "no-op",
+          "host": [
+            "http://problem-service:8082"
+          ]
+        }
+      ]
+    },
+    {
+      "endpoint": "/api/v1/admin/testcases/{id}",
+      "method": "DELETE",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "*"
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "HS256",
+          "jwk_local_path": "/etc/krakend/symmetric.json",
+          "disable_jwk_security": true,
+          "cookie_key": "access_token",
+          "propagate_claims": [
+            [
+              "sub",
+              "X-User-ID"
+            ],
+            [
+              "role",
+              "X-Role"
+            ],
+            [
+              "username",
+              "X-Username"
+            ],
+            [
+              "iat",
+              "X-Token-Iat"
+            ]
+          ]
+        }
+      },
+      "backend": [
+        {
+          "url_pattern": "/api/v1/admin/testcases/{id}",
+          "encoding": "no-op",
+          "host": [
+            "http://problem-service:8082"
+          ]
+        }
+      ]
+    },
+    {
+      "endpoint": "/api/v1/my/problems",
+      "method": "GET",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "*"
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "HS256",
+          "jwk_local_path": "/etc/krakend/symmetric.json",
+          "disable_jwk_security": true,
+          "cookie_key": "access_token",
+          "propagate_claims": [
+            [
+              "sub",
+              "X-User-ID"
+            ],
+            [
+              "role",
+              "X-Role"
+            ],
+            [
+              "username",
+              "X-Username"
+            ],
+            [
+              "iat",
+              "X-Token-Iat"
+            ]
+          ]
+        }
+      },
+      "backend": [
+        {
+          "url_pattern": "/api/v1/my/problems",
+          "encoding": "no-op",
+          "host": [
+            "http://problem-service:8082"
+          ]
+        }
+      ]
+    },
+    {
+      "endpoint": "/api/v1/admin/problems",
+      "method": "GET",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "*"
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "HS256",
+          "jwk_local_path": "/etc/krakend/symmetric.json",
+          "disable_jwk_security": true,
+          "cookie_key": "access_token",
+          "propagate_claims": [
+            [
+              "sub",
+              "X-User-ID"
+            ],
+            [
+              "role",
+              "X-Role"
+            ],
+            [
+              "username",
+              "X-Username"
+            ],
+            [
+              "iat",
+              "X-Token-Iat"
+            ]
+          ]
+        }
+      },
+      "backend": [
+        {
+          "url_pattern": "/api/v1/admin/problems",
+          "encoding": "no-op",
+          "host": [
+            "http://problem-service:8082"
+          ]
+        }
+      ]
+    },
+    {
+      "endpoint": "/api/v1/admin/problems/{id}",
+      "method": "GET",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "*"
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "HS256",
+          "jwk_local_path": "/etc/krakend/symmetric.json",
+          "disable_jwk_security": true,
+          "cookie_key": "access_token",
+          "propagate_claims": [
+            [
+              "sub",
+              "X-User-ID"
+            ],
+            [
+              "role",
+              "X-Role"
+            ],
+            [
+              "username",
+              "X-Username"
+            ],
+            [
+              "iat",
+              "X-Token-Iat"
+            ]
+          ]
+        }
+      },
+      "backend": [
+        {
+          "url_pattern": "/api/v1/admin/problems/{id}",
+          "encoding": "no-op",
+          "host": [
+            "http://problem-service:8082"
+          ]
+        }
+      ]
+    }
+  ]
+}

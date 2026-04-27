@@ -7,10 +7,21 @@ import (
 	"github.com/google/uuid"
 )
 
+const (
+	RoleUser              = "user"
+	RoleOrgAdmin          = "org_admin"
+	RoleOrgMember         = "org_member"
+	RoleOrgContributor    = "org_contributor"
+	RoleGlobalContributor = "global_contributor"
+	RoleGlobalModerator   = "global_moderator"
+	RoleSuperAdmin        = "super_admin"
+)
+
 type User struct {
 	ID        string
+	FullName  string
 	Username  string
-	Email     valueobject.Email
+	Email     string
 	Password  string
 	Role      string
 	Rating    int
@@ -19,13 +30,14 @@ type User struct {
 	UpdatedAt time.Time
 }
 
-func NewUser(username string, email valueobject.Email, password valueobject.Password) *User {
+func NewUser(fullName string, username string, email valueobject.Email, password valueobject.Password) *User {
 	return &User{
 		ID:        uuid.New().String(),
+		FullName:  fullName,
 		Username:  username,
-		Email:     email,
+		Email:     email.String(),
 		Password:  password.Hash(),
-		Role:      "user",
+		Role:      RoleUser,
 		Rating:    0,
 		IsActive:  false,
 		CreatedAt: time.Now(),

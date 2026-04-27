@@ -23,6 +23,8 @@ func NewApp(cfg *config.Config, router *http.Router, logger *zap.Logger) *App {
 }
 
 func (a *App) Run() error {
+	// Enable centralized error logging in HandleError
+
 	a.Router.SetupRoutes()
 	port := fmt.Sprintf("%d", a.Config.Server.Port)
 	a.Logger.Info("Starting Auth Service", zap.String("port", port))

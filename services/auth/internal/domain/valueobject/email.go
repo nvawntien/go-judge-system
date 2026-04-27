@@ -15,4 +15,5 @@ func NewEmail(address string) (Email, error) {
 	}
 	return Email{value: strings.ToLower(parsed.Address)}, nil
 }
+
 func (e Email) String() string { return e.value }

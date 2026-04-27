@@ -1,0 +1,37 @@
+package auth
+
+import (
+	"go-judge-system/pkg/response"
+	"go-judge-system/services/auth/internal/application/port/inbound"
+
+	"github.com/gin-gonic/gin"
+)
+
+type RefreshTokenHandler struct {
+	uc inbound.RefreshTokenUseCase
+}
+
+func NewRefreshTokenHandler(uc inbound.RefreshTokenUseCase) *RefreshTokenHandler {
+	return &RefreshTokenHandler{
+		uc: uc,
+	}
+}
+
+func (h *RefreshTokenHandler) Handle(c *gin.Context) {
+	refresh_token, err := c.Cookie("refresh_token")
+	if err != nil {
+		response.HandleError(c, response.NewAppError(response.CodeUnauthorized, "missing refresh token", err))
+		return
+	}
+
+	res, err := h.uc.Execute(c.Request.Context(), refresh_token)
+	if err != nil {
+		response.HandleError(c, err)
+		return
+	}
+
+	c.SetCookie("access_token", res.AccessToken, res.AccessExpire, "/", "", false, true)
+	c.SetCookie("refresh_token", res.RefreshToken, res.RefreshExpire, "/", "", false, true)
+
+	response.SuccessWithMessage(c, response.CodeSuccess, "token refreshed successfully", res)
+}

@@ -1,0 +1,22 @@
+{
+  "endpoint": "{{ .endpoint.endpoint }}",
+  "method": "{{ .endpoint.method }}",
+  "output_encoding": "{{ .endpoint.output_encoding }}",
+  "input_headers": {{ if .endpoint.input_headers }}{{ marshal .endpoint.input_headers }}{{ else }}{{ marshal .service.input_headers }}{{ end }},
+{{- if .endpoint.input_query_strings }}
+  "input_query_strings": {{ marshal .endpoint.input_query_strings }},
+{{- end }}
+{{- if .endpoint.extra_config }}
+  "extra_config": {{ marshal .endpoint.extra_config }},
+{{- end }}
+  "backend": [
+    {
+      "url_pattern": "{{ (index .endpoint.backend 0).url_pattern }}",
+      "encoding": "{{ (index .endpoint.backend 0).encoding }}",
+{{- if (index .endpoint.backend 0).is_stream }}
+      "is_stream": true,
+{{- end }}
+      "host": {{ marshal (index .endpoint.backend 0).host }}
+    }
+  ]
+}

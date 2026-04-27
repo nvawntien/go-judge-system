@@ -4,20 +4,26 @@ import (
 	"go-judge-system/services/auth/internal/adapter/inbound/http/handler"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
+
+	pkgmiddleware "go-judge-system/pkg/middleware"
 )
 
 type Router struct {
-	engine         *gin.Engine
-	authHandler    *handler.AuthHandler
-	authMiddleware gin.HandlerFunc
+	engine     *gin.Engine
+	auth       *handler.AuthHandler
+	middleware gin.HandlerFunc
 }
 
-func NewRouter(authHandler *handler.AuthHandler, authMiddleware gin.HandlerFunc) *Router {
-	r := gin.Default()
+func NewRouter(authHandler *handler.AuthHandler, authMiddleware gin.HandlerFunc, logger *zap.Logger) *Router {
+	r := gin.New()
+	r.Use(pkgmiddleware.Recovery(logger))
+	r.Use(pkgmiddleware.UnifiedLogger(logger))
+
 	return &Router{
-		engine:         r,
-		authHandler:    authHandler,
-		authMiddleware: authMiddleware,
+		engine:     r,
+		auth:       authHandler,
+		middleware: authMiddleware,
 	}
 }
 
@@ -27,35 +33,26 @@ func (r *Router) SetupRoutes() {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
 
-	v1 := r.engine.Group("/api/v1/auth")
+	auth := r.engine.Group("/api/v1/auth")
 	{
-		v1.POST("/register", r.authHandler.RegisterHandler.Handle)
-		v1.POST("/verify-activation", r.authHandler.VerifyActivationHandler.Handle)
-		v1.POST("/resend-otp", r.authHandler.ResendOTPHandler.Handle)
+		auth.POST("/register", r.auth.Register.Handle)
+		auth.POST("/login", r.auth.Login.Handle)
+		auth.POST("/logout", r.middleware, r.auth.Logout.Handle)
+		auth.POST("/logout-all", r.middleware, r.auth.LogoutAll.Handle)
+		auth.POST("/refresh-token", r.auth.RefreshToken.Handle)
 
-		v1.POST("/forgot-password", r.authHandler.ForgotPasswordHandler.Handle)
-		v1.POST("/verify-forgot-password", r.authHandler.VerifyForgotPasswordHandler.Handle)
-		v1.POST("/reset-password", r.authHandler.ResetPasswordHandler.Handle)
+		email := auth.Group("/email")
+		{
+			email.POST("/verify", r.auth.VerifyEmail.Handle)
+			email.POST("/resend-verification", r.auth.ResendVerification.Handle)
+		}
 
-		v1.POST("/login", r.authHandler.LoginHandler.Handle)
-		v1.POST("/refresh-token", r.authHandler.RefreshTokenHandler.Handle)
-		v1.GET("/profile/:username", r.authHandler.GetProfileHandler.HandlePublic)
-	}
-
-	// Authenticated routes
-	authenticated := v1.Group("")
-	authenticated.Use(r.authMiddleware)
-	{
-		authenticated.PUT("/change-password", r.authHandler.ChangePasswordHandler.Handle)
-		authenticated.POST("/logout", r.authHandler.LogoutHandler.Handle)
-		authenticated.GET("/profile", r.authHandler.GetProfileHandler.HandleMe)
-	}
-
-	// Super Admin routes
-	admin := v1.Group("/admin")
-	admin.Use(r.authMiddleware)
-	{
-		admin.PUT("/:username/role", r.authHandler.UpdateUserRoleHandler.Handle)
+		password := auth.Group("/password")
+		{
+			password.POST("/forgot", r.auth.ForgotPassword.Handle)
+			password.POST("/reset", r.auth.ResetPassword.Handle)
+			password.PUT("/change", r.middleware, r.auth.ChangePassword.Handle)
+		}
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 )
 
 type Config struct {
+	App      AppConfig      `mapstructure:"app"`
 	Server   ServerConfig   `mapstructure:"server"`
 	Database DatabaseConfig `mapstructure:"database"`
 	Redis    RedisConfig    `mapstructure:"redis"`
@@ -16,6 +17,10 @@ type Config struct {
 	JWT      JWTConfig      `mapstructure:"jwt"`
 	Kafka    KafkaConfig    `mapstructure:"kafka"`
 	MinIO    MinIOConfig    `mapstructure:"minio"`
+}
+
+type AppConfig struct {
+	FrontendURL string `mapstructure:"frontend_url"`
 }
 
 type ServerConfig struct {

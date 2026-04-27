@@ -10,20 +10,16 @@ type RegisterUseCase interface {
 	Execute(ctx context.Context, req dto.RegisterRequest) error
 }
 
-type VerifyActivationUseCase interface {
-	Execute(ctx context.Context, req dto.VerifyOTPRequest) error
+type VerifyEmailUseCase interface {
+	Execute(ctx context.Context, req dto.VerifyEmailRequest) error
+}
+
+type ResendVerificationUseCase interface {
+	Execute(ctx context.Context, req dto.ResendVerificationRequest) error
 }
 
 type LoginUseCase interface {
-	Execute(ctx context.Context, req dto.LoginRequest) (dto.LoginResponse, error)
-}
-
-type VerifyForgotPasswordUseCase interface {
-	Execute(ctx context.Context, req dto.VerifyOTPRequest) (string, error)
-}
-
-type ResendOTPUseCase interface {
-	Execute(ctx context.Context, req dto.ResendOTPRequest) error
+	Execute(ctx context.Context, req dto.LoginRequest) (*dto.LoginResponse, error)
 }
 
 type ForgotPasswordUseCase interface {
@@ -38,16 +34,10 @@ type ChangePasswordUseCase interface {
 	Execute(ctx context.Context, claims auth.Claims, req dto.ChangePasswordRequest) error
 }
 
+type LogoutAllUseCase interface {
+	Execute(ctx context.Context, userID string) error
+}
+
 type RefreshTokenUseCase interface {
-	Execute(ctx context.Context, refreshToken string) (dto.LoginResponse, error)
-}
-
-type GetProfileUseCase interface {
-	Execute(ctx context.Context, username string) (dto.ProfileResponse, error)
-	ExecuteMe(ctx context.Context, claims auth.Claims) (dto.ProfileResponse, error)
-	ExecutePublic(ctx context.Context, req dto.ProfileRequest) (dto.ProfileResponse, error)
-}
-
-type UpdateUserRoleUseCase interface {
-	Execute(ctx context.Context, claims auth.Claims, params dto.UserRoleRequest, body dto.UpdateUserRoleRequest) error
+	Execute(ctx context.Context, refreshToken string) (*dto.LoginResponse, error)
 }

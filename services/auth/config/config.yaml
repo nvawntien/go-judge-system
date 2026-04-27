@@ -2,6 +2,9 @@
 # Sensitive values (passwords, secrets) are overridden by environment variables
 # Viper maps env vars: DATABASE_PASSWORD -> database.password
 
+app:
+  frontend_url: "http://localhost:3000"
+
 server:
   name: auth-service
   port: 8081

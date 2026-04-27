@@ -3,9 +3,10 @@ package auth
 import "github.com/gin-gonic/gin"
 
 type Claims struct {
-	UserID   string
-	Username string
-	Role     string
+	UserID        string
+	Username      string
+	Role          string
+	TokenIssuedAt int64
 }
 
 const claimsContextKey = "auth_claims"
@@ -35,4 +36,3 @@ func (c Claims) IsAdmin() bool {
 func (c Claims) CanManage(authorID string) bool {
 	return c.IsSuperAdmin() || (c.IsAdmin() && c.UserID == authorID)
 }
-

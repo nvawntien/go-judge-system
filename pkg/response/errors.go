@@ -3,13 +3,15 @@ package response
 import (
 	"fmt"
 	"net/http"
+	"runtime"
 )
 
 // AppError is a custom error carrying a business code
 type AppError struct {
 	Code    int
 	Message string
-	Err     error // Root cause (for logging, not exposed to client)
+	Err     error  // Root cause (for logging, not exposed to client)
+	Stack   string // caller info for debugging
 }
 
 // Error implements the error interface
@@ -39,6 +41,7 @@ func (e *AppError) Wrap(err error) *AppError {
 		Code:    e.Code,
 		Message: e.Message,
 		Err:     err,
+		Stack:   captureStack(2), // capture caller info for debugging
 	}
 }
 
@@ -96,4 +99,12 @@ func GetHTTPStatus(code int) int {
 	default:
 		return http.StatusInternalServerError
 	}
+}
+
+func captureStack(skip int) string {
+	_, file, line, ok := runtime.Caller(skip)
+	if !ok {
+		return "unknown"
+	}
+	return fmt.Sprintf("%s:%d", file, line)
 }
