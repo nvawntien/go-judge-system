@@ -73,14 +73,15 @@ func (p *jwtProvider) GenerateRefreshToken(ctx context.Context, userID, username
 }
 
 func (p *jwtProvider) VerifyAccessToken(ctx context.Context, tokenStr string) (string, string, string, error) {
-	return p.verifyToken(ctx, tokenStr, p.accessSecret)
+	userID, username, role, _, err := p.verifyToken(ctx, tokenStr, p.accessSecret)
+	return userID, username, role, err
 }
 
-func (p *jwtProvider) VerifyRefreshToken(ctx context.Context, tokenStr string) (string, string, string, error) {
+func (p *jwtProvider) VerifyRefreshToken(ctx context.Context, tokenStr string) (string, string, string, int64, error) {
 	return p.verifyToken(ctx, tokenStr, p.refreshSecret)
 }
 
-func (p *jwtProvider) verifyToken(ctx context.Context, tokenStr string, secret string) (string, string, string, error) {
+func (p *jwtProvider) verifyToken(ctx context.Context, tokenStr string, secret string) (string, string, string, int64, error) {
 	claims := &customClaims{}
 	token, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -90,7 +91,12 @@ func (p *jwtProvider) verifyToken(ctx context.Context, tokenStr string, secret s
 	})
 
 	if err != nil || !token.Valid {
-		return "", "", "", fmt.Errorf("token invalid or expired")
+		return "", "", "", 0, fmt.Errorf("token invalid or expired")
 	}
-	return claims.Subject, claims.Username, claims.Role, nil
+
+	if claims.IssuedAt == nil {
+		return "", "", "", 0, fmt.Errorf("token missing issued-at")
+	}
+
+	return claims.Subject, claims.Username, claims.Role, claims.IssuedAt.Unix(), nil
 }

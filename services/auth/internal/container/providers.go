@@ -1,6 +1,7 @@
 package container
 
 import (
+	auth "go-judge-system/pkg/auth"
 	"go-judge-system/pkg/cache"
 	"go-judge-system/pkg/database"
 	"go-judge-system/pkg/logger"
@@ -28,6 +29,7 @@ var InfrastructureProviderSet = wire.NewSet(
 var OutboundProviderSet = wire.NewSet(
 	postgres.NewUserRepository,
 	redis.NewTokenRepository,
+	auth.NewRedisLogoutAllIATStore,
 	jwt.NewJWTProvider,
 	crypto.NewTokenGenerator,
 	security.NewBcryptHasher,
@@ -46,6 +48,7 @@ var UseCaseProviderSet = wire.NewSet(
 	authusecase.NewForgotPasswordUseCase,
 	authusecase.NewResetPasswordUseCase,
 	authusecase.NewChangePasswordUseCase,
+	authusecase.NewLogoutAllUseCase,
 	authusecase.NewRefreshTokenUseCase,
 )
 
@@ -55,6 +58,7 @@ var InboundProviderSet = wire.NewSet(
 	authhandler.NewResendVerificationHandler,
 	authhandler.NewLoginHandler,
 	authhandler.NewLogoutHandler,
+	authhandler.NewLogoutAllHandler,
 	authhandler.NewForgotPasswordHandler,
 	authhandler.NewResetPasswordHandler,
 	authhandler.NewChangePasswordHandler,

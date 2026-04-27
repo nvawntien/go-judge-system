@@ -7,6 +7,7 @@
 package main
 
 import (
+	auth3 "go-judge-system/pkg/auth"
 	"go-judge-system/pkg/cache"
 	"go-judge-system/pkg/config"
 	"go-judge-system/pkg/database"
@@ -60,16 +61,19 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	loginUseCase := auth.NewLoginUseCase(userRepository, passwordEncoder, jwtProvider)
 	loginHandler := auth2.NewLoginHandler(loginUseCase)
 	logoutHandler := auth2.NewLogoutHandler()
+	logoutAllIATStore := auth3.NewRedisLogoutAllIATStore(client, jwtConfig)
+	logoutAllUseCase := auth.NewLogoutAllUseCase(logoutAllIATStore)
+	logoutAllHandler := auth2.NewLogoutAllHandler(logoutAllUseCase)
 	forgotPasswordUseCase := auth.NewForgotPasswordUseCase(userRepository, tokenRepository, tokenGenerator, mailProvider)
 	forgotPasswordHandler := auth2.NewForgotPasswordHandler(forgotPasswordUseCase)
 	resetPasswordUseCase := auth.NewResetPasswordUseCase(userRepository, tokenRepository, tokenGenerator, passwordEncoder)
 	resetPasswordHandler := auth2.NewResetPasswordHandler(resetPasswordUseCase)
 	changePasswordUseCase := auth.NewChangePasswordUseCase(userRepository, passwordEncoder)
 	changePasswordHandler := auth2.NewChangePasswordHandler(changePasswordUseCase)
-	refreshTokenUseCase := auth.NewRefreshTokenUseCase(jwtProvider)
+	refreshTokenUseCase := auth.NewRefreshTokenUseCase(jwtProvider, logoutAllIATStore)
 	refreshTokenHandler := auth2.NewRefreshTokenHandler(refreshTokenUseCase)
-	authHandler := handler.NewAuthHandler(registerHandler, verifyEmailHandler, resendVerificationHandler, loginHandler, logoutHandler, forgotPasswordHandler, resetPasswordHandler, changePasswordHandler, refreshTokenHandler)
-	handlerFunc := middleware.NewAuthMiddleware()
+	authHandler := handler.NewAuthHandler(registerHandler, verifyEmailHandler, resendVerificationHandler, loginHandler, logoutHandler, logoutAllHandler, forgotPasswordHandler, resetPasswordHandler, changePasswordHandler, refreshTokenHandler)
+	handlerFunc := middleware.NewAuthMiddleware(logoutAllIATStore)
 	router := http.NewRouter(authHandler, handlerFunc, zapLogger)
 	app := container.NewApp(cfg, router, zapLogger)
 	return app, nil

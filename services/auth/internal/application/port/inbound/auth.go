@@ -34,6 +34,10 @@ type ChangePasswordUseCase interface {
 	Execute(ctx context.Context, claims auth.Claims, req dto.ChangePasswordRequest) error
 }
 
+type LogoutAllUseCase interface {
+	Execute(ctx context.Context, userID string) error
+}
+
 type RefreshTokenUseCase interface {
 	Execute(ctx context.Context, refreshToken string) (*dto.LoginResponse, error)
 }
