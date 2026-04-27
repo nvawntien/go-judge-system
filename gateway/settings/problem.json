@@ -60,6 +60,10 @@
             [
               "username",
               "X-Username"
+            ],
+            [
+              "iat",
+              "X-Token-Iat"
             ]
           ]
         }
@@ -99,6 +103,10 @@
             [
               "username",
               "X-Username"
+            ],
+            [
+              "iat",
+              "X-Token-Iat"
             ]
           ]
         }
@@ -138,6 +146,10 @@
             [
               "username",
               "X-Username"
+            ],
+            [
+              "iat",
+              "X-Token-Iat"
             ]
           ]
         }
@@ -177,6 +189,10 @@
             [
               "username",
               "X-Username"
+            ],
+            [
+              "iat",
+              "X-Token-Iat"
             ]
           ]
         }
@@ -216,6 +232,10 @@
             [
               "username",
               "X-Username"
+            ],
+            [
+              "iat",
+              "X-Token-Iat"
             ]
           ]
         }
@@ -255,6 +275,10 @@
             [
               "username",
               "X-Username"
+            ],
+            [
+              "iat",
+              "X-Token-Iat"
             ]
           ]
         }
@@ -295,6 +319,10 @@
             [
               "username",
               "X-Username"
+            ],
+            [
+              "iat",
+              "X-Token-Iat"
             ]
           ]
         }
@@ -334,6 +362,10 @@
             [
               "username",
               "X-Username"
+            ],
+            [
+              "iat",
+              "X-Token-Iat"
             ]
           ]
         }
@@ -373,6 +405,10 @@
             [
               "username",
               "X-Username"
+            ],
+            [
+              "iat",
+              "X-Token-Iat"
             ]
           ]
         }
@@ -412,6 +448,10 @@
             [
               "username",
               "X-Username"
+            ],
+            [
+              "iat",
+              "X-Token-Iat"
             ]
           ]
         }
@@ -451,6 +491,10 @@
             [
               "username",
               "X-Username"
+            ],
+            [
+              "iat",
+              "X-Token-Iat"
             ]
           ]
         }
@@ -490,6 +534,10 @@
             [
               "username",
               "X-Username"
+            ],
+            [
+              "iat",
+              "X-Token-Iat"
             ]
           ]
         }

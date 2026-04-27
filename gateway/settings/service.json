@@ -11,7 +11,8 @@
     "X-Requested-With",
     "X-User-ID",
     "X-Role",
-    "X-Username"
+    "X-Username",
+    "X-Token-Iat"
   ],
   "extra_config": {
     "github_com/devopsfaith/krakend-cors": {
