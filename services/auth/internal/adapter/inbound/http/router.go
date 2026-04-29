@@ -12,10 +12,11 @@ import (
 type Router struct {
 	engine     *gin.Engine
 	auth       *handler.AuthHandler
+	user       *handler.UserHandler
 	middleware gin.HandlerFunc
 }
 
-func NewRouter(authHandler *handler.AuthHandler, authMiddleware gin.HandlerFunc, logger *zap.Logger) *Router {
+func NewRouter(authHandler *handler.AuthHandler, userHandler *handler.UserHandler, authMiddleware gin.HandlerFunc, logger *zap.Logger) *Router {
 	r := gin.New()
 	r.Use(pkgmiddleware.Recovery(logger))
 	r.Use(pkgmiddleware.UnifiedLogger(logger))
@@ -23,6 +24,7 @@ func NewRouter(authHandler *handler.AuthHandler, authMiddleware gin.HandlerFunc,
 	return &Router{
 		engine:     r,
 		auth:       authHandler,
+		user:       userHandler,
 		middleware: authMiddleware,
 	}
 }
@@ -53,6 +55,16 @@ func (r *Router) SetupRoutes() {
 			password.POST("/reset", r.auth.ResetPassword.Handle)
 			password.PUT("/change", r.middleware, r.auth.ChangePassword.Handle)
 		}
+	}
+
+	user := r.engine.Group("/api/v1/users")
+	{
+		profile := user.Group("/profile")
+		{
+			profile.GET("/me", r.middleware, r.user.GetMe.Handle)
+		}
+
+
 	}
 }
 

@@ -16,6 +16,7 @@ import (
 	"go-judge-system/services/auth/internal/adapter/inbound/http"
 	"go-judge-system/services/auth/internal/adapter/inbound/http/handler"
 	auth2 "go-judge-system/services/auth/internal/adapter/inbound/http/handler/auth"
+	user2 "go-judge-system/services/auth/internal/adapter/inbound/http/handler/user"
 	"go-judge-system/services/auth/internal/adapter/outbound/cache/redis"
 	"go-judge-system/services/auth/internal/adapter/outbound/crypto"
 	"go-judge-system/services/auth/internal/adapter/outbound/jwt"
@@ -23,6 +24,7 @@ import (
 	"go-judge-system/services/auth/internal/adapter/outbound/persistence/postgres"
 	"go-judge-system/services/auth/internal/adapter/outbound/security"
 	"go-judge-system/services/auth/internal/application/usecase/auth"
+	"go-judge-system/services/auth/internal/application/usecase/user"
 	"go-judge-system/services/auth/internal/container"
 )
 
@@ -73,8 +75,11 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	refreshTokenUseCase := auth.NewRefreshTokenUseCase(jwtProvider, logoutAllIATStore)
 	refreshTokenHandler := auth2.NewRefreshTokenHandler(refreshTokenUseCase)
 	authHandler := handler.NewAuthHandler(registerHandler, verifyEmailHandler, resendVerificationHandler, loginHandler, logoutHandler, logoutAllHandler, forgotPasswordHandler, resetPasswordHandler, changePasswordHandler, refreshTokenHandler)
+	getMeUseCase := user.NewGetMeUseCase(userRepository)
+	getMeHandler := user2.NewGetMeHandler(getMeUseCase)
+	userHandler := handler.NewUserHandler(getMeHandler)
 	handlerFunc := middleware.NewAuthMiddleware(logoutAllIATStore)
-	router := http.NewRouter(authHandler, handlerFunc, zapLogger)
+	router := http.NewRouter(authHandler, userHandler, handlerFunc, zapLogger)
 	app := container.NewApp(cfg, router, zapLogger)
 	return app, nil
 }
