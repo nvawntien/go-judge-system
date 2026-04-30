@@ -14,3 +14,15 @@ type GetMeResponse struct {
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
 }
+
+type GetProfileRequest struct {
+	Username string `uri:"username" binding:"required"`
+}
+
+type GetProfileResponse struct {
+	FullName  string `json:"full_name"`
+	Username  string `json:"username"`
+	Email     string `json:"email"`
+	Rating    int    `json:"rating"`
+	CreatedAt string `json:"created_at"`
+}

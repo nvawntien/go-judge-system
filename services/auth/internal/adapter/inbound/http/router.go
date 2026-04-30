@@ -62,8 +62,8 @@ func (r *Router) SetupRoutes() {
 		profile := user.Group("/profile")
 		{
 			profile.GET("/me", r.middleware, r.user.GetMe.Handle)
+			profile.GET("/:username", r.user.GetProfile.Handle)
 		}
-
 
 	}
 }
