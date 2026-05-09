@@ -1,20 +1,11 @@
 package entity
 
 import (
+	"go-judge-system/pkg/rbac"
 	"go-judge-system/services/auth/internal/domain/valueobject"
 	"time"
 
 	"github.com/google/uuid"
-)
-
-const (
-	RoleUser              = "user"
-	RoleOrgAdmin          = "org_admin"
-	RoleOrgMember         = "org_member"
-	RoleOrgContributor    = "org_contributor"
-	RoleGlobalContributor = "global_contributor"
-	RoleGlobalModerator   = "global_moderator"
-	RoleSuperAdmin        = "super_admin"
 )
 
 type User struct {
@@ -23,7 +14,7 @@ type User struct {
 	Username  string
 	Email     string
 	Password  string
-	Role      string
+	Role      rbac.Role
 	Rating    int
 	IsActive  bool
 	CreatedAt time.Time
@@ -37,7 +28,7 @@ func NewUser(fullName string, username string, email valueobject.Email, password
 		Username:  username,
 		Email:     email.String(),
 		Password:  password.Hash(),
-		Role:      RoleUser,
+		Role:      rbac.RoleUser,
 		Rating:    0,
 		IsActive:  false,
 		CreatedAt: time.Now(),
@@ -55,7 +46,7 @@ func (u *User) UpdatePassword(newPassword valueobject.Password) {
 	u.UpdatedAt = time.Now()
 }
 
-func (u *User) AssignRole(role string) {
+func (u *User) AssignRole(role rbac.Role) {
 	u.Role = role
 	u.UpdatedAt = time.Now()
 }

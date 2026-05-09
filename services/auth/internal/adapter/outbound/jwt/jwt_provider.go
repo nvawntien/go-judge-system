@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"go-judge-system/pkg/config"
+	"go-judge-system/pkg/rbac"
 	"go-judge-system/services/auth/internal/application/port/outbound"
 	"time"
 
@@ -27,12 +28,12 @@ func NewJWTProvider(cfg config.JWTConfig) outbound.JWTProvider {
 }
 
 type customClaims struct {
-	Role     string `json:"role"`
-	Username string `json:"username"`
+	Role     rbac.Role `json:"role"`
+	Username string    `json:"username"`
 	jwt.RegisteredClaims
 }
 
-func (p *jwtProvider) GenerateAccessToken(ctx context.Context, userID, username, role string) (string, int, error) {
+func (p *jwtProvider) GenerateAccessToken(ctx context.Context, userID, username string, role rbac.Role) (string, int, error) {
 	claims := customClaims{
 		Role:     role,
 		Username: username,
@@ -52,7 +53,7 @@ func (p *jwtProvider) GenerateAccessToken(ctx context.Context, userID, username,
 	return token, int(p.accessTokenTTL.Seconds()), nil
 }
 
-func (p *jwtProvider) GenerateRefreshToken(ctx context.Context, userID, username, role string) (string, int, error) {
+func (p *jwtProvider) GenerateRefreshToken(ctx context.Context, userID, username string, role rbac.Role) (string, int, error) {
 	claims := customClaims{
 		Role:     role,
 		Username: username,
@@ -72,16 +73,16 @@ func (p *jwtProvider) GenerateRefreshToken(ctx context.Context, userID, username
 	return token, int(p.refreshTokenTTL.Seconds()), nil
 }
 
-func (p *jwtProvider) VerifyAccessToken(ctx context.Context, tokenStr string) (string, string, string, error) {
+func (p *jwtProvider) VerifyAccessToken(ctx context.Context, tokenStr string) (string, string, rbac.Role, error) {
 	userID, username, role, _, err := p.verifyToken(ctx, tokenStr, p.accessSecret)
 	return userID, username, role, err
 }
 
-func (p *jwtProvider) VerifyRefreshToken(ctx context.Context, tokenStr string) (string, string, string, int64, error) {
+func (p *jwtProvider) VerifyRefreshToken(ctx context.Context, tokenStr string) (string, string, rbac.Role, int64, error) {
 	return p.verifyToken(ctx, tokenStr, p.refreshSecret)
 }
 
-func (p *jwtProvider) verifyToken(ctx context.Context, tokenStr string, secret string) (string, string, string, int64, error) {
+func (p *jwtProvider) verifyToken(ctx context.Context, tokenStr string, secret string) (string, string, rbac.Role, int64, error) {
 	claims := &customClaims{}
 	token, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {

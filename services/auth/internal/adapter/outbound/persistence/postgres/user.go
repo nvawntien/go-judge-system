@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"go-judge-system/pkg/rbac"
 	"go-judge-system/services/auth/internal/application/port/outbound"
 	"go-judge-system/services/auth/internal/domain"
 	"go-judge-system/services/auth/internal/domain/entity"
@@ -18,7 +19,7 @@ type UserDAO struct {
 	Username  string    `gorm:"uniqueIndex;not null;size:100"`
 	Email     string    `gorm:"uniqueIndex;not null;size:255"`
 	Password  string    `gorm:"not null"`
-	Role      string    `gorm:"default:'user';size:20"`
+	Role      rbac.Role `gorm:"default:'user';size:20"`
 	Rating    int       `gorm:"default:0"`
 	IsActive  bool      `gorm:"default:false"`
 	CreatedAt time.Time `gorm:"autoCreateTime"`
