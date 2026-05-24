@@ -270,13 +270,7 @@ func HandleWithQueryAndClaims[Req any, Res any](c *gin.Context, fn func(context.
 }
 
 // HandleVoidWithParamsAndBody: URI params + JSON body + claims → void. Used for Update (ID + body).
-func HandleVoidWithParamsAndBody[P any, B any](c *gin.Context, fn func(context.Context, auth.Claims, P, B) error, successCode int, successMsg string) {
-    claims, ok := auth.GetClaims(c)
-    if !ok {
-        HandleError(c, NewAppError(CodeUnauthorized, "unauthorized", nil))
-        return
-    }
-
+func HandleVoidWithParamsAndBody[P any, B any](c *gin.Context, fn func(context.Context, P, B) error, successCode int, successMsg string) {
     var params P
     if err := c.ShouldBindUri(&params); err != nil {
         HandleError(c, NewAppError(CodeParamInvalid, "invalid uri params", err))
@@ -289,7 +283,7 @@ func HandleVoidWithParamsAndBody[P any, B any](c *gin.Context, fn func(context.C
         return
     }
 
-    if err := fn(c.Request.Context(), claims, params, body); err != nil {
+    if err := fn(c.Request.Context(), params, body); err != nil {
         HandleError(c, err)
         return
     }
@@ -298,13 +292,7 @@ func HandleVoidWithParamsAndBody[P any, B any](c *gin.Context, fn func(context.C
 }
 
 // HandleWithParamsAndBody: URI params + JSON body + claims → data. Used for Create TestCase (problem ID + body).
-func HandleWithParamsAndBody[P any, B any, Res any](c *gin.Context, fn func(context.Context, auth.Claims, P, B) (Res, error), successCode int) {
-    claims, ok := auth.GetClaims(c)
-    if !ok {
-        HandleError(c, NewAppError(CodeUnauthorized, "unauthorized", nil))
-        return
-    }
-
+func HandleWithParamsAndBody[P any, B any, Res any](c *gin.Context, fn func(context.Context, P, B) (Res, error), successCode int) {
     var params P
     if err := c.ShouldBindUri(&params); err != nil {
         HandleError(c, NewAppError(CodeParamInvalid, "invalid uri params", err))
@@ -317,7 +305,7 @@ func HandleWithParamsAndBody[P any, B any, Res any](c *gin.Context, fn func(cont
         return
     }
 
-    res, err := fn(c.Request.Context(), claims, params, body)
+    res, err := fn(c.Request.Context(), params, body)
     if err != nil {
         HandleError(c, err)
         return
@@ -327,13 +315,7 @@ func HandleWithParamsAndBody[P any, B any, Res any](c *gin.Context, fn func(cont
 }
 
 // HandleWithParamsAndForm: URI params + multipart form/form-data + claims → data.
-func HandleWithParamsAndForm[P any, F any, Res any](c *gin.Context, fn func(context.Context, auth.Claims, P, F) (Res, error), successCode int) {
-    claims, ok := auth.GetClaims(c)
-    if !ok {
-        HandleError(c, NewAppError(CodeUnauthorized, "unauthorized", nil))
-        return
-    }
-
+func HandleWithParamsAndForm[P any, F any, Res any](c *gin.Context, fn func(context.Context, P, F) (Res, error), successCode int) {
     var params P
     if err := c.ShouldBindUri(&params); err != nil {
         HandleError(c, NewAppError(CodeParamInvalid, "invalid uri params", err))
@@ -346,7 +328,7 @@ func HandleWithParamsAndForm[P any, F any, Res any](c *gin.Context, fn func(cont
         return
     }
 
-    res, err := fn(c.Request.Context(), claims, params, form)
+    res, err := fn(c.Request.Context(), params, form)
     if err != nil {
         HandleError(c, err)
         return

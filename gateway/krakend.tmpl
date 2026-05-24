@@ -19,6 +19,11 @@
 {{ template "endpoint.tmpl" (dict "service" $.service "endpoint" $endpoint) }}
 {{- $first = false -}}
 {{- end }}
+{{- range $endpoint := .admin.endpoints }}
+{{- if not $first }},{{ end }}
+{{ template "endpoint.tmpl" (dict "service" $.service "endpoint" $endpoint) }}
+{{- $first = false -}}
+{{- end }}
 {{- range $endpoint := .problem.endpoints }}
 {{- if not $first }},{{ end }}
 {{ template "endpoint.tmpl" (dict "service" $.service "endpoint" $endpoint) }}
