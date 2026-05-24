@@ -6,17 +6,20 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
+	"go-judge-system/pkg/middleware"
 	pkgmiddleware "go-judge-system/pkg/middleware"
+	"go-judge-system/pkg/rbac"
 )
 
 type Router struct {
 	engine     *gin.Engine
 	auth       *handler.AuthHandler
 	user       *handler.UserHandler
+	admin      *handler.AdminHandler
 	middleware gin.HandlerFunc
 }
 
-func NewRouter(authHandler *handler.AuthHandler, userHandler *handler.UserHandler, authMiddleware gin.HandlerFunc, logger *zap.Logger) *Router {
+func NewRouter(authHandler *handler.AuthHandler, userHandler *handler.UserHandler, adminHandler *handler.AdminHandler, authMiddleware gin.HandlerFunc, logger *zap.Logger) *Router {
 	r := gin.New()
 	r.Use(pkgmiddleware.Recovery(logger))
 	r.Use(pkgmiddleware.UnifiedLogger(logger))
@@ -25,6 +28,7 @@ func NewRouter(authHandler *handler.AuthHandler, userHandler *handler.UserHandle
 		engine:     r,
 		auth:       authHandler,
 		user:       userHandler,
+		admin:      adminHandler,
 		middleware: authMiddleware,
 	}
 }
@@ -34,6 +38,8 @@ func (r *Router) SetupRoutes() {
 	r.engine.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
+
+	isAdmin := middleware.RequireRole(rbac.RoleAdmin)
 
 	auth := r.engine.Group("/api/v1/auth")
 	{
@@ -65,6 +71,11 @@ func (r *Router) SetupRoutes() {
 			profile.GET("/:username", r.user.GetProfile.Handle)
 		}
 
+	}
+
+	admin := r.engine.Group("/api/v1/admin", r.middleware)
+	{
+		admin.PUT("/users/:user_id/role", isAdmin, r.admin.AssignRole.Handle)
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"go-judge-system/services/auth/internal/adapter/inbound/http/handler"
 	authhandler "go-judge-system/services/auth/internal/adapter/inbound/http/handler/auth"
 	userhandler "go-judge-system/services/auth/internal/adapter/inbound/http/handler/user"
+	adminhandler "go-judge-system/services/auth/internal/adapter/inbound/http/handler/admin"
 	"go-judge-system/services/auth/internal/adapter/outbound/cache/redis"
 	"go-judge-system/services/auth/internal/adapter/outbound/crypto"
 	"go-judge-system/services/auth/internal/adapter/outbound/jwt"
@@ -18,6 +19,7 @@ import (
 	"go-judge-system/services/auth/internal/adapter/outbound/security"
 	authusecase "go-judge-system/services/auth/internal/application/usecase/auth"
 	userusecase "go-judge-system/services/auth/internal/application/usecase/user"
+	adminusecase "go-judge-system/services/auth/internal/application/usecase/admin"
 
 	"github.com/google/wire"
 )
@@ -55,6 +57,8 @@ var UseCaseProviderSet = wire.NewSet(
 
 	userusecase.NewGetMeUseCase,
 	userusecase.NewGetProfileUseCase,
+
+	adminusecase.NewAssignRoleUseCase,
 )
 
 var InboundProviderSet = wire.NewSet(
@@ -72,7 +76,10 @@ var InboundProviderSet = wire.NewSet(
 	userhandler.NewGetMeHandler,
 	userhandler.NewGetProfileHandler,
 
+	adminhandler.NewAssignRoleHandler,
+
 	handler.NewAuthHandler,
 	handler.NewUserHandler,
+	handler.NewAdminHandler,
 	http.NewRouter,
 )

@@ -15,6 +15,7 @@ import (
 	"go-judge-system/pkg/middleware"
 	"go-judge-system/services/auth/internal/adapter/inbound/http"
 	"go-judge-system/services/auth/internal/adapter/inbound/http/handler"
+	admin2 "go-judge-system/services/auth/internal/adapter/inbound/http/handler/admin"
 	auth2 "go-judge-system/services/auth/internal/adapter/inbound/http/handler/auth"
 	user2 "go-judge-system/services/auth/internal/adapter/inbound/http/handler/user"
 	"go-judge-system/services/auth/internal/adapter/outbound/cache/redis"
@@ -23,6 +24,7 @@ import (
 	"go-judge-system/services/auth/internal/adapter/outbound/mail"
 	"go-judge-system/services/auth/internal/adapter/outbound/persistence/postgres"
 	"go-judge-system/services/auth/internal/adapter/outbound/security"
+	"go-judge-system/services/auth/internal/application/usecase/admin"
 	"go-judge-system/services/auth/internal/application/usecase/auth"
 	"go-judge-system/services/auth/internal/application/usecase/user"
 	"go-judge-system/services/auth/internal/container"
@@ -80,8 +82,11 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	getProfileUseCase := user.NewGetProfileUseCase(userRepository)
 	getProfileHandler := user2.NewGetProfileHandler(getProfileUseCase)
 	userHandler := handler.NewUserHandler(getMeHandler, getProfileHandler)
+	assignRoleUseCase := admin.NewAssignRoleUseCase(userRepository)
+	assignRoleHandler := admin2.NewAssignRoleHandler(assignRoleUseCase)
+	adminHandler := handler.NewAdminHandler(assignRoleHandler)
 	handlerFunc := middleware.NewAuthMiddleware(logoutAllIATStore)
-	router := http.NewRouter(authHandler, userHandler, handlerFunc, zapLogger)
+	router := http.NewRouter(authHandler, userHandler, adminHandler, handlerFunc, zapLogger)
 	app := container.NewApp(cfg, router, zapLogger)
 	return app, nil
 }
