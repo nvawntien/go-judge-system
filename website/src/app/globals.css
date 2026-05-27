@@ -1,0 +1,250 @@
+@import "tailwindcss";
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   DESIGN SYSTEM — CSS VARIABLES
+   Source of Truth: plan.md Part I §3
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+:root {
+  --oj-bg: #ffffff;
+  --oj-surface: #f8fafc;
+  --oj-panel: #eef2ff;
+  --oj-border: #e2e8f0;
+  --oj-border-acc: #c7d2fe;
+  --oj-text: #1a1a2e;
+  --oj-body: #374151;
+  --oj-muted: #6b7280;
+  --oj-accent: #7f77dd;
+  --oj-accent-dk: #534ab7;
+  --oj-accent-fill: #eeedfe;
+  --oj-code-bg: #f1f5f9;
+  --oj-code-txt: #374151;
+  --oj-syn-kw: #534ab7;
+  --oj-syn-fn: #0f6e56;
+  --oj-syn-str: #854f0b;
+  --oj-syn-cmt: #9ca3af;
+  --oj-syn-num: #185fa5;
+  --oj-ac-bg: #eaf3de;
+  --oj-ac-txt: #3b6d11;
+  --oj-wa-bg: #fcebeb;
+  --oj-wa-txt: #a32d2d;
+  --oj-tle-bg: #faeeda;
+  --oj-tle-txt: #854f0b;
+  --oj-re-bg: #eeedfe;
+  --oj-re-txt: #534ab7;
+  --oj-ce-bg: #fef9c3;
+  --oj-ce-txt: #713f12;
+  --oj-pd-bg: #e6f1fb;
+  --oj-pd-txt: #185fa5;
+  --oj-heat-mid: #97c459;
+  --oj-heat-high: #3b6d11;
+  --oj-overlay: rgba(0, 0, 0, 0.45);
+  --z-base: 0;
+  --z-raised: 10;
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-drawer: 400;
+  --z-modal: 500;
+  --z-toast: 600;
+  --oj-ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.dark {
+  --oj-bg: #0e1117;
+  --oj-surface: #161b22;
+  --oj-panel: #1b1d2e;
+  --oj-border: #30363d;
+  --oj-border-acc: #534ab7;
+  --oj-text: #e6edf3;
+  --oj-body: #c9d1d9;
+  --oj-muted: #8b949e;
+  --oj-accent: #7f77dd;
+  --oj-accent-dk: #afa9ec;
+  --oj-accent-fill: #1e1b3a;
+  --oj-code-bg: #161b22;
+  --oj-code-txt: #c9d1d9;
+  --oj-syn-kw: #afa9ec;
+  --oj-syn-fn: #5dcaa5;
+  --oj-syn-str: #ef9f27;
+  --oj-syn-cmt: #8b949e;
+  --oj-syn-num: #58a6ff;
+  --oj-ac-bg: #122118;
+  --oj-ac-txt: #3fb950;
+  --oj-wa-bg: #1c1316;
+  --oj-wa-txt: #f85149;
+  --oj-tle-bg: #1d1512;
+  --oj-tle-txt: #d29922;
+  --oj-re-bg: #1e1b3a;
+  --oj-re-txt: #afa9ec;
+  --oj-ce-bg: #1c1600;
+  --oj-ce-txt: #e8c84a;
+  --oj-pd-bg: #0d1b2e;
+  --oj-pd-txt: #58a6ff;
+  --oj-heat-mid: #3fb950;
+  --oj-heat-high: #2ea043;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   BASE STYLES
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  background-color: var(--oj-bg);
+  color: var(--oj-body);
+  transition: background-color 0.2s ease, color 0.2s ease;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Code font */
+.font-code {
+  font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
+  font-variant-ligatures: common-ligatures;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   SKELETON & LOADING ANIMATIONS
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+@keyframes oj-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.oj-skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--oj-surface) 25%,
+    var(--oj-panel) 50%,
+    var(--oj-surface) 75%
+  );
+  background-size: 200% 100%;
+  animation: oj-shimmer 1.5s ease-in-out infinite;
+  border-radius: 0.375rem;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   SLIDE-UP ANIMATION (for verdict results)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+@keyframes oj-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.oj-slide-up {
+  animation: oj-slide-up 0.5s var(--oj-ease) forwards;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   SPINNER
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+@keyframes oj-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.oj-spinner {
+  width: 1em;
+  height: 1em;
+  border: 2px solid var(--oj-border);
+  border-top-color: var(--oj-accent);
+  border-radius: 50%;
+  animation: oj-spin 0.6s linear infinite;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   SCROLLBAR
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--oj-border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--oj-muted);
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   REDUCED MOTION
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   FOCUS RING (plan.md §4)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+*:focus-visible {
+  outline: 2px solid var(--oj-accent);
+  outline-offset: 2px;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   TOAST ANIMATION
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+@keyframes oj-toast-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes oj-toast-exit {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.96);
+  }
+}
+
+.oj-toast-enter {
+  animation: oj-toast-enter 0.3s var(--oj-ease) forwards;
+}
+
+.oj-toast-exit {
+  animation: oj-toast-exit 0.2s ease-in forwards;
+}
