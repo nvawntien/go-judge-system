@@ -12,6 +12,8 @@ import { useToast } from "@/components/ui/Toast";
 import { problemApi } from "@/lib/api-client";
 import { useFetch } from "@/hooks/useFetch";
 import { useSubmissionMachine } from "@/hooks/useSubmissionMachine";
+import { useResizable } from "@/hooks/useResizable";
+import { useCodeStorage } from "@/hooks/useCodeStorage";
 import { Editor } from "@monaco-editor/react";
 import { useTheme } from "@/lib/theme-context";
 import { DifficultyBadge, StatusBadge } from "@/components/ui/Badge";
@@ -21,6 +23,7 @@ import {
   ChevronDown,
   RefreshCw,
   AlertCircle,
+  GripVertical,
 } from "lucide-react";
 import type { Language } from "@/types/api";
 
@@ -57,7 +60,15 @@ export default function ProblemDetailPage({
   const router = useRouter();
 
   const [language, setLanguage] = useState<Language>("CPP");
-  const [code, setCode] = useState<string>(DEFAULT_CODE["CPP"]);
+  const { code, setCode, resetCode } = useCodeStorage(slug, language, DEFAULT_CODE[language]);
+
+  // Resizable split view (plan.md §6)
+  const { containerRef, handleMouseDown, leftStyle, rightStyle } = useResizable({
+    storageKey: "oj-split-ratio",
+    defaultRatio: 0.5,
+    minRatio: 0.3,
+    maxRatio: 0.7,
+  });
 
   const {
     status,
@@ -73,7 +84,7 @@ export default function ProblemDetailPage({
 
   const handleLanguageChange = (lang: Language) => {
     setLanguage(lang);
-    setCode(DEFAULT_CODE[lang]);
+    // useCodeStorage auto-loads persisted code for this problem+lang
   };
 
   const handleSubmit = () => {
@@ -128,9 +139,9 @@ export default function ProblemDetailPage({
     submissionState.status === "RUNNING";
 
   return (
-    <div className="h-[calc(100vh-4rem)] flex flex-col md:flex-row overflow-hidden bg-[var(--oj-bg)]">
+    <div ref={containerRef} className="h-[calc(100vh-4rem)] flex flex-col md:flex-row overflow-hidden bg-[var(--oj-bg)]">
       {/* ━━━ Left Panel: Problem Description ━━━ */}
-      <div className="flex-1 overflow-y-auto border-r border-[var(--oj-border)] p-6 md:p-8">
+      <div className="overflow-y-auto border-r border-[var(--oj-border)] p-6 md:p-8 max-md:flex-1" style={leftStyle}>
         <div className="max-w-3xl mx-auto">
           {/* Title + Difficulty */}
           <div className="flex items-center gap-4 mb-4">
@@ -232,8 +243,18 @@ export default function ProblemDetailPage({
         </div>
       </div>
 
+      {/* ━━━ Resizable Divider (plan.md §6) ━━━ */}
+      <div
+        onMouseDown={handleMouseDown}
+        className="hidden md:flex items-center justify-center w-2 cursor-col-resize bg-[var(--oj-border)] hover:bg-[var(--oj-accent)] active:bg-[var(--oj-accent)] transition-colors group flex-shrink-0"
+        role="separator"
+        aria-label="Resize panels"
+      >
+        <GripVertical size={14} className="text-[var(--oj-muted)] group-hover:text-white" />
+      </div>
+
       {/* ━━━ Right Panel: Code Editor ━━━ */}
-      <div className="flex-1 flex flex-col w-full h-[50vh] md:h-auto border-t md:border-t-0 border-[var(--oj-border)] relative">
+      <div className="flex flex-col h-[50vh] md:h-auto border-t md:border-t-0 border-[var(--oj-border)] relative max-md:flex-1" style={rightStyle}>
         {/* Editor toolbar */}
         <div className="h-12 bg-[var(--oj-surface)] border-b border-[var(--oj-border)] flex items-center justify-between px-4">
           <select
@@ -254,7 +275,7 @@ export default function ProblemDetailPage({
               size="sm"
               variant="secondary"
               icon={<RefreshCw size={14} />}
-              onClick={() => setCode(DEFAULT_CODE[language])}
+              onClick={resetCode}
               title="Reset code"
               aria-label="Reset code to template"
             />

@@ -50,8 +50,8 @@ export function useWebSocket<T = unknown>(options: UseWebSocketOptions<T>) {
   const [status, setStatus] = useState<WebSocketStatus>("CLOSED");
   const wsRef = useRef<WebSocket | null>(null);
   const attemptRef = useRef(0);
-  const reconnectTimerRef = useRef<NodeJS.Timeout>();
-  const pollingTimerRef = useRef<NodeJS.Timeout>();
+  const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const pollingTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Stable refs for callbacks
   const onMessageRef = useRef(onMessage);
@@ -71,7 +71,7 @@ export function useWebSocket<T = unknown>(options: UseWebSocketOptions<T>) {
   const stopPolling = useCallback(() => {
     if (pollingTimerRef.current) {
       clearInterval(pollingTimerRef.current);
-      pollingTimerRef.current = undefined;
+      pollingTimerRef.current = null;
     }
   }, []);
 
