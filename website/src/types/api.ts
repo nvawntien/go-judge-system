@@ -76,6 +76,8 @@ export interface LoginResponse {
 }
 
 /** dto.RegisterRequest — dto/register.go */
+
+
 export interface RegisterRequest {
   full_name: string;
   username: string;
@@ -93,7 +95,7 @@ export interface ProfileResponse {
 
 /** dto.VerifyEmailRequest — dto/verify_email.go */
 export interface VerifyEmailRequest {
-  otp: string;
+  token: string;
 }
 
 /** dto.ResendVerificationRequest — dto/resend_verification.go */
@@ -108,15 +110,16 @@ export interface ForgotPasswordRequest {
 
 /** dto.ResetPasswordRequest — dto/reset_password.go */
 export interface ResetPasswordRequest {
-  email: string;
-  otp: string;
+  token: string;
   new_password: string;
+  confirm_password: string;
 }
 
 /** dto.ChangePasswordRequest — dto/change_password.go */
 export interface ChangePasswordRequest {
   current_password: string;
   new_password: string;
+  confirm_password: string;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -128,6 +131,35 @@ export interface ProblemExampleDTO {
   input: string;
   output: string;
   explanation?: string;
+}
+
+export interface CreateProblemRequest {
+  title: string;
+  slug: string;
+  description: string;
+  difficulty: Difficulty;
+  examples: ProblemExampleDTO[];
+  constraints?: string;
+  hints?: string[];
+  time_limit: number;
+  memory_limit: number;
+}
+
+export interface CreateProblemResponse {
+  id: number;
+  slug: string;
+}
+
+export interface UpdateProblemRequest {
+  title?: string;
+  slug?: string;
+  description?: string;
+  difficulty?: Difficulty;
+  examples?: ProblemExampleDTO[];
+  constraints?: string;
+  hints?: string[];
+  time_limit?: number;
+  memory_limit?: number;
 }
 
 /** dto.ProblemResponse — dto/problem.go */

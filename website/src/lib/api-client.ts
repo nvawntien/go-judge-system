@@ -16,6 +16,9 @@ import type {
   ProfileResponse,
   ProblemResponse,
   ListProblemsResponse,
+  CreateProblemRequest,
+  CreateProblemResponse,
+  UpdateProblemRequest,
   CreateSubmissionRequest,
   SubmissionResponse,
   SubmissionDetailResponse,
@@ -56,13 +59,15 @@ async function request<T>(
 ): Promise<T> {
   const url = `${API_BASE}${endpoint}`;
 
+  const headers = new Headers(options.headers || {});
+  if (!(options.body instanceof FormData) && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
   const res = await fetch(url, {
     ...options,
     credentials: "include", // send cookies (access_token, refresh_token)
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
+    headers,
   });
 
   const body: APIResponse<T> = await res.json();
@@ -115,6 +120,12 @@ export const authApi = {
 
   logout(): Promise<void> {
     return request<void>("/api/v1/auth/logout", {
+      method: "POST",
+    });
+  },
+
+  logoutAll(): Promise<void> {
+    return request<void>("/api/v1/auth/logout-all", {
       method: "POST",
     });
   },
@@ -191,6 +202,68 @@ export const problemApi = {
 
   getBySlug(slug: string): Promise<ProblemResponse> {
     return request<ProblemResponse>(`/api/v1/problems/${slug}`);
+  },
+
+  listAdmin(params?: {
+    page?: number;
+    limit?: number;
+    difficulty?: string;
+    search?: string;
+  }): Promise<ListProblemsResponse> {
+    const qs = new URLSearchParams();
+    if (params?.page) qs.set("page", String(params.page));
+    if (params?.limit) qs.set("limit", String(params.limit));
+    if (params?.difficulty) qs.set("difficulty", params.difficulty);
+    if (params?.search) qs.set("search", params.search);
+    const q = qs.toString();
+    return request<ListProblemsResponse>(
+      `/api/v1/admin/problems${q ? `?${q}` : ""}`,
+    );
+  },
+
+  getAdmin(id: number): Promise<ProblemResponse> {
+    return request<ProblemResponse>(`/api/v1/admin/problems/${id}`);
+  },
+
+  create(data: CreateProblemRequest): Promise<CreateProblemResponse> {
+    return request<CreateProblemResponse>("/api/v1/admin/problems", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
+
+  update(id: number, data: UpdateProblemRequest): Promise<void> {
+    return request<void>(`/api/v1/admin/problems/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  },
+
+  delete(id: number): Promise<void> {
+    return request<void>(`/api/v1/admin/problems/${id}`, {
+      method: "DELETE",
+    });
+  },
+
+  publish(id: number): Promise<void> {
+    return request<void>(`/api/v1/admin/problems/${id}/publish`, {
+      method: "PUT",
+    });
+  },
+
+  hide(id: number): Promise<void> {
+    return request<void>(`/api/v1/admin/problems/${id}/hide`, {
+      method: "PUT",
+    });
+  },
+
+  uploadTestcase(id: number, file: File): Promise<void> {
+    const formData = new FormData();
+    formData.append("file", file);
+    return request<void>(`/api/v1/admin/problems/${id}/testcases`, {
+      method: "POST",
+      body: formData,
+    });
   },
 };
 

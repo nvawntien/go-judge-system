@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LogOut, User, Menu, X } from "lucide-react";
+import { LogOut, User, Menu, X, Settings } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
@@ -72,10 +72,30 @@ export function Navbar() {
                 >
                   My Submissions
                 </Link>
+                {(state.user.role === "admin" || state.user.role === "super_admin") && (
+                  <Link
+                    href="/admin/problems"
+                    className={`text-sm font-medium transition-colors hover:text-[var(--oj-wa-txt)] ${
+                      pathname.startsWith("/admin")
+                        ? "text-[var(--oj-wa-txt)]"
+                        : "text-[var(--oj-body)]"
+                    }`}
+                  >
+                    Admin
+                  </Link>
+                )}
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[var(--oj-surface)] border border-[var(--oj-border)] text-sm font-medium text-[var(--oj-text)]">
                   <User size={16} className="text-[var(--oj-muted)]" />
                   {state.user.username}
                 </div>
+                <Link
+                  href="/settings/security"
+                  className="cursor-pointer p-2 rounded-md text-[var(--oj-muted)] hover:text-[var(--oj-text)] hover:bg-[var(--oj-surface)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--oj-accent)]"
+                  title="Settings"
+                  aria-label="Settings"
+                >
+                  <Settings size={18} />
+                </Link>
                 <button
                   onClick={() => logout()}
                   className="cursor-pointer p-2 rounded-md text-[var(--oj-muted)] hover:text-[var(--oj-wa-txt)] hover:bg-[var(--oj-wa-bg)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--oj-wa-txt)]"
@@ -135,6 +155,22 @@ export function Navbar() {
                 className="block text-sm font-medium text-[var(--oj-body)] hover:text-[var(--oj-accent)]"
               >
                 My Submissions
+              </Link>
+              {(state.user.role === "admin" || state.user.role === "super_admin") && (
+                <Link
+                  href="/admin/problems"
+                  onClick={() => setMobileOpen(false)}
+                  className="block text-sm font-medium text-[var(--oj-wa-txt)]"
+                >
+                  Admin Panel
+                </Link>
+              )}
+              <Link
+                href="/settings/security"
+                onClick={() => setMobileOpen(false)}
+                className="block text-sm font-medium text-[var(--oj-body)] hover:text-[var(--oj-accent)]"
+              >
+                Settings
               </Link>
               <button
                 onClick={() => {
