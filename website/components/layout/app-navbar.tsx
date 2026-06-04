@@ -20,8 +20,8 @@ export function AppNavbar() {
   const pathname = usePathname();
 
   return (
-    <header className="sticky top-0 z-40 border-b bg-background/95">
-      <div className="container flex h-16 items-center gap-4">
+    <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+      <div className="container flex h-16 items-center gap-3 sm:gap-4">
         <MobileNav />
 
         <Link href="/" className="flex min-w-max items-center gap-3">
@@ -43,11 +43,13 @@ export function AppNavbar() {
                 asChild
                 variant="ghost"
                 className={cn(
-                  "h-9 px-3 text-sm text-muted-foreground",
-                  active && "bg-accent text-primary hover:text-primary",
+                  "h-9 rounded-none border-b-2 border-transparent px-3 text-sm text-muted-foreground hover:text-foreground",
+                  active && "border-primary bg-primary/10 text-primary hover:bg-primary/10 hover:text-primary",
                 )}
               >
-                <Link href={item.href}>{item.label}</Link>
+                <Link href={item.href} aria-current={active ? "page" : undefined}>
+                  {item.label}
+                </Link>
               </Button>
             );
           })}
@@ -55,15 +57,20 @@ export function AppNavbar() {
             asChild
             variant="ghost"
             className={cn(
-              "h-9 px-3 text-sm text-muted-foreground",
-              isActivePath(pathname, manageNavItem.href) && "bg-accent text-primary hover:text-primary",
+              "h-9 rounded-none border-b-2 border-transparent px-3 text-sm text-muted-foreground hover:text-foreground",
+              isActivePath(pathname, manageNavItem.href) && "border-primary bg-primary/10 text-primary hover:bg-primary/10 hover:text-primary",
             )}
           >
-            <Link href={manageNavItem.href}>{manageNavItem.label}</Link>
+            <Link
+              href={manageNavItem.href}
+              aria-current={isActivePath(pathname, manageNavItem.href) ? "page" : undefined}
+            >
+              {manageNavItem.label}
+            </Link>
           </Button>
         </nav>
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-1 sm:gap-2">
           <div className="relative hidden w-[min(28vw,320px)] lg:block">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input className="h-9 pl-9" placeholder="Search problems, contests, submissions" />

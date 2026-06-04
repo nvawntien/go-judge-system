@@ -75,21 +75,59 @@ Trước khi làm task liên quan UI/UX, visual design, color, badge, layout con
 website/docs/design-tokens.md
 ```
 
-Không tự ý sửa hai file này nếu task không yêu cầu.
+Trước khi làm task liên quan milestone, progress tracking, hoặc implement frontend feature mới, phải đọc:
+
+```txt
+website/docs/frontend-roadmap.md
+```
+
+Không tự ý sửa các file source of truth nếu task không yêu cầu.
 
 `api-contract.md` là source of truth cho frontend API integration.
 
 `design-tokens.md` là source of truth cho visual convention toàn frontend.
 
-Nếu `AGENTS.md`, `api-contract.md`, `design-tokens.md` và UI UX Pro Max Skill có mâu thuẫn, thứ tự ưu tiên là:
+`frontend-roadmap.md` là source of truth cho tiến độ frontend, milestone hiện tại, trạng thái Done/In progress/Needs review/Blocked/Not started, và current next action.
+
+Nếu `AGENTS.md`, `api-contract.md`, `design-tokens.md`, `frontend-roadmap.md` và UI UX Pro Max Skill có mâu thuẫn, thứ tự ưu tiên là:
 
 1. `AGENTS.md`
 2. `website/docs/api-contract.md` với task liên quan API
 3. `website/docs/design-tokens.md` với task liên quan UI/UX
-4. `website/.codex/skills/ui-ux-pro-max/SKILL.md`
+4. `website/docs/frontend-roadmap.md` với task liên quan progress/milestone
+5. `website/.codex/skills/ui-ux-pro-max/SKILL.md`
 
 ---
 
+## Progress tracking rules
+
+Trước khi implement milestone mới, phải đọc:
+
+```txt
+website/docs/frontend-roadmap.md
+```
+
+Không tự ý nhảy sang milestone tiếp theo nếu milestone hiện tại chưa `Done`.
+
+Không tự ý đánh dấu milestone là `Done` nếu chưa được review.
+
+Nếu hoàn thành implementation nhưng chưa review, cập nhật trạng thái milestone thành:
+
+```txt
+Needs review
+```
+
+Chỉ cập nhật thành `Done` khi user yêu cầu hoặc review đã pass.
+
+Không implement nhiều milestone trong một lần.
+
+Không bắt đầu milestone có status `Not started` nếu user chưa yêu cầu rõ ràng.
+
+Nếu task hiện tại chỉ là cập nhật roadmap, không sửa app UI, không sửa backend, không cài dependency, không sửa `api-contract.md`, không sửa `design-tokens.md`.
+
+Sau mỗi milestone hoặc polish task, nếu trạng thái thay đổi, cập nhật `Current next action` trong `frontend-roadmap.md`.
+
+---
 ## Phạm vi làm việc
 
 Tất cả thay đổi frontend phải nằm trong thư mục:
@@ -914,6 +952,20 @@ Với mọi task, làm theo thứ tự:
 
 Đọc file liên quan trước.
 
+Với mọi task frontend, đọc tối thiểu:
+
+- `website/AGENTS.md`
+- `website/docs/frontend-roadmap.md`
+
+Nếu task liên quan API, đọc thêm:
+
+- `website/docs/api-contract.md`
+
+Nếu task liên quan UI/UX/layout/visual, đọc thêm:
+
+- `website/docs/design-tokens.md`
+- `website/.codex/skills/ui-ux-pro-max/SKILL.md`
+
 Báo cáo ngắn:
 
 - file liên quan
@@ -951,6 +1003,8 @@ Sau khi sửa, báo cáo:
 - file đã tạo
 - component shadcn/ui đã dùng
 - UX decision đã áp dụng
+- milestone hiện tại theo `frontend-roadmap.md`
+- roadmap có cần chuyển sang `Needs review` không
 - cách test
 - rủi ro còn lại nếu có
 
@@ -964,26 +1018,44 @@ Không tự chuyển sang milestone tiếp theo.
 
 ## Final milestones
 
-Frontend online judge sẽ được làm theo từng milestone:
+Frontend online judge sẽ được làm theo roadmap trong:
 
-1. Unified app shell: top navbar, search, user menu, mobile navigation
-2. Admin secondary navigation nếu user có quyền admin
-3. Overview page
-4. Problem list page
-5. Problem detail page
-6. Submit code panel với Monaco Editor
-7. Submission list/status page
-8. Contest pages
-9. Auth pages: login/register
-10. User profile/dashboard
-11. Admin pages nếu cần
+```txt
+website/docs/frontend-roadmap.md
+```
+
+Milestone chính thức hiện tại:
+
+0. Bootstrap frontend foundation
+1. Unified app shell
+2. Problem list page
+3. Problem detail page
+4. Submit code panel with Monaco Editor
+5. Submission list/status page
+6. Contest pages
+7. Auth pages
+8. User profile/dashboard
+9. Admin pages
 
 Chỉ làm một milestone tại một thời điểm.
 
 Không implement nhiều milestone trong một lần nếu user chưa yêu cầu rõ ràng.
 
----
+Không bắt đầu milestone tiếp theo nếu milestone hiện tại chưa `Done`.
 
+Trạng thái milestone chỉ được dùng các giá trị:
+
+```txt
+Not started
+In progress
+Blocked
+Needs review
+Done
+```
+
+Nếu roadmap và danh sách milestone trong file này khác nhau, ưu tiên `website/docs/frontend-roadmap.md` cho trạng thái tiến độ thực tế.
+
+---
 ## Guardrails quan trọng
 
 Luôn tuân thủ:
@@ -1008,6 +1080,9 @@ Luôn tuân thủ:
 - Không tự ý đổi palette White + Violet + Slate.
 - Không tự ý sửa `website/docs/api-contract.md` nếu backend chưa thay đổi hoặc user chưa yêu cầu.
 - Không tự ý sửa `website/docs/design-tokens.md` nếu task không yêu cầu đổi visual system.
+- Không tự ý sửa `website/docs/frontend-roadmap.md` trừ khi task liên quan progress tracking hoặc milestone status.
+- Không tự ý đánh dấu milestone là `Done` nếu chưa review.
+- Không bắt đầu Milestone 2 nếu Milestone 1 chưa được review và đánh dấu `Done` trong roadmap.
 
 Luôn chọn thay đổi nhỏ nhất để đạt task hiện tại.
 

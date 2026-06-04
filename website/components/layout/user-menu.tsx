@@ -15,18 +15,21 @@ export function UserMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" className="h-10 gap-2 px-2">
+        <Button variant="ghost" className="h-10 gap-2 rounded-full px-2 sm:rounded-md">
           <Avatar className="h-7 w-7">
             <AvatarFallback className="bg-accent text-xs text-accent-foreground">GJ</AvatarFallback>
           </Avatar>
-          <span className="hidden text-sm font-medium lg:inline">Guest</span>
+          <span className="hidden text-left lg:block">
+            <span className="block text-sm font-medium leading-none">Guest</span>
+            <span className="mt-1 block text-xs text-muted-foreground">Placeholder menu</span>
+          </span>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
+      <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuLabel>
           <div className="flex flex-col">
             <span>Guest user</span>
-            <span className="text-xs font-normal text-muted-foreground">Auth flow lands later</span>
+            <span className="text-xs font-normal text-muted-foreground">Navigation placeholder until auth flow is implemented.</span>
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
