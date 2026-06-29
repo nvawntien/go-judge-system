@@ -28,15 +28,5 @@ func (uc *getMeUseCase) Execute(ctx context.Context, claims pkgAuth.Claims) (*dt
 		return nil, domain.ErrInternalServer.Wrap(err)
 	}
 
-	return &dto.GetMeResponse{
-		ID:        user.ID,
-		FullName:  user.FullName,
-		Username:  user.Username,
-		Email:     user.Email,
-		Role:      user.Role,
-		Rating:    user.Rating,
-		IsActive:  user.IsActive,
-		CreatedAt: user.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		UpdatedAt: user.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
-	}, nil
+	return toGetMeResponse(user), nil
 }

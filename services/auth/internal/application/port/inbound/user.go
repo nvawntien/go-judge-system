@@ -13,3 +13,7 @@ type GetMeUseCase interface {
 type GetProfileUseCase interface {
 	Execute(ctx context.Context, req dto.GetProfileRequest) (dto.GetProfileResponse, error)
 }
+
+type UpdateProfileUseCase interface {
+	Execute(ctx context.Context, claims pkgAuth.Claims, req dto.UpdateProfileRequest) (*dto.GetMeResponse, error)
+}

@@ -88,30 +88,81 @@ graph TD
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
 | `POST` | `/api/v1/auth/register` | Register a new account |
-| `POST` | `/api/v1/auth/verify-activation` | Verify activation OTP |
-| `POST` | `/api/v1/auth/resend-otp` | Resend activation OTP |
-| `POST` | `/api/v1/auth/forgot-password` | Request password-reset OTP |
-| `POST` | `/api/v1/auth/verify-forgot-password` | Verify password-reset OTP |
-| `POST` | `/api/v1/auth/reset-password` | Reset password with verified OTP |
+| `POST` | `/api/v1/auth/email/verify` | Verify email token |
+| `POST` | `/api/v1/auth/email/resend-verification` | Resend verification email |
+| `POST` | `/api/v1/auth/password/forgot` | Request password reset |
+| `POST` | `/api/v1/auth/password/reset` | Reset password with token |
 | `POST` | `/api/v1/auth/login` | Login and receive tokens |
 | `POST` | `/api/v1/auth/refresh-token` | Refresh access token |
-| `GET` | `/api/v1/auth/profile/:username` | Get public profile by username |
+| `GET` | `/api/v1/users/:username/profile` | Get public profile by username |
 
 ### Authenticated Endpoints
 
-Send the token via `Authorization: Bearer <token>` or the `access_token` cookie.
+Protected routes are expected to be called through the gateway, which validates the `access_token` cookie and injects `X-User-*` headers for the auth service.
 
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
-| `GET` | `/api/v1/auth/profile` | Get current user's profile |
-| `PUT` | `/api/v1/auth/change-password` | Change current password |
+| `GET` | `/api/v1/me` | Get current user's profile |
+| `PATCH` | `/api/v1/me/profile` | Update current user's core profile |
+| `PUT` | `/api/v1/auth/password/change` | Change current password |
 | `POST` | `/api/v1/auth/logout` | Logout current session |
+| `POST` | `/api/v1/auth/logout-all` | Logout all sessions |
 
-### Super Admin Endpoints
+### Admin Endpoints
 
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
-| `PUT` | `/api/v1/auth/admin/:username/role` | Update a user's role |
+| `PUT` | `/api/v1/admin/users/:user_id/role` | Update a user's role |
+
+### Profile Response
+
+`GET /api/v1/me`
+
+```json
+{
+  "status": "success",
+  "code": 20000,
+  "data": {
+    "id": "2a1d2d8e-8d7f-4f39-8a18-4db0f4bcbfd5",
+    "full_name": "Jane Doe",
+    "username": "janedoe",
+    "email": "jane@example.com",
+    "role": "user",
+    "rating": 0,
+    "is_active": true,
+    "avatar_url": "https://cdn.example.com/avatar.png",
+    "bio": "Competitive programmer",
+    "country": "Vietnam",
+    "school": "HCMUS",
+    "company": "Go Judge",
+    "github_url": "https://github.com/janedoe",
+    "website_url": "https://janedoe.dev",
+    "linkedin_url": "https://www.linkedin.com/in/janedoe",
+    "created_at": "2026-06-29T10:30:00+07:00",
+    "updated_at": "2026-06-29T10:45:00+07:00"
+  }
+}
+```
+
+`GET /api/v1/users/:username/profile` returns the same core profile fields except `email`.
+
+### Update Profile Request
+
+`PATCH /api/v1/me/profile`
+
+```json
+{
+  "full_name": "Jane Doe",
+  "avatar_url": "https://cdn.example.com/avatar.png",
+  "bio": "Competitive programmer",
+  "country": "Vietnam",
+  "school": "HCMUS",
+  "company": "Go Judge",
+  "github_url": "https://github.com/janedoe",
+  "website_url": "https://janedoe.dev",
+  "linkedin_url": "https://www.linkedin.com/in/janedoe"
+}
+```
 
 ---
 

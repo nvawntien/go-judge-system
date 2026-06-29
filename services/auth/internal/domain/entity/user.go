@@ -9,16 +9,24 @@ import (
 )
 
 type User struct {
-	ID        string
-	FullName  string
-	Username  string
-	Email     string
-	Password  string
-	Role      rbac.Role
-	Rating    int
-	IsActive  bool
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID          string
+	FullName    string
+	Username    string
+	Email       string
+	Password    string
+	Role        rbac.Role
+	Rating      int
+	IsActive    bool
+	AvatarURL   *string
+	Bio         *string
+	Country     *string
+	School      *string
+	Company     *string
+	GithubURL   *string
+	WebsiteURL  *string
+	LinkedinURL *string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 func NewUser(fullName string, username string, email valueobject.Email, password valueobject.Password) *User {
@@ -43,6 +51,48 @@ func (u *User) Activate() {
 
 func (u *User) UpdatePassword(newPassword valueobject.Password) {
 	u.Password = newPassword.Hash()
+	u.UpdatedAt = time.Now()
+}
+
+func (u *User) UpdateProfile(
+	fullName *string,
+	avatarURL *string,
+	bio *string,
+	country *string,
+	school *string,
+	company *string,
+	githubURL *string,
+	websiteURL *string,
+	linkedinURL *string,
+) {
+	if fullName != nil {
+		u.FullName = *fullName
+	}
+	if avatarURL != nil {
+		u.AvatarURL = avatarURL
+	}
+	if bio != nil {
+		u.Bio = bio
+	}
+	if country != nil {
+		u.Country = country
+	}
+	if school != nil {
+		u.School = school
+	}
+	if company != nil {
+		u.Company = company
+	}
+	if githubURL != nil {
+		u.GithubURL = githubURL
+	}
+	if websiteURL != nil {
+		u.WebsiteURL = websiteURL
+	}
+	if linkedinURL != nil {
+		u.LinkedinURL = linkedinURL
+	}
+
 	u.UpdatedAt = time.Now()
 }
 

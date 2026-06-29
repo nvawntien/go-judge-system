@@ -41,6 +41,7 @@ func (r *Router) SetupRoutes() {
 
 	isAdmin := middleware.RequireRole(rbac.RoleAdmin)
 
+	// auth api
 	auth := r.engine.Group("/api/v1/auth")
 	{
 		auth.POST("/register", r.auth.Register.Handle)
@@ -63,16 +64,18 @@ func (r *Router) SetupRoutes() {
 		}
 	}
 
-	user := r.engine.Group("/api/v1/users")
+	me := r.engine.Group("/api/v1/me", r.middleware)
 	{
-		profile := user.Group("/profile")
-		{
-			profile.GET("/me", r.middleware, r.user.GetMe.Handle)
-			profile.GET("/:username", r.user.GetProfile.Handle)
-		}
-
+		me.GET("", r.user.GetMe.Handle)
+		me.PATCH("/profile", r.user.UpdateProfile.Handle)
 	}
 
+	user := r.engine.Group("/api/v1/users")
+	{
+		user.GET("/:username/profile", r.user.GetProfile.Handle)
+	}
+
+	// admin api
 	admin := r.engine.Group("/api/v1/admin", r.middleware)
 	{
 		admin.PUT("/users/:user_id/role", isAdmin, r.admin.AssignRole.Handle)

@@ -26,11 +26,5 @@ func (uc *getProfileUseCase) Execute(ctx context.Context, req dto.GetProfileRequ
 		return dto.GetProfileResponse{}, domain.ErrInternalServer.Wrap(err)
 	}
 
-	return dto.GetProfileResponse{
-		FullName:  user.FullName,
-		Username:  user.Username,
-		Email:     user.Email,
-		Rating:    user.Rating,
-		CreatedAt: user.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-	}, nil
+	return toGetProfileResponse(user), nil
 }
