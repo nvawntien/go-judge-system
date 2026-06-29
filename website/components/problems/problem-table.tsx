@@ -7,22 +7,16 @@ import { ProblemTagList } from "./problem-tag-list"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 export function ProblemTable() {
   return (
-    <div className="w-full">
-      <table className="w-full text-sm text-left table-fixed">
-        <colgroup>
-          <col className="w-14" />
-          <col className="w-auto" />
-          <col className="w-24" />
-          <col className="w-[32%]" />
-          <col className="w-24" />
-        </colgroup>
+    <div className="w-full overflow-x-auto pb-4 sm:pb-0">
+      <table className="w-full text-sm text-left table-fixed min-w-[320px]">
+
         <thead className="bg-white dark:bg-slate-900/50 text-slate-500 dark:text-slate-400 border-b dark:border-slate-800 transition-colors">
           <tr>
-            <th className="px-4 py-3 font-medium text-center">Status</th>
+            <th className="w-14 px-4 py-3 font-medium text-center">Status</th>
             <th className="px-4 py-3 font-medium">Problem</th>
-            <th className="px-4 py-3 font-medium text-center">Difficulty</th>
-            <th className="px-4 py-3 font-medium hidden lg:table-cell">Tags</th>
-            <th className="px-4 py-3 font-medium hidden sm:table-cell">Acceptance</th>
+            <th className="w-24 px-4 py-3 font-medium text-center">Difficulty</th>
+            <th className="w-[32%] px-4 py-3 font-medium hidden lg:table-cell">Tags</th>
+            <th className="w-24 px-4 py-3 font-medium hidden sm:table-cell">Acceptance</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80 transition-colors">

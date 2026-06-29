@@ -11,16 +11,16 @@ export function UserTopNav() {
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-slate-200 dark:border-slate-800/80 bg-white dark:bg-slate-950 transition-colors">
-      <div className="container mx-auto flex h-16 items-center px-4 md:px-8">
+      <div className="mx-auto flex h-16 w-full max-w-[1440px] items-center px-4 sm:px-5 lg:px-6">
         
         {/* Brand Area */}
-        <Link href="/" className="mr-12 flex items-center space-x-2">
+        <Link href="/" className="mr-6 lg:mr-12 flex items-center space-x-2 shrink-0">
           <span className="text-purple-600 dark:text-violet-500 font-bold text-xl tracking-tighter">{`{<>}`}</span>
           <span className="text-xl font-bold text-slate-900 dark:text-slate-100">JudgeHub</span>
         </Link>
         
         {/* Navigation Menu */}
-        <nav className="hidden md:flex items-center space-x-8 h-full">
+        <nav className="hidden md:flex items-center space-x-4 lg:space-x-8 h-full overflow-hidden">
           {USER_NAV_ITEMS.map((item) => {
             const isActive = pathname === item.href || pathname?.startsWith(item.href + '/');
             return (
@@ -40,7 +40,7 @@ export function UserTopNav() {
         </nav>
         
         {/* Right Side Actions */}
-        <div className="ml-auto flex items-center space-x-4 sm:space-x-6">
+        <div className="ml-auto flex items-center space-x-3 sm:space-x-4 lg:space-x-6 shrink-0">
           
           {/* Search Input */}
           <div className="relative hidden lg:flex items-center">
@@ -48,7 +48,7 @@ export function UserTopNav() {
             <input 
               type="text" 
               placeholder="Search problems..." 
-              className="h-9 w-64 rounded-full border border-slate-200 dark:border-slate-800/80 bg-slate-50 dark:bg-slate-900/50 pl-10 pr-12 text-sm text-slate-900 dark:text-slate-100 outline-none placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-purple-600 dark:focus:border-violet-500 focus:ring-1 focus:ring-purple-600 dark:focus:ring-violet-500 transition-all"
+              className="h-9 w-48 xl:w-64 rounded-full border border-slate-200 dark:border-slate-800/80 bg-slate-50 dark:bg-slate-900/50 pl-10 pr-12 text-sm text-slate-900 dark:text-slate-100 outline-none placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-purple-600 dark:focus:border-violet-500 focus:ring-1 focus:ring-purple-600 dark:focus:ring-violet-500 transition-all"
             />
             <div className="absolute right-2 flex items-center rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-1.5 h-6 text-[10px] font-medium text-slate-400 dark:text-slate-500">
               ⌘K
@@ -70,8 +70,12 @@ export function UserTopNav() {
           </button>
 
           {/* User Profile */}
-          <div className="flex items-center gap-2 cursor-pointer group">
-            <div className="h-8 w-8 overflow-hidden rounded-full border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+          <Link 
+            href="/profile"
+            aria-label="Open profile"
+            className="flex items-center gap-2 cursor-pointer group rounded-full sm:rounded-lg sm:pl-1 sm:pr-2 sm:py-1 hover:bg-slate-100 dark:hover:bg-slate-800/50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950"
+          >
+            <div className="h-8 w-8 overflow-hidden rounded-full border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0">
                <svg viewBox="0 0 36 36" fill="none" role="img" xmlns="http://www.w3.org/2000/svg" width="32" height="32" className="opacity-90 dark:opacity-80">
                  <mask id="mask__beam" maskUnits="userSpaceOnUse" x="0" y="0" width="36" height="36">
                    <rect width="36" height="36" rx="72" fill="#FFFFFF"></rect>
@@ -89,7 +93,7 @@ export function UserTopNav() {
             </div>
             <span className="hidden sm:block text-sm font-medium text-slate-700 group-hover:text-slate-900 dark:text-slate-300 dark:group-hover:text-slate-100 transition-colors">Alex</span>
             <ChevronDown className="hidden sm:block h-4 w-4 text-slate-400 group-hover:text-slate-700 dark:text-slate-500 dark:group-hover:text-slate-300 transition-colors" />
-          </div>
+          </Link>
 
         </div>
       </div>
