@@ -6,7 +6,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
-	"go-judge-system/pkg/middleware"
 	pkgmiddleware "go-judge-system/pkg/middleware"
 	"go-judge-system/pkg/rbac"
 )
@@ -39,7 +38,7 @@ func (r *Router) SetupRoutes() {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
 
-	isAdmin := middleware.RequireRole(rbac.RoleAdmin)
+	isAdmin := pkgmiddleware.RequireRole(rbac.RoleAdmin)
 
 	// auth api
 	auth := r.engine.Group("/api/v1/auth")
