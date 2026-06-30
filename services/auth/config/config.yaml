@@ -53,3 +53,11 @@ jwt:
   refresh_secret: ""  # overridden by JWT_REFRESH_SECRET env
   access_ttl: 15m
   refresh_ttl: 168h
+
+minio:
+  endpoint: "minio:9000"
+  access_key: ""      # overridden by MINIO_ACCESS_KEY env
+  secret_key: ""      # overridden by MINIO_SECRET_KEY env
+  use_ssl: false
+  bucket: "avatars"
+  public_url: "http://localhost:9000"

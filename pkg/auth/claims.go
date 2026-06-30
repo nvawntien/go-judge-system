@@ -1,11 +1,15 @@
 package auth
 
-import "github.com/gin-gonic/gin"
+import (
+	"go-judge-system/pkg/rbac"
+
+	"github.com/gin-gonic/gin"
+)
 
 type Claims struct {
 	UserID        string
 	Username      string
-	Role          string
+	Role          rbac.Role
 	TokenIssuedAt int64
 }
 

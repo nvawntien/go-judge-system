@@ -6,5 +6,7 @@ logs/
 *.log
 *.log.*
 
+.idea
+
 api-tests/
 

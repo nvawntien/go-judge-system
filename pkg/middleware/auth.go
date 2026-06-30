@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	"go-judge-system/pkg/auth"
+	"go-judge-system/pkg/rbac"
 	"go-judge-system/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -39,7 +40,7 @@ func NewAuthMiddleware(logoutAllStore auth.LogoutAllIATStore) gin.HandlerFunc {
 		auth.SetClaims(c, auth.Claims{
 			UserID:        userID,
 			Username:      c.GetHeader("X-Username"),
-			Role:          c.GetHeader("X-Role"),
+			Role:          rbac.Role(c.GetHeader("X-Role")),
 			TokenIssuedAt: tokenIAT,
 		})
 
