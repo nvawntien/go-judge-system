@@ -68,6 +68,7 @@ func (r *Router) SetupRoutes() {
 	{
 		me.GET("", r.user.GetMe.Handle)
 		me.PATCH("/profile", r.user.UpdateProfile.Handle)
+		me.POST("/avatar", r.user.UploadAvatar.Handle)
 	}
 
 	user := r.engine.Group("/api/v1/users")

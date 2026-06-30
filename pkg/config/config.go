@@ -74,8 +74,9 @@ type MinIOConfig struct {
 	Endpoint  string `mapstructure:"endpoint"`
 	AccessKey string `mapstructure:"access_key"`
 	SecretKey string `mapstructure:"secret_key"`
-	Bucket    string `mapstructure:"bucket"`
 	UseSSL    bool   `mapstructure:"use_ssl"`
+	Bucket    string `mapstructure:"bucket"`
+	PublicURL string `mapstructure:"public_url"`
 }
 
 type SMTPConfig struct {

@@ -9,24 +9,25 @@ import (
 )
 
 type User struct {
-	ID          string
-	FullName    string
-	Username    string
-	Email       string
-	Password    string
-	Role        rbac.Role
-	Rating      int
-	IsActive    bool
-	AvatarURL   *string
-	Bio         *string
-	Country     *string
-	School      *string
-	Company     *string
-	GithubURL   *string
-	WebsiteURL  *string
-	LinkedinURL *string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID              string
+	FullName        string
+	Username        string
+	Email           string
+	Password        string
+	Role            rbac.Role
+	Rating          int
+	IsActive        bool
+	AvatarURL       *string
+	AvatarObjectKey *string
+	Bio             *string
+	Country         *string
+	School          *string
+	Company         *string
+	GithubURL       *string
+	WebsiteURL      *string
+	LinkedinURL     *string
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 func NewUser(fullName string, username string, email valueobject.Email, password valueobject.Password) *User {
@@ -54,9 +55,14 @@ func (u *User) UpdatePassword(newPassword valueobject.Password) {
 	u.UpdatedAt = time.Now()
 }
 
+func (u *User) UploadAvatar(avatarURL string, avatarObjectKey string) {
+	u.AvatarURL = &avatarURL
+	u.AvatarObjectKey = &avatarObjectKey
+	u.UpdatedAt = time.Now()
+}
+
 func (u *User) UpdateProfile(
 	fullName *string,
-	avatarURL *string,
 	bio *string,
 	country *string,
 	school *string,
@@ -67,9 +73,6 @@ func (u *User) UpdateProfile(
 ) {
 	if fullName != nil {
 		u.FullName = *fullName
-	}
-	if avatarURL != nil {
-		u.AvatarURL = avatarURL
 	}
 	if bio != nil {
 		u.Bio = bio

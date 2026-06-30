@@ -13,6 +13,7 @@ import (
 	"go-judge-system/pkg/database"
 	"go-judge-system/pkg/logger"
 	"go-judge-system/pkg/middleware"
+	"go-judge-system/pkg/minio"
 	"go-judge-system/services/auth/internal/adapter/inbound/http"
 	"go-judge-system/services/auth/internal/adapter/inbound/http/handler"
 	admin2 "go-judge-system/services/auth/internal/adapter/inbound/http/handler/admin"
@@ -24,6 +25,7 @@ import (
 	"go-judge-system/services/auth/internal/adapter/outbound/mail"
 	"go-judge-system/services/auth/internal/adapter/outbound/persistence/postgres"
 	"go-judge-system/services/auth/internal/adapter/outbound/security"
+	minio2 "go-judge-system/services/auth/internal/adapter/outbound/storage/minio"
 	"go-judge-system/services/auth/internal/application/usecase/admin"
 	"go-judge-system/services/auth/internal/application/usecase/auth"
 	"go-judge-system/services/auth/internal/application/usecase/user"
@@ -83,7 +85,19 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	getProfileHandler := user2.NewGetProfileHandler(getProfileUseCase)
 	updateProfileUseCase := user.NewUpdateProfileUseCase(userRepository)
 	updateProfileHandler := user2.NewUpdateProfileHandler(updateProfileUseCase)
-	userHandler := handler.NewUserHandler(getMeHandler, getProfileHandler, updateProfileHandler)
+	minIOConfig := &cfg.MinIO
+	minioClient, err := minio.NewMinioClient(minIOConfig)
+	if err != nil {
+		return nil, err
+	}
+	configMinIOConfig := cfg.MinIO
+	avatarStorage, err := minio2.NewAvatarStorage(minioClient, configMinIOConfig)
+	if err != nil {
+		return nil, err
+	}
+	uploadAvatarUseCase := user.NewUploadAvatarUseCase(userRepository, avatarStorage)
+	uploadAvatarHandler := user2.NewUploadAvatarHandler(uploadAvatarUseCase)
+	userHandler := handler.NewUserHandler(getMeHandler, getProfileHandler, updateProfileHandler, uploadAvatarHandler)
 	assignRoleUseCase := admin.NewAssignRoleUseCase(userRepository)
 	assignRoleHandler := admin2.NewAssignRoleHandler(assignRoleUseCase)
 	adminHandler := handler.NewAdminHandler(assignRoleHandler)

@@ -18,7 +18,7 @@ type minioStorage struct {
 }
 
 func NewMinioStorage(client *minio.Client, cfg config.MinIOConfig) outbound.ObjectStorage {
-	return &minioStorage{client: client, bucket: cfg.Bucket}
+	return &minioStorage{client: client, bucket: cfg.TestcaseBucket}
 }
 
 func (m *minioStorage) UploadFromFile(ctx context.Context, objectKey string, filePath string) error {

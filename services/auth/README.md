@@ -104,6 +104,7 @@ Protected routes are expected to be called through the gateway, which validates 
 | :--- | :--- | :--- |
 | `GET` | `/api/v1/me` | Get current user's profile |
 | `PATCH` | `/api/v1/me/profile` | Update current user's core profile |
+| `POST` | `/api/v1/me/avatar` | Upload current user's avatar |
 | `PUT` | `/api/v1/auth/password/change` | Change current password |
 | `POST` | `/api/v1/auth/logout` | Logout current session |
 | `POST` | `/api/v1/auth/logout-all` | Logout all sessions |
@@ -161,6 +162,25 @@ Protected routes are expected to be called through the gateway, which validates 
   "github_url": "https://github.com/janedoe",
   "website_url": "https://janedoe.dev",
   "linkedin_url": "https://www.linkedin.com/in/janedoe"
+}
+```
+
+### Upload Avatar Request
+
+`POST /api/v1/me/avatar`
+
+- `Content-Type: multipart/form-data`
+- Form field: `avatar`
+
+Success response:
+
+```json
+{
+  "status": "success",
+  "code": 20000,
+  "data": {
+    "avatarUrl": "http://localhost:9000/avatars/users/{userID}/xxx.png"
+  }
 }
 ```
 

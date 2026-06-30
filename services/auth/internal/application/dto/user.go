@@ -1,6 +1,9 @@
 package dto
 
-import "go-judge-system/pkg/rbac"
+import (
+	"go-judge-system/pkg/rbac"
+	"mime/multipart"
+)
 
 type GetMeRequest struct {
 }
@@ -54,4 +57,12 @@ type UpdateProfileRequest struct {
 	GithubURL   *string `json:"github_url"`
 	WebsiteURL  *string `json:"website_url"`
 	LinkedinURL *string `json:"linkedin_url"`
+}
+
+type UploadAvatarRequest struct {
+	Avatar *multipart.FileHeader `form:"avatar" binding:"required"`
+}
+
+type UploadAvatarResponse struct {
+	AvatarURL string `json:"avatarUrl"`
 }

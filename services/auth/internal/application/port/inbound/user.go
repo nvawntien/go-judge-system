@@ -17,3 +17,7 @@ type GetProfileUseCase interface {
 type UpdateProfileUseCase interface {
 	Execute(ctx context.Context, claims pkgAuth.Claims, req dto.UpdateProfileRequest) (*dto.GetMeResponse, error)
 }
+
+type UploadAvatarUseCase interface {
+	Execute(ctx context.Context, claims pkgAuth.Claims, req dto.UploadAvatarRequest) (*dto.UploadAvatarResponse, error)
+}
