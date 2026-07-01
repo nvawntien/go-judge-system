@@ -7,15 +7,17 @@
 package main
 
 import (
+	auth "go-judge-system/pkg/auth"
+	"go-judge-system/pkg/cache"
 	"go-judge-system/pkg/config"
 	"go-judge-system/pkg/database"
 	"go-judge-system/pkg/logger"
+	"go-judge-system/pkg/middleware"
 	"go-judge-system/pkg/minio"
 	"go-judge-system/services/problem/internal/adapter/inbound/http"
 	"go-judge-system/services/problem/internal/adapter/inbound/http/handler"
 	problem2 "go-judge-system/services/problem/internal/adapter/inbound/http/handler/problem"
 	testcase2 "go-judge-system/services/problem/internal/adapter/inbound/http/handler/test_case"
-	"go-judge-system/services/problem/internal/adapter/inbound/http/middleware"
 	"go-judge-system/services/problem/internal/adapter/outbound/persistence/postgres"
 	minio2 "go-judge-system/services/problem/internal/adapter/outbound/storage/minio"
 	"go-judge-system/services/problem/internal/application/usecase/problem"
@@ -31,12 +33,17 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	if err != nil {
 		return nil, err
 	}
+	redisConfig := cfg.Redis
+	client, err := cache.ConnectRedis(redisConfig)
+	if err != nil {
+		return nil, err
+	}
 	problemRepository := postgres.NewProblemRepository(db)
 	loggerConfig := cfg.Logger
 	serverConfig := cfg.Server
 	string2 := provideServerMode(serverConfig)
 	zapLogger := logger.NewLogger(loggerConfig, string2)
-	createProblemUseCase := problem.NewCreateProblemUseCase(problemRepository, zapLogger)
+	createProblemUseCase := problem.NewCreateProblemUseCase(problemRepository)
 	createProblemHandler := problem2.NewCreateProblemHandler(createProblemUseCase)
 	updateProblemUseCase := problem.NewUpdateProblemUseCase(problemRepository, zapLogger)
 	updateProblemHandler := problem2.NewUpdateProblemHandler(updateProblemUseCase)
@@ -52,21 +59,26 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	hideProblemHandler := problem2.NewHideProblemHandler(hideProblemUseCase)
 	problemHandler := handler.NewProblemHandler(createProblemHandler, updateProblemHandler, deleteProblemHandler, getProblemHandler, listProblemsHandler, publishProblemHandler, hideProblemHandler)
 	testCaseRepository := postgres.NewTestCaseRepository(db)
+	jwtConfig := cfg.JWT
+	logoutAllIATStore := auth.NewRedisLogoutAllIATStore(client, jwtConfig)
 	minIOConfig := &cfg.MinIO
-	client, err := minio.NewMinioClient(minIOConfig)
+	client2, err := minio.NewMinioClient(minIOConfig)
 	if err != nil {
 		return nil, err
 	}
 	configMinIOConfig := cfg.MinIO
-	objectStorage := minio2.NewMinioStorage(client, configMinIOConfig)
-	uploadTestCaseUseCase := testcase.NewUploadTestCaseUseCase(problemRepository, testCaseRepository, objectStorage, zapLogger)
+	testCaseStorage, err := minio2.NewTestCaseStorage(client2, configMinIOConfig)
+	if err != nil {
+		return nil, err
+	}
+	uploadTestCaseUseCase := testcase.NewUploadTestCaseUseCase(problemRepository, testCaseRepository, testCaseStorage, zapLogger)
 	uploadTestCaseHandler := testcase2.NewUploadTestCaseHandler(uploadTestCaseUseCase)
-	getTestCaseForWorkerUseCase := testcase.NewGetTestCaseForWorkerUseCase(testCaseRepository, objectStorage, zapLogger)
+	getTestCaseForWorkerUseCase := testcase.NewGetTestCaseForWorkerUseCase(testCaseRepository, testCaseStorage, zapLogger)
 	getTestCaseForWorkerHandler := testcase2.NewGetTestCaseForWorkerHandler(getTestCaseForWorkerUseCase)
 	testCaseHandler := handler.NewTestCaseHandler(uploadTestCaseHandler, getTestCaseForWorkerHandler)
-	handlerFunc := middleware.NewAuthMiddleware()
-	router := http.NewRouter(problemHandler, testCaseHandler, handlerFunc)
-	gcOrphanZipsUseCase := testcase.NewGCOrphanZipsUseCase(testCaseRepository, objectStorage, zapLogger)
+	handlerFunc := middleware.NewAuthMiddleware(logoutAllIATStore)
+	router := http.NewRouter(problemHandler, testCaseHandler, handlerFunc, zapLogger)
+	gcOrphanZipsUseCase := testcase.NewGCOrphanZipsUseCase(testCaseRepository, testCaseStorage, zapLogger)
 	gcRunner := testcase.NewGCRunner(gcOrphanZipsUseCase, zapLogger)
 	app := container.NewApp(cfg, router, zapLogger, gcRunner)
 	return app, nil

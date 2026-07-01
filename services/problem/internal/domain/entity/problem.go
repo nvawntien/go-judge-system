@@ -5,9 +5,9 @@ import "time"
 type Difficulty string
 
 const (
-	Easy   Difficulty = "EASY"
-	Medium Difficulty = "MEDIUM"
-	Hard   Difficulty = "HARD"
+	Easy   Difficulty = "Easy"
+	Medium Difficulty = "Medium"
+	Hard   Difficulty = "Hard"
 )
 
 // ProblemExample represents a sample test case displayed to users on the problem page.
@@ -25,7 +25,7 @@ type Problem struct {
 	Difficulty  Difficulty
 
 	Examples    []ProblemExample
-	Constraints string
+	Constraints []string
 	Hints       []string
 
 	TimeLimit   float64
@@ -43,7 +43,7 @@ func NewProblem(
 	title, slug, desc string,
 	diff Difficulty,
 	examples []ProblemExample,
-	constraints string,
+	constraints []string,
 	hints []string,
 	timeLimit float64,
 	memLimit int,

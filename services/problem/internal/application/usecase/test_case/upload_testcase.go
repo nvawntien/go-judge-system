@@ -24,9 +24,9 @@ import (
 )
 
 const (
-	maxZipFileSize         = 100 * 1024 * 1024 // 100 MB compressed
-	maxUncompressedSize    = 500 * 1024 * 1024 // 500 MB total uncompressed (zip-bomb guard)
-	maxFileCountInZip      = 2000              // 1000 test cases max (1000 .in + 1000 .out)
+	maxZipFileSize      = 100 * 1024 * 1024 // 100 MB compressed
+	maxUncompressedSize = 500 * 1024 * 1024 // 500 MB total uncompressed (zip-bomb guard)
+	maxFileCountInZip   = 2000              // 1000 test cases max (1000 .in + 1000 .out)
 )
 
 // testcaseFilePattern matches valid testcase file names: "1.in", "1.out", "42.in", etc.
@@ -35,14 +35,14 @@ var testcaseFilePattern = regexp.MustCompile(`^(\d+)\.(in|out)$`)
 type uploadTestCaseUseCase struct {
 	problemRepo outbound.ProblemRepository
 	tcRepo      outbound.TestCaseRepository
-	storage     outbound.ObjectStorage
+	storage     outbound.TestCaseStorage
 	logger      *zap.Logger
 }
 
 func NewUploadTestCaseUseCase(
 	problemRepo outbound.ProblemRepository,
 	tcRepo outbound.TestCaseRepository,
-	storage outbound.ObjectStorage,
+	storage outbound.TestCaseStorage,
 	logger *zap.Logger,
 ) inbound.UploadTestCaseUseCase {
 	return &uploadTestCaseUseCase{
@@ -107,7 +107,7 @@ func (uc *uploadTestCaseUseCase) Execute(ctx context.Context, claims auth.Claims
 	version := strconv.FormatInt(time.Now().Unix(), 10)
 	objectKey := fmt.Sprintf("problems/%d/testcases_%s.zip", problem.ID, version)
 
-	if err := uc.storage.UploadFromFile(ctx, objectKey, tmpPath); err != nil {
+	if err := uc.storage.UploadTestCase(ctx, objectKey, tmpPath); err != nil {
 		uc.logger.Error("failed to upload zip to object storage",
 			zap.Int64("problem_id", problem.ID),
 			zap.String("object_key", objectKey),
@@ -124,7 +124,7 @@ func (uc *uploadTestCaseUseCase) Execute(ctx context.Context, claims auth.Claims
 			zap.Error(err),
 		)
 
-		if delErr := uc.storage.DeleteObject(ctx, objectKey); delErr != nil {
+		if delErr := uc.storage.DeleteTestCase(ctx, objectKey); delErr != nil {
 			uc.logger.Error("failed to rollback orphan object", zap.Error(delErr))
 		}
 		return dto.UploadTestCasesResponse{}, domain.ErrInternalServer.Wrap(err)

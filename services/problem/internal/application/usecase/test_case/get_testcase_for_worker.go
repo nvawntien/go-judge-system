@@ -17,13 +17,13 @@ const presignedURLExpiry = 1 * time.Hour
 
 type getTestCaseForWorkerUseCase struct {
 	tcRepo  outbound.TestCaseRepository
-	storage outbound.ObjectStorage
+	storage outbound.TestCaseStorage
 	logger  *zap.Logger
 }
 
 func NewGetTestCaseForWorkerUseCase(
 	tcRepo outbound.TestCaseRepository,
-	storage outbound.ObjectStorage,
+	storage outbound.TestCaseStorage,
 	logger *zap.Logger,
 ) inbound.GetTestCaseForWorkerUseCase {
 	return &getTestCaseForWorkerUseCase{tcRepo: tcRepo, storage: storage, logger: logger}

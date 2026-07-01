@@ -20,11 +20,11 @@ const (
 
 type gcOrphanZipsUseCase struct {
 	tcRepo  outbound.TestCaseRepository
-	storage outbound.ObjectStorage
+	storage outbound.TestCaseStorage
 	logger  *zap.Logger
 }
 
-func NewGCOrphanZipsUseCase(tcRepo outbound.TestCaseRepository, storage outbound.ObjectStorage, logger *zap.Logger) *gcOrphanZipsUseCase {
+func NewGCOrphanZipsUseCase(tcRepo outbound.TestCaseRepository, storage outbound.TestCaseStorage, logger *zap.Logger) *gcOrphanZipsUseCase {
 	return &gcOrphanZipsUseCase{tcRepo: tcRepo, storage: storage, logger: logger}
 }
 
@@ -52,7 +52,7 @@ func (uc *gcOrphanZipsUseCase) Execute(ctx context.Context) error {
 	}
 
 	// List all objects in MinIO with prefix "problems/"
-	objects, err := uc.storage.ListObjectsWithInfo(ctx, gcObjectPrefix)
+	objects, err := uc.storage.ListTestCaseWithInfo(ctx, gcObjectPrefix)
 	if err != nil {
 		uc.logger.Error("gc: failed to list objects from MinIO", zap.Error(err))
 		return err
@@ -79,7 +79,7 @@ func (uc *gcOrphanZipsUseCase) Execute(ctx context.Context) error {
 		}
 
 		// Delete orphan
-		if err := uc.storage.DeleteObject(ctx, obj.Key); err != nil {
+		if err := uc.storage.DeleteTestCase(ctx, obj.Key); err != nil {
 			uc.logger.Error("gc: failed to delete orphan object",
 				zap.String("key", obj.Key),
 				zap.Error(err),

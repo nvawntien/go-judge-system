@@ -1,9 +1,12 @@
 package http
 
 import (
+	pkgmiddleware "go-judge-system/pkg/middleware"
+	"go-judge-system/pkg/rbac"
 	"go-judge-system/services/problem/internal/adapter/inbound/http/handler"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 type Router struct {
@@ -17,9 +20,14 @@ func NewRouter(
 	problemHandler *handler.ProblemHandler,
 	testcaseHandler *handler.TestCaseHandler,
 	authMiddleware gin.HandlerFunc,
+	logger *zap.Logger,
 ) *Router {
+	r := gin.New()
+	r.Use(pkgmiddleware.Recovery(logger))
+	r.Use(pkgmiddleware.UnifiedLogger(logger))
+
 	return &Router{
-		engine:          gin.Default(),
+		engine:          r,
 		problemHandler:  problemHandler,
 		testcaseHandler: testcaseHandler,
 		authMiddleware:  authMiddleware,
@@ -33,6 +41,7 @@ func (r *Router) SetupRoutes() {
 	})
 
 	v1 := r.engine.Group("/api/v1")
+	isContributor := pkgmiddleware.RequireRole(rbac.RoleContributor)
 
 	// ---- Public routes (slug-based, user-facing) ----
 	problems := v1.Group("/problems")
@@ -55,7 +64,7 @@ func (r *Router) SetupRoutes() {
 		// Problem management
 		admin.GET("/problems", r.problemHandler.ListProblems.HandleAdmin)
 		admin.GET("/problems/:id", r.problemHandler.GetProblem.HandleAdmin)
-		admin.POST("/problems", r.problemHandler.CreateProblem.Handle)
+		admin.POST("/problems", isContributor, r.problemHandler.CreateProblem.Handle)
 		admin.PUT("/problems/:id", r.problemHandler.UpdateProblem.Handle)
 		admin.DELETE("/problems/:id", r.problemHandler.DeleteProblem.Handle)
 		admin.PUT("/problems/:id/publish", r.problemHandler.PublishProblem.Handle)

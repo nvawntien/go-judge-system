@@ -7,7 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type ListProblemsHandler struct{
+type ListProblemsHandler struct {
 	uc inbound.ListProblemsUseCase
 }
 

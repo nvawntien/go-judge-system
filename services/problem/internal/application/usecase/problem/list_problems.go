@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"go-judge-system/pkg/auth"
+	"go-judge-system/pkg/rbac"
 	"go-judge-system/services/problem/internal/application/dto"
 	"go-judge-system/services/problem/internal/application/port/inbound"
 	"go-judge-system/services/problem/internal/application/port/outbound"
@@ -48,7 +49,7 @@ func (uc *listProblemsUseCase) Execute(ctx context.Context, req dto.ListProblems
 
 // only super admin get this list problems
 func (uc *listProblemsUseCase) ExecuteAdmin(ctx context.Context, claims auth.Claims, req dto.ListProblemsRequest) (dto.ListProblemsResponse, error) {
-	if !claims.IsSuperAdmin() {
+	if !claims.Role.AtLeast(rbac.RoleAdmin) {
 		return dto.ListProblemsResponse{}, domain.ErrForbidden
 	}
 
@@ -76,7 +77,7 @@ func (uc *listProblemsUseCase) ExecuteAdmin(ctx context.Context, claims auth.Cla
 
 // only owner problem can get this list problems
 func (uc *listProblemsUseCase) ExecuteMy(ctx context.Context, claims auth.Claims, req dto.ListProblemsRequest) (dto.ListProblemsResponse, error) {
-	if !claims.IsAdmin() {
+	if !claims.Role.AtLeast(rbac.RoleContributor) {
 		return dto.ListProblemsResponse{}, domain.ErrForbidden
 	}
 

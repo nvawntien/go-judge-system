@@ -7,7 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type GetProblemHandler struct{
+type GetProblemHandler struct {
 	uc inbound.GetProblemUseCase
 }
 
@@ -22,4 +22,3 @@ func (h *GetProblemHandler) Handle(c *gin.Context) {
 func (h *GetProblemHandler) HandleAdmin(c *gin.Context) {
 	response.HandleWithParamsAndClaims(c, h.uc.ExecuteAdmin, response.CodeSuccess)
 }
-

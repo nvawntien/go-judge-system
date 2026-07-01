@@ -16,19 +16,18 @@ type ProblemExampleDTO struct {
 
 type CreateProblemRequest struct {
 	Title       string              `json:"title" binding:"required,min=3"`
-	Slug        string              `json:"slug" binding:"required,min=3"`
+	Slug        string              `json:"slug,omitempty"`
 	Description string              `json:"description" binding:"required,min=3"`
-	Difficulty  string              `json:"difficulty" binding:"required,oneof=EASY MEDIUM HARD"`
+	Difficulty  string              `json:"difficulty" binding:"required"`
 	Examples    []ProblemExampleDTO `json:"examples" binding:"required,min=1,dive"`
-	Constraints string              `json:"constraints"`
+	Constraints []string            `json:"constraints"`
 	Hints       []string            `json:"hints"`
-	TimeLimit   float64             `json:"time_limit" binding:"required,gt=0,max=30"`
-	MemoryLimit int                 `json:"memory_limit" binding:"required,min=16,max=1024"`
+	TimeLimit   float64             `json:"time_limit"`
+	MemoryLimit int                 `json:"memory_limit"`
 }
 
 type CreateProblemResponse struct {
-	ID   int64  `json:"id"`
-	Slug string `json:"slug"`
+	ProblemResponse
 }
 
 type UpdateProblemRequest struct {
@@ -37,7 +36,7 @@ type UpdateProblemRequest struct {
 	Description *string              `json:"description,omitempty" binding:"omitempty,min=3"`
 	Difficulty  *string              `json:"difficulty,omitempty" binding:"omitempty,oneof=EASY MEDIUM HARD"`
 	Examples    *[]ProblemExampleDTO `json:"examples,omitempty" binding:"omitempty,min=1,dive"`
-	Constraints *string              `json:"constraints,omitempty"`
+	Constraints *[]string            `json:"constraints,omitempty"`
 	Hints       *[]string            `json:"hints,omitempty"`
 	TimeLimit   *float64             `json:"time_limit,omitempty" binding:"omitempty,gt=0,max=30"`
 	MemoryLimit *int                 `json:"memory_limit,omitempty" binding:"omitempty,min=16,max=1024"`
@@ -50,7 +49,7 @@ type ProblemResponse struct {
 	Description string              `json:"description"`
 	Difficulty  string              `json:"difficulty"`
 	Examples    []ProblemExampleDTO `json:"examples,omitempty"`
-	Constraints string              `json:"constraints,omitempty"`
+	Constraints []string            `json:"constraints,omitempty"`
 	Hints       []string            `json:"hints,omitempty"`
 	TimeLimit   float64             `json:"time_limit"`
 	MemoryLimit int                 `json:"memory_limit"`

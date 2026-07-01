@@ -9,7 +9,7 @@ import (
 
 // CreateProblemUseCase: HandleWithClaims → fn(ctx, claims, Req) (Res, err)
 type CreateProblemUseCase interface {
-	Execute(ctx context.Context, claims auth.Claims, req dto.CreateProblemRequest) (dto.CreateProblemResponse, error)
+	Execute(ctx context.Context, claims auth.Claims, req dto.CreateProblemRequest) (dto.ProblemDetailResponse, error)
 }
 
 // UpdateProblemUseCase: HandleVoidWithParamsAndBody → fn(ctx, claims, P, B) err

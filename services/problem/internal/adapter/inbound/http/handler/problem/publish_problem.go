@@ -7,7 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type PublishProblemHandler struct{
+type PublishProblemHandler struct {
 	uc inbound.PublishProblemUseCase
 }
 

@@ -3,50 +3,136 @@ package problem
 import (
 	"context"
 	"errors"
+	"fmt"
+	"regexp"
+	"strings"
 
 	"go-judge-system/pkg/auth"
+	"go-judge-system/pkg/rbac"
+	"go-judge-system/pkg/response"
 	"go-judge-system/services/problem/internal/application/dto"
 	"go-judge-system/services/problem/internal/application/port/inbound"
 	"go-judge-system/services/problem/internal/application/port/outbound"
 	"go-judge-system/services/problem/internal/application/usecase"
 	"go-judge-system/services/problem/internal/domain"
 	"go-judge-system/services/problem/internal/domain/entity"
-
-	"go.uber.org/zap"
 )
 
 type createProblemUseCase struct {
 	problemRepo outbound.ProblemRepository
-	logger      *zap.Logger
 }
 
-func NewCreateProblemUseCase(problemRepo outbound.ProblemRepository, logger *zap.Logger) inbound.CreateProblemUseCase {
-	return &createProblemUseCase{problemRepo: problemRepo, logger: logger}
+const (
+	defaultTimeLimit   = 1000
+	defaultMemoryLimit = 256
+)
+
+var nonSlugCharsPattern = regexp.MustCompile(`[^a-z0-9]+`)
+
+func NewCreateProblemUseCase(problemRepo outbound.ProblemRepository) inbound.CreateProblemUseCase {
+	return &createProblemUseCase{problemRepo: problemRepo}
 }
 
-func (uc *createProblemUseCase) Execute(ctx context.Context, claims auth.Claims, req dto.CreateProblemRequest) (dto.CreateProblemResponse, error) {
-	if !claims.IsAdmin() {
-		return dto.CreateProblemResponse{}, domain.ErrForbidden
+func (uc *createProblemUseCase) Execute(ctx context.Context, claims auth.Claims, req dto.CreateProblemRequest) (dto.ProblemDetailResponse, error) {
+	if !claims.Role.AtLeast(rbac.RoleContributor) {
+		return dto.ProblemDetailResponse{}, domain.ErrForbidden
+	}
+
+	title := strings.TrimSpace(req.Title)
+	if title == "" {
+		return dto.ProblemDetailResponse{}, response.NewAppError(response.CodeBadRequest, "title is required", nil)
+	}
+
+	description := strings.TrimSpace(req.Description)
+	if description == "" {
+		return dto.ProblemDetailResponse{}, response.NewAppError(response.CodeBadRequest, "description is required", nil)
+	}
+
+	difficulty, err := normalizeDifficulty(req.Difficulty)
+	if err != nil {
+		return dto.ProblemDetailResponse{}, err
+	}
+
+	slug, err := uc.generateUniqueSlug(ctx, title)
+	if err != nil {
+		return dto.ProblemDetailResponse{}, err
+	}
+
+	timeLimit := req.TimeLimit
+	if timeLimit <= 0 {
+		timeLimit = defaultTimeLimit
+	}
+
+	memoryLimit := req.MemoryLimit
+	if memoryLimit <= 0 {
+		memoryLimit = defaultMemoryLimit
 	}
 
 	examples := usecase.MapExampleDTOsToEntity(req.Examples)
 
 	problem := entity.NewProblem(
-		req.Title, req.Slug, req.Description,
-		entity.Difficulty(req.Difficulty),
+		title,
+		slug,
+		description,
+		difficulty,
 		examples, req.Constraints, req.Hints,
-		req.TimeLimit, req.MemoryLimit,
+		timeLimit, memoryLimit,
 		claims.UserID,
 	)
 
+	problem.IsHidden = true
+
 	if err := uc.problemRepo.Create(ctx, problem); err != nil {
 		if errors.Is(err, domain.ErrProblemAlreadyExists) {
-			return dto.CreateProblemResponse{}, domain.ErrProblemAlreadyExists
+			return dto.ProblemDetailResponse{}, domain.ErrProblemAlreadyExists
 		}
 
-		uc.logger.Error("failed to create problem", zap.Error(err))
-		return dto.CreateProblemResponse{}, domain.ErrInternalServer.Wrap(err)
+		return dto.ProblemDetailResponse{}, domain.ErrInternalServer.Wrap(err)
 	}
 
-	return dto.CreateProblemResponse{ID: problem.ID, Slug: problem.TitleSlug}, nil
+	return dto.ProblemDetailResponse{
+		ProblemResponse: usecase.MapProblemToResponse(problem, true),
+	}, nil
+}
+
+func normalizeDifficulty(raw string) (entity.Difficulty, error) {
+	switch strings.ToUpper(strings.TrimSpace(raw)) {
+	case string(entity.Easy):
+		return entity.Easy, nil
+	case string(entity.Medium):
+		return entity.Medium, nil
+	case string(entity.Hard):
+		return entity.Hard, nil
+	default:
+		return "", response.NewAppError(response.CodeBadRequest, "difficulty must be one of easy, medium, hard", nil)
+	}
+}
+
+func (uc *createProblemUseCase) generateUniqueSlug(ctx context.Context, title string) (string, error) {
+	base := slugify(title)
+	for attempt := 1; ; attempt++ {
+		candidate := base
+		if attempt > 1 {
+			candidate = fmt.Sprintf("%s-%d", base, attempt)
+		}
+
+		_, err := uc.problemRepo.GetBySlug(ctx, candidate)
+		if err == nil {
+			continue
+		}
+		if errors.Is(err, domain.ErrProblemNotFound) {
+			return candidate, nil
+		}
+		return "", domain.ErrInternalServer.Wrap(err)
+	}
+}
+
+func slugify(title string) string {
+	slug := strings.ToLower(strings.TrimSpace(title))
+	slug = nonSlugCharsPattern.ReplaceAllString(slug, "-")
+	slug = strings.Trim(slug, "-")
+	if slug == "" {
+		return "problem"
+	}
+	return slug
 }

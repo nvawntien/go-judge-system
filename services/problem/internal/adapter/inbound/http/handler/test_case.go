@@ -3,8 +3,8 @@ package handler
 import testcase "go-judge-system/services/problem/internal/adapter/inbound/http/handler/test_case"
 
 type TestCaseHandler struct {
-	UploadTestCase         *testcase.UploadTestCaseHandler
-	GetTestCaseForWorker   *testcase.GetTestCaseForWorkerHandler
+	UploadTestCase       *testcase.UploadTestCaseHandler
+	GetTestCaseForWorker *testcase.GetTestCaseForWorkerHandler
 }
 
 func NewTestCaseHandler(

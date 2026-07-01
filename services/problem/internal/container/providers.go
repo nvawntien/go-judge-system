@@ -1,16 +1,18 @@
 package container
 
 import (
+	auth "go-judge-system/pkg/auth"
+	"go-judge-system/pkg/cache"
 	"go-judge-system/pkg/database"
 	"go-judge-system/pkg/logger"
+	"go-judge-system/pkg/middleware"
 	minioclient "go-judge-system/pkg/minio"
 	"go-judge-system/services/problem/internal/adapter/inbound/http"
 	"go-judge-system/services/problem/internal/adapter/inbound/http/handler"
 	probhd "go-judge-system/services/problem/internal/adapter/inbound/http/handler/problem"
 	testhd "go-judge-system/services/problem/internal/adapter/inbound/http/handler/test_case"
-	"go-judge-system/services/problem/internal/adapter/inbound/http/middleware"
 	"go-judge-system/services/problem/internal/adapter/outbound/persistence/postgres"
-	miniostorage "go-judge-system/services/problem/internal/adapter/outbound/storage/minio"
+	testcasestorage "go-judge-system/services/problem/internal/adapter/outbound/storage/minio"
 	probuc "go-judge-system/services/problem/internal/application/usecase/problem"
 	testuc "go-judge-system/services/problem/internal/application/usecase/test_case"
 
@@ -19,6 +21,7 @@ import (
 
 var InfrastructureProviderSet = wire.NewSet(
 	database.ConnectDatabase,
+	cache.ConnectRedis,
 	logger.NewLogger,
 	minioclient.NewMinioClient,
 )
@@ -26,7 +29,8 @@ var InfrastructureProviderSet = wire.NewSet(
 var OutboundProviderSet = wire.NewSet(
 	postgres.NewProblemRepository,
 	postgres.NewTestCaseRepository,
-	miniostorage.NewMinioStorage,
+	testcasestorage.NewTestCaseStorage,
+	auth.NewRedisLogoutAllIATStore,
 )
 
 var MiddlewareProviderSet = wire.NewSet(
