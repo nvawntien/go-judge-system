@@ -2,7 +2,7 @@ package problem
 
 import (
 	"go-judge-system/pkg/response"
-	"go-judge-system/services/problem/internal/application/port/inbound"
+	inbound"go-judge-system/services/problem/internal/application/port/inbound/admin"
 
 	"github.com/gin-gonic/gin"
 )

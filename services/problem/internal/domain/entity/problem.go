@@ -5,9 +5,9 @@ import "time"
 type Difficulty string
 
 const (
-	Easy   Difficulty = "Easy"
-	Medium Difficulty = "Medium"
-	Hard   Difficulty = "Hard"
+	Easy   Difficulty = "easy"
+	Medium Difficulty = "medium"
+	Hard   Difficulty = "hard"
 )
 
 // ProblemExample represents a sample test case displayed to users on the problem page.

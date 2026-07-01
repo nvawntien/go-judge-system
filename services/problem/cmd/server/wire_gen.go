@@ -7,21 +7,17 @@
 package main
 
 import (
-	auth "go-judge-system/pkg/auth"
+	"go-judge-system/pkg/auth"
 	"go-judge-system/pkg/cache"
 	"go-judge-system/pkg/config"
 	"go-judge-system/pkg/database"
 	"go-judge-system/pkg/logger"
 	"go-judge-system/pkg/middleware"
-	"go-judge-system/pkg/minio"
 	"go-judge-system/services/problem/internal/adapter/inbound/http"
 	"go-judge-system/services/problem/internal/adapter/inbound/http/handler"
-	problem2 "go-judge-system/services/problem/internal/adapter/inbound/http/handler/problem"
-	testcase2 "go-judge-system/services/problem/internal/adapter/inbound/http/handler/test_case"
+	problem2 "go-judge-system/services/problem/internal/adapter/inbound/http/handler/admin/problem"
 	"go-judge-system/services/problem/internal/adapter/outbound/persistence/postgres"
-	minio2 "go-judge-system/services/problem/internal/adapter/outbound/storage/minio"
-	"go-judge-system/services/problem/internal/application/usecase/problem"
-	"go-judge-system/services/problem/internal/application/usecase/test_case"
+	"go-judge-system/services/problem/internal/application/usecase/admin/problem"
 	"go-judge-system/services/problem/internal/container"
 )
 
@@ -33,54 +29,24 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	if err != nil {
 		return nil, err
 	}
+	problemRepository := postgres.NewProblemRepository(db)
+	createProblemUseCase := problem.NewCreateProblemUseCase(problemRepository)
+	createProblemHandler := problem2.NewCreateProblemHandler(createProblemUseCase)
+	adminHandler := handler.NewAdminHandler(createProblemHandler)
 	redisConfig := cfg.Redis
 	client, err := cache.ConnectRedis(redisConfig)
 	if err != nil {
 		return nil, err
 	}
-	problemRepository := postgres.NewProblemRepository(db)
+	jwtConfig := cfg.JWT
+	logoutAllIATStore := auth.NewRedisLogoutAllIATStore(client, jwtConfig)
+	handlerFunc := middleware.NewAuthMiddleware(logoutAllIATStore)
 	loggerConfig := cfg.Logger
 	serverConfig := cfg.Server
 	string2 := provideServerMode(serverConfig)
 	zapLogger := logger.NewLogger(loggerConfig, string2)
-	createProblemUseCase := problem.NewCreateProblemUseCase(problemRepository)
-	createProblemHandler := problem2.NewCreateProblemHandler(createProblemUseCase)
-	updateProblemUseCase := problem.NewUpdateProblemUseCase(problemRepository, zapLogger)
-	updateProblemHandler := problem2.NewUpdateProblemHandler(updateProblemUseCase)
-	deleteProblemUseCase := problem.NewDeleteProblemUseCase(problemRepository, zapLogger)
-	deleteProblemHandler := problem2.NewDeleteProblemHandler(deleteProblemUseCase)
-	getProblemUseCase := problem.NewGetProblemUseCase(problemRepository, zapLogger)
-	getProblemHandler := problem2.NewGetProblemHandler(getProblemUseCase)
-	listProblemsUseCase := problem.NewListProblemsUseCase(problemRepository, zapLogger)
-	listProblemsHandler := problem2.NewListProblemsHandler(listProblemsUseCase)
-	publishProblemUseCase := problem.NewPublishProblemUseCase(problemRepository, zapLogger)
-	publishProblemHandler := problem2.NewPublishProblemHandler(publishProblemUseCase)
-	hideProblemUseCase := problem.NewHideProblemUseCase(problemRepository, zapLogger)
-	hideProblemHandler := problem2.NewHideProblemHandler(hideProblemUseCase)
-	problemHandler := handler.NewProblemHandler(createProblemHandler, updateProblemHandler, deleteProblemHandler, getProblemHandler, listProblemsHandler, publishProblemHandler, hideProblemHandler)
-	testCaseRepository := postgres.NewTestCaseRepository(db)
-	jwtConfig := cfg.JWT
-	logoutAllIATStore := auth.NewRedisLogoutAllIATStore(client, jwtConfig)
-	minIOConfig := &cfg.MinIO
-	client2, err := minio.NewMinioClient(minIOConfig)
-	if err != nil {
-		return nil, err
-	}
-	configMinIOConfig := cfg.MinIO
-	testCaseStorage, err := minio2.NewTestCaseStorage(client2, configMinIOConfig)
-	if err != nil {
-		return nil, err
-	}
-	uploadTestCaseUseCase := testcase.NewUploadTestCaseUseCase(problemRepository, testCaseRepository, testCaseStorage, zapLogger)
-	uploadTestCaseHandler := testcase2.NewUploadTestCaseHandler(uploadTestCaseUseCase)
-	getTestCaseForWorkerUseCase := testcase.NewGetTestCaseForWorkerUseCase(testCaseRepository, testCaseStorage, zapLogger)
-	getTestCaseForWorkerHandler := testcase2.NewGetTestCaseForWorkerHandler(getTestCaseForWorkerUseCase)
-	testCaseHandler := handler.NewTestCaseHandler(uploadTestCaseHandler, getTestCaseForWorkerHandler)
-	handlerFunc := middleware.NewAuthMiddleware(logoutAllIATStore)
-	router := http.NewRouter(problemHandler, testCaseHandler, handlerFunc, zapLogger)
-	gcOrphanZipsUseCase := testcase.NewGCOrphanZipsUseCase(testCaseRepository, testCaseStorage, zapLogger)
-	gcRunner := testcase.NewGCRunner(gcOrphanZipsUseCase, zapLogger)
-	app := container.NewApp(cfg, router, zapLogger, gcRunner)
+	router := http.NewRouter(adminHandler, handlerFunc, zapLogger)
+	app := container.NewApp(cfg, router, zapLogger)
 	return app, nil
 }
 

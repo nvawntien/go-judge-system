@@ -10,15 +10,13 @@ import (
 )
 
 type Router struct {
-	engine          *gin.Engine
-	problemHandler  *handler.ProblemHandler
-	testcaseHandler *handler.TestCaseHandler
-	authMiddleware  gin.HandlerFunc
+	engine         *gin.Engine
+	adminHandler   *handler.AdminHandler
+	authMiddleware gin.HandlerFunc
 }
 
 func NewRouter(
-	problemHandler *handler.ProblemHandler,
-	testcaseHandler *handler.TestCaseHandler,
+	adminHandler *handler.AdminHandler,
 	authMiddleware gin.HandlerFunc,
 	logger *zap.Logger,
 ) *Router {
@@ -27,10 +25,9 @@ func NewRouter(
 	r.Use(pkgmiddleware.UnifiedLogger(logger))
 
 	return &Router{
-		engine:          r,
-		problemHandler:  problemHandler,
-		testcaseHandler: testcaseHandler,
-		authMiddleware:  authMiddleware,
+		engine:         r,
+		adminHandler:   adminHandler,
+		authMiddleware: authMiddleware,
 	}
 }
 
@@ -43,41 +40,11 @@ func (r *Router) SetupRoutes() {
 	v1 := r.engine.Group("/api/v1")
 	isContributor := pkgmiddleware.RequireRole(rbac.RoleContributor)
 
-	// ---- Public routes (slug-based, user-facing) ----
-	problems := v1.Group("/problems")
-	{
-		problems.GET("", r.problemHandler.ListProblems.Handle)
-		problems.GET("/:slug", r.problemHandler.GetProblem.Handle)
-	}
-
-	// ---- Authenticated user routes ----
-	my := v1.Group("/my")
-	my.Use(r.authMiddleware)
-	{
-		my.GET("/problems", r.problemHandler.ListProblems.HandleMy)
-	}
-
-	// ---- Admin routes (id-based, protected) ----
+	// Admin routes
 	admin := v1.Group("/admin")
 	admin.Use(r.authMiddleware)
 	{
-		// Problem management
-		admin.GET("/problems", r.problemHandler.ListProblems.HandleAdmin)
-		admin.GET("/problems/:id", r.problemHandler.GetProblem.HandleAdmin)
-		admin.POST("/problems", isContributor, r.problemHandler.CreateProblem.Handle)
-		admin.PUT("/problems/:id", r.problemHandler.UpdateProblem.Handle)
-		admin.DELETE("/problems/:id", r.problemHandler.DeleteProblem.Handle)
-		admin.PUT("/problems/:id/publish", r.problemHandler.PublishProblem.Handle)
-		admin.PUT("/problems/:id/hide", r.problemHandler.HideProblem.Handle)
-
-		// TestCase management (problem-scoped)
-		admin.POST("/problems/:id/testcases", r.testcaseHandler.UploadTestCase.Handle)
-	}
-
-	// ---- Internal routes (service-to-service, no auth — secured by network) ----
-	internal := r.engine.Group("/internal/v1")
-	{
-		internal.GET("/problems/:id/testcases", r.testcaseHandler.GetTestCaseForWorker.Handle)
+		admin.POST("/problems", isContributor, r.adminHandler.CreateProblem.Handle)
 	}
 }
 

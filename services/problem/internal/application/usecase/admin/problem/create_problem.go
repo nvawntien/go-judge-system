@@ -11,7 +11,7 @@ import (
 	"go-judge-system/pkg/rbac"
 	"go-judge-system/pkg/response"
 	"go-judge-system/services/problem/internal/application/dto"
-	"go-judge-system/services/problem/internal/application/port/inbound"
+	inbound "go-judge-system/services/problem/internal/application/port/inbound/admin"
 	"go-judge-system/services/problem/internal/application/port/outbound"
 	"go-judge-system/services/problem/internal/application/usecase"
 	"go-judge-system/services/problem/internal/domain"
