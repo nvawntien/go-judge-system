@@ -165,8 +165,8 @@
       ]
     },
     {
-      "endpoint": "/api/v1/admin/problems/{id}/publish",
-      "method": "PUT",
+      "endpoint": "/api/v1/admin/problems/{problem_id}/publish",
+      "method": "PATCH",
       "output_encoding": "no-op",
       "input_headers": [
         "*"
@@ -199,7 +199,7 @@
       },
       "backend": [
         {
-          "url_pattern": "/api/v1/admin/problems/{id}/publish",
+          "url_pattern": "/api/v1/admin/problems/{problem_id}/publish",
           "encoding": "no-op",
           "host": [
             "http://problem-service:8082"
@@ -208,8 +208,8 @@
       ]
     },
     {
-      "endpoint": "/api/v1/admin/problems/{id}/hide",
-      "method": "PUT",
+      "endpoint": "/api/v1/admin/problems/{problem_id}/hidden",
+      "method": "PATCH",
       "output_encoding": "no-op",
       "input_headers": [
         "*"
@@ -242,7 +242,7 @@
       },
       "backend": [
         {
-          "url_pattern": "/api/v1/admin/problems/{id}/hide",
+          "url_pattern": "/api/v1/admin/problems/{problem_id}/hidden",
           "encoding": "no-op",
           "host": [
             "http://problem-service:8082"

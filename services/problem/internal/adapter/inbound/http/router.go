@@ -42,6 +42,7 @@ func (r *Router) SetupRoutes() {
 
 	v1 := r.engine.Group("/api/v1")
 	isContributor := pkgmiddleware.RequireRole(rbac.RoleContributor)
+	isModerator := pkgmiddleware.RequireRole(rbac.RoleModerator)
 
 	v1.GET("/problems", r.userHandler.ListProblems.Handle)
 	v1.GET("/problems/:slug", r.userHandler.GetProblem.Handle)
@@ -52,7 +53,8 @@ func (r *Router) SetupRoutes() {
 	{
 		// Problem management
 		admin.POST("/problems", isContributor, r.adminHandler.CreateProblem.Handle)
-
+		admin.PATCH("/problems/:problem_id/publish", isModerator, r.adminHandler.PublishProblem.Handle)
+		admin.PATCH("/problems/:problem_id/hidden", isModerator, r.adminHandler.HiddenProblem.Handle)
 		// test case management
 		admin.POST("/problems/:problem_id/testcases", isContributor, r.adminHandler.UploadTestCase.Handle)
 	}

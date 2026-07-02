@@ -71,7 +71,7 @@ func (p *Problem) Publish() {
 	p.UpdatedAt = time.Now()
 }
 
-func (p *Problem) Hide() {
+func (p *Problem) Hidden() {
 	p.IsHidden = true
 	p.UpdatedAt = time.Now()
 }

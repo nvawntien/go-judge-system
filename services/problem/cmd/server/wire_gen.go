@@ -16,14 +16,14 @@ import (
 	"go-judge-system/pkg/minio"
 	"go-judge-system/services/problem/internal/adapter/inbound/http"
 	"go-judge-system/services/problem/internal/adapter/inbound/http/handler"
-	problem2 "go-judge-system/services/problem/internal/adapter/inbound/http/handler/admin/problem"
+	problem4 "go-judge-system/services/problem/internal/adapter/inbound/http/handler/admin/problem"
 	testcase2 "go-judge-system/services/problem/internal/adapter/inbound/http/handler/admin/testcase"
-	problem3 "go-judge-system/services/problem/internal/adapter/inbound/http/handler/user/problem"
+	problem2 "go-judge-system/services/problem/internal/adapter/inbound/http/handler/user/problem"
 	"go-judge-system/services/problem/internal/adapter/outbound/persistence/postgres"
 	minio2 "go-judge-system/services/problem/internal/adapter/outbound/storage/minio"
-	"go-judge-system/services/problem/internal/application/usecase/admin/problem"
+	problem3 "go-judge-system/services/problem/internal/application/usecase/admin/problem"
 	"go-judge-system/services/problem/internal/application/usecase/admin/testcase"
-	problem4 "go-judge-system/services/problem/internal/application/usecase/user/problem"
+	"go-judge-system/services/problem/internal/application/usecase/user/problem"
 	"go-judge-system/services/problem/internal/container"
 )
 
@@ -36,13 +36,17 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 		return nil, err
 	}
 	problemRepository := postgres.NewProblemRepository(db)
-	listProblemsUseCase := problem4.NewListProblemsUseCase(problemRepository)
-	listProblemsHandler := problem3.NewListProblemsHandler(listProblemsUseCase)
-	getProblemUseCase := problem4.NewGetProblemUseCase(problemRepository)
-	getProblemHandler := problem3.NewGetProblemHandler(getProblemUseCase)
+	listProblemsUseCase := problem.NewListProblemsUseCase(problemRepository)
+	listProblemsHandler := problem2.NewListProblemsHandler(listProblemsUseCase)
+	getProblemUseCase := problem.NewGetProblemUseCase(problemRepository)
+	getProblemHandler := problem2.NewGetProblemHandler(getProblemUseCase)
 	userHandler := handler.NewUserHandler(listProblemsHandler, getProblemHandler)
-	createProblemUseCase := problem.NewCreateProblemUseCase(problemRepository)
-	createProblemHandler := problem2.NewCreateProblemHandler(createProblemUseCase)
+	createProblemUseCase := problem3.NewCreateProblemUseCase(problemRepository)
+	createProblemHandler := problem4.NewCreateProblemHandler(createProblemUseCase)
+	publishProblemUseCase := problem3.NewPublishProblemUseCase(problemRepository)
+	publishProblemHandler := problem4.NewPublishProblemHandler(publishProblemUseCase)
+	hiddenProblemUseCase := problem3.NewHiddenProblemUseCase(problemRepository)
+	hiddenProblemHandler := problem4.NewHiddenProblemHandler(hiddenProblemUseCase)
 	testCaseRepository := postgres.NewTestCaseRepository(db)
 	minIOConfig := &cfg.MinIO
 	client, err := minio.NewMinioClient(minIOConfig)
@@ -56,7 +60,7 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	}
 	uploadTestCaseUseCase := testcase.NewUploadTestCaseUseCase(problemRepository, testCaseRepository, testCaseStorage)
 	uploadTestCaseHandler := testcase2.NewUploadTestCaseHandler(uploadTestCaseUseCase)
-	adminHandler := handler.NewAdminHandler(createProblemHandler, uploadTestCaseHandler)
+	adminHandler := handler.NewAdminHandler(createProblemHandler, publishProblemHandler, hiddenProblemHandler, uploadTestCaseHandler)
 	redisConfig := cfg.Redis
 	redisClient, err := cache.ConnectRedis(redisConfig)
 	if err != nil {

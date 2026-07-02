@@ -7,7 +7,9 @@ import (
 
 type AdminHandler struct {
 	// Problem management
-	CreateProblem *problem.CreateProblemHandler
+	CreateProblem  *problem.CreateProblemHandler
+	PublishProblem *problem.PublishProblemHandler
+	HiddenProblem  *problem.HiddenProblemHandler
 	// Test case management
 	UploadTestCase *testcase.UploadTestCaseHandler
 }
@@ -15,12 +17,16 @@ type AdminHandler struct {
 func NewAdminHandler(
 	// Problem management
 	createProblem *problem.CreateProblemHandler,
+	publishProblem *problem.PublishProblemHandler,
+	hiddenProblem *problem.HiddenProblemHandler,
 	// Test case management
 	uploadTestCase *testcase.UploadTestCaseHandler,
 ) *AdminHandler {
 	return &AdminHandler{
 		// Problem management
 		CreateProblem:  createProblem,
+		PublishProblem: publishProblem,
+		HiddenProblem:  hiddenProblem,
 		// Test case management
 		UploadTestCase: uploadTestCase,
 	}
