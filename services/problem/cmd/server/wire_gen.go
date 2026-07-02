@@ -18,10 +18,12 @@ import (
 	"go-judge-system/services/problem/internal/adapter/inbound/http/handler"
 	problem2 "go-judge-system/services/problem/internal/adapter/inbound/http/handler/admin/problem"
 	testcase2 "go-judge-system/services/problem/internal/adapter/inbound/http/handler/admin/testcase"
+	problem3 "go-judge-system/services/problem/internal/adapter/inbound/http/handler/user/problem"
 	"go-judge-system/services/problem/internal/adapter/outbound/persistence/postgres"
 	minio2 "go-judge-system/services/problem/internal/adapter/outbound/storage/minio"
 	"go-judge-system/services/problem/internal/application/usecase/admin/problem"
 	"go-judge-system/services/problem/internal/application/usecase/admin/testcase"
+	problem4 "go-judge-system/services/problem/internal/application/usecase/user/problem"
 	"go-judge-system/services/problem/internal/container"
 )
 
@@ -34,6 +36,11 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 		return nil, err
 	}
 	problemRepository := postgres.NewProblemRepository(db)
+	listProblemsUseCase := problem4.NewListProblemsUseCase(problemRepository)
+	listProblemsHandler := problem3.NewListProblemsHandler(listProblemsUseCase)
+	getProblemUseCase := problem4.NewGetProblemUseCase(problemRepository)
+	getProblemHandler := problem3.NewGetProblemHandler(getProblemUseCase)
+	userHandler := handler.NewUserHandler(listProblemsHandler, getProblemHandler)
 	createProblemUseCase := problem.NewCreateProblemUseCase(problemRepository)
 	createProblemHandler := problem2.NewCreateProblemHandler(createProblemUseCase)
 	testCaseRepository := postgres.NewTestCaseRepository(db)
@@ -62,7 +69,7 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	serverConfig := cfg.Server
 	string2 := provideServerMode(serverConfig)
 	zapLogger := logger.NewLogger(loggerConfig, string2)
-	router := http.NewRouter(adminHandler, handlerFunc, zapLogger)
+	router := http.NewRouter(userHandler, adminHandler, handlerFunc, zapLogger)
 	app := container.NewApp(cfg, router, zapLogger)
 	return app, nil
 }

@@ -34,7 +34,7 @@ type UpdateProblemRequest struct {
 	Title       *string              `json:"title,omitempty" binding:"omitempty,min=3"`
 	NewSlug     *string              `json:"slug,omitempty" binding:"omitempty,min=3"`
 	Description *string              `json:"description,omitempty" binding:"omitempty,min=3"`
-	Difficulty  *string              `json:"difficulty,omitempty" binding:"omitempty,oneof=EASY MEDIUM HARD"`
+	Difficulty  *string              `json:"difficulty,omitempty" binding:"omitempty,oneof=easy medium hard"`
 	Examples    *[]ProblemExampleDTO `json:"examples,omitempty" binding:"omitempty,min=1,dive"`
 	Constraints *[]string            `json:"constraints,omitempty"`
 	Hints       *[]string            `json:"hints,omitempty"`
@@ -65,7 +65,7 @@ type ProblemDetailResponse struct {
 type ListProblemsRequest struct {
 	Page       int    `form:"page,default=1" binding:"min=1"`
 	Limit      int    `form:"limit,default=20" binding:"min=1,max=100"`
-	Difficulty string `form:"difficulty" binding:"omitempty,oneof=EASY MEDIUM HARD"`
+	Difficulty string `form:"difficulty" binding:"omitempty,oneof=easy medium hard"`
 	Search     string `form:"search"`
 }
 

@@ -250,11 +250,15 @@ func (r *problemRepository) CountByAuthor(ctx context.Context, authorID string, 
 }
 
 func applyFilters(query *gorm.DB, difficulty, search string) *gorm.DB {
+	difficulty = strings.ToLower(strings.TrimSpace(difficulty))
+	search = strings.TrimSpace(search)
+
 	if difficulty != "" {
 		query = query.Where("difficulty = ?", difficulty)
 	}
 	if search != "" {
-		query = query.Where("title ILIKE ?", "%"+search+"%")
+		like := "%" + search + "%"
+		query = query.Where("title ILIKE ? OR title_slug ILIKE ?", like, like)
 	}
 	return query
 }

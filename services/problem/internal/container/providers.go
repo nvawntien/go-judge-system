@@ -11,10 +11,12 @@ import (
 	"go-judge-system/services/problem/internal/adapter/inbound/http/handler"
 	adminproblemhandler "go-judge-system/services/problem/internal/adapter/inbound/http/handler/admin/problem"
 	admintestcasehandler "go-judge-system/services/problem/internal/adapter/inbound/http/handler/admin/testcase"
+	userproblemhandler "go-judge-system/services/problem/internal/adapter/inbound/http/handler/user/problem"
 	"go-judge-system/services/problem/internal/adapter/outbound/persistence/postgres"
 	testcasestorage "go-judge-system/services/problem/internal/adapter/outbound/storage/minio"
 	adminproblemusecase "go-judge-system/services/problem/internal/application/usecase/admin/problem"
 	admintestcaseusecase "go-judge-system/services/problem/internal/application/usecase/admin/testcase"
+	userproblemusecase "go-judge-system/services/problem/internal/application/usecase/user/problem"
 
 	"github.com/google/wire"
 )
@@ -40,12 +42,17 @@ var MiddlewareProviderSet = wire.NewSet(
 var UseCaseProviderSet = wire.NewSet(
 	adminproblemusecase.NewCreateProblemUseCase,
 	admintestcaseusecase.NewUploadTestCaseUseCase,
+	userproblemusecase.NewListProblemsUseCase,
+	userproblemusecase.NewGetProblemUseCase,
 )
 
 var InboundProviderSet = wire.NewSet(
 	adminproblemhandler.NewCreateProblemHandler,
 	admintestcasehandler.NewUploadTestCaseHandler,
+	userproblemhandler.NewListProblemsHandler,
+	userproblemhandler.NewGetProblemHandler,
 
 	handler.NewAdminHandler,
+	handler.NewUserHandler,
 	http.NewRouter,
 )

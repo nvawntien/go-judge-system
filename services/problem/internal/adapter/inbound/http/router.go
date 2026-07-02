@@ -11,11 +11,13 @@ import (
 
 type Router struct {
 	engine         *gin.Engine
+	userHandler    *handler.UserHandler
 	adminHandler   *handler.AdminHandler
 	authMiddleware gin.HandlerFunc
 }
 
 func NewRouter(
+	userHandler *handler.UserHandler,
 	adminHandler *handler.AdminHandler,
 	authMiddleware gin.HandlerFunc,
 	logger *zap.Logger,
@@ -26,6 +28,7 @@ func NewRouter(
 
 	return &Router{
 		engine:         r,
+		userHandler:    userHandler,
 		adminHandler:   adminHandler,
 		authMiddleware: authMiddleware,
 	}
@@ -40,13 +43,16 @@ func (r *Router) SetupRoutes() {
 	v1 := r.engine.Group("/api/v1")
 	isContributor := pkgmiddleware.RequireRole(rbac.RoleContributor)
 
+	v1.GET("/problems", r.userHandler.ListProblems.Handle)
+	v1.GET("/problems/:slug", r.userHandler.GetProblem.Handle)
+
 	// Admin routes
 	admin := v1.Group("/admin")
 	admin.Use(r.authMiddleware)
 	{
 		// Problem management
 		admin.POST("/problems", isContributor, r.adminHandler.CreateProblem.Handle)
-		
+
 		// test case management
 		admin.POST("/problems/:problem_id/testcases", isContributor, r.adminHandler.UploadTestCase.Handle)
 	}
