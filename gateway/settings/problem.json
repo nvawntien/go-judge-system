@@ -251,7 +251,7 @@
       ]
     },
     {
-      "endpoint": "/api/v1/admin/problems/{id}/testcases",
+      "endpoint": "/api/v1/admin/problems/{problem_id}/testcases",
       "method": "POST",
       "output_encoding": "no-op",
       "input_headers": [
@@ -285,7 +285,7 @@
       },
       "backend": [
         {
-          "url_pattern": "/api/v1/admin/problems/{id}/testcases",
+          "url_pattern": "/api/v1/admin/problems/{problem_id}/testcases",
           "encoding": "no-op",
           "is_stream": true,
           "host": [

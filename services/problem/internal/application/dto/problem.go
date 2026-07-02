@@ -5,7 +5,7 @@ type ProblemSlugRequest struct {
 }
 
 type ProblemIDRequest struct {
-	ID int64 `uri:"id" binding:"required,min=1"`
+	ID int64 `uri:"problem_id" binding:"required,min=1"`
 }
 
 type ProblemExampleDTO struct {

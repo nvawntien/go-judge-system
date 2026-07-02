@@ -96,7 +96,7 @@ func (uc *createProblemUseCase) Execute(ctx context.Context, claims auth.Claims,
 }
 
 func normalizeDifficulty(raw string) (entity.Difficulty, error) {
-	switch strings.ToUpper(strings.TrimSpace(raw)) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case string(entity.Easy):
 		return entity.Easy, nil
 	case string(entity.Medium):

@@ -13,11 +13,15 @@ import (
 	"go-judge-system/pkg/database"
 	"go-judge-system/pkg/logger"
 	"go-judge-system/pkg/middleware"
+	"go-judge-system/pkg/minio"
 	"go-judge-system/services/problem/internal/adapter/inbound/http"
 	"go-judge-system/services/problem/internal/adapter/inbound/http/handler"
 	problem2 "go-judge-system/services/problem/internal/adapter/inbound/http/handler/admin/problem"
+	testcase2 "go-judge-system/services/problem/internal/adapter/inbound/http/handler/admin/testcase"
 	"go-judge-system/services/problem/internal/adapter/outbound/persistence/postgres"
+	minio2 "go-judge-system/services/problem/internal/adapter/outbound/storage/minio"
 	"go-judge-system/services/problem/internal/application/usecase/admin/problem"
+	"go-judge-system/services/problem/internal/application/usecase/admin/testcase"
 	"go-judge-system/services/problem/internal/container"
 )
 
@@ -32,14 +36,27 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	problemRepository := postgres.NewProblemRepository(db)
 	createProblemUseCase := problem.NewCreateProblemUseCase(problemRepository)
 	createProblemHandler := problem2.NewCreateProblemHandler(createProblemUseCase)
-	adminHandler := handler.NewAdminHandler(createProblemHandler)
+	testCaseRepository := postgres.NewTestCaseRepository(db)
+	minIOConfig := &cfg.MinIO
+	client, err := minio.NewMinioClient(minIOConfig)
+	if err != nil {
+		return nil, err
+	}
+	configMinIOConfig := cfg.MinIO
+	testCaseStorage, err := minio2.NewTestCaseStorage(client, configMinIOConfig)
+	if err != nil {
+		return nil, err
+	}
+	uploadTestCaseUseCase := testcase.NewUploadTestCaseUseCase(problemRepository, testCaseRepository, testCaseStorage)
+	uploadTestCaseHandler := testcase2.NewUploadTestCaseHandler(uploadTestCaseUseCase)
+	adminHandler := handler.NewAdminHandler(createProblemHandler, uploadTestCaseHandler)
 	redisConfig := cfg.Redis
-	client, err := cache.ConnectRedis(redisConfig)
+	redisClient, err := cache.ConnectRedis(redisConfig)
 	if err != nil {
 		return nil, err
 	}
 	jwtConfig := cfg.JWT
-	logoutAllIATStore := auth.NewRedisLogoutAllIATStore(client, jwtConfig)
+	logoutAllIATStore := auth.NewRedisLogoutAllIATStore(redisClient, jwtConfig)
 	handlerFunc := middleware.NewAuthMiddleware(logoutAllIATStore)
 	loggerConfig := cfg.Logger
 	serverConfig := cfg.Server

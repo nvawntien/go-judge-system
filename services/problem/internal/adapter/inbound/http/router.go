@@ -44,7 +44,11 @@ func (r *Router) SetupRoutes() {
 	admin := v1.Group("/admin")
 	admin.Use(r.authMiddleware)
 	{
+		// Problem management
 		admin.POST("/problems", isContributor, r.adminHandler.CreateProblem.Handle)
+		
+		// test case management
+		admin.POST("/problems/:problem_id/testcases", isContributor, r.adminHandler.UploadTestCase.Handle)
 	}
 }
 
