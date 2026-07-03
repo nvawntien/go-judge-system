@@ -41,6 +41,8 @@ var MiddlewareProviderSet = wire.NewSet(
 
 var UseCaseProviderSet = wire.NewSet(
 	adminproblemusecase.NewCreateProblemUseCase,
+	adminproblemusecase.NewListProblemsUseCase,
+	adminproblemusecase.NewGetProblemUseCase,
 	adminproblemusecase.NewPublishProblemUseCase,
 	adminproblemusecase.NewHiddenProblemUseCase,
 
@@ -52,11 +54,13 @@ var UseCaseProviderSet = wire.NewSet(
 
 var InboundProviderSet = wire.NewSet(
 	adminproblemhandler.NewCreateProblemHandler,
+	adminproblemhandler.NewListProblemsHandler,
+	adminproblemhandler.NewGetProblemHandler,
 	adminproblemhandler.NewPublishProblemHandler,
 	adminproblemhandler.NewHiddenProblemHandler,
-	
+
 	admintestcasehandler.NewUploadTestCaseHandler,
-	
+
 	userproblemhandler.NewListProblemsHandler,
 	userproblemhandler.NewGetProblemHandler,
 

@@ -52,6 +52,8 @@ func (r *Router) SetupRoutes() {
 	admin.Use(r.authMiddleware)
 	{
 		// Problem management
+		admin.GET("/problems", isContributor, r.adminHandler.ListProblems.Handle)
+		admin.GET("/problems/:problem_id", isContributor, r.adminHandler.GetProblem.Handle)
 		admin.POST("/problems", isContributor, r.adminHandler.CreateProblem.Handle)
 		admin.PATCH("/problems/:problem_id/publish", isModerator, r.adminHandler.PublishProblem.Handle)
 		admin.PATCH("/problems/:problem_id/hidden", isModerator, r.adminHandler.HiddenProblem.Handle)

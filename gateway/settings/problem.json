@@ -79,7 +79,7 @@
       ]
     },
     {
-      "endpoint": "/api/v1/admin/problems/{id}",
+      "endpoint": "/api/v1/admin/problems/{problem_id}",
       "method": "PUT",
       "output_encoding": "no-op",
       "input_headers": [
@@ -113,7 +113,7 @@
       },
       "backend": [
         {
-          "url_pattern": "/api/v1/admin/problems/{id}",
+          "url_pattern": "/api/v1/admin/problems/{problem_id}",
           "encoding": "no-op",
           "host": [
             "http://problem-service:8082"
@@ -122,7 +122,7 @@
       ]
     },
     {
-      "endpoint": "/api/v1/admin/problems/{id}",
+      "endpoint": "/api/v1/admin/problems/{problem_id}",
       "method": "DELETE",
       "output_encoding": "no-op",
       "input_headers": [
@@ -156,7 +156,7 @@
       },
       "backend": [
         {
-          "url_pattern": "/api/v1/admin/problems/{id}",
+          "url_pattern": "/api/v1/admin/problems/{problem_id}",
           "encoding": "no-op",
           "host": [
             "http://problem-service:8082"
@@ -295,7 +295,7 @@
       ]
     },
     {
-      "endpoint": "/api/v1/admin/problems/{id}/testcases",
+      "endpoint": "/api/v1/admin/problems/{problem_id}/testcases",
       "method": "GET",
       "output_encoding": "no-op",
       "input_headers": [
@@ -329,7 +329,7 @@
       },
       "backend": [
         {
-          "url_pattern": "/api/v1/admin/problems/{id}/testcases",
+          "url_pattern": "/api/v1/admin/problems/{problem_id}/testcases",
           "encoding": "no-op",
           "host": [
             "http://problem-service:8082"
@@ -473,6 +473,12 @@
       "input_headers": [
         "*"
       ],
+      "input_query_strings": [
+        "page",
+        "limit",
+        "difficulty",
+        "search"
+      ],
       "extra_config": {
         "auth/validator": {
           "alg": "HS256",
@@ -510,7 +516,7 @@
       ]
     },
     {
-      "endpoint": "/api/v1/admin/problems/{id}",
+      "endpoint": "/api/v1/admin/problems/{problem_id}",
       "method": "GET",
       "output_encoding": "no-op",
       "input_headers": [
@@ -544,7 +550,7 @@
       },
       "backend": [
         {
-          "url_pattern": "/api/v1/admin/problems/{id}",
+          "url_pattern": "/api/v1/admin/problems/{problem_id}",
           "encoding": "no-op",
           "host": [
             "http://problem-service:8082"

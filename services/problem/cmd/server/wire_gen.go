@@ -43,11 +43,15 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	userHandler := handler.NewUserHandler(listProblemsHandler, getProblemHandler)
 	createProblemUseCase := problem3.NewCreateProblemUseCase(problemRepository)
 	createProblemHandler := problem4.NewCreateProblemHandler(createProblemUseCase)
+	listProblemsUseCase2 := problem3.NewListProblemsUseCase(problemRepository)
+	listProblemsHandler2 := problem4.NewListProblemsHandler(listProblemsUseCase2)
+	testCaseRepository := postgres.NewTestCaseRepository(db)
+	getProblemUseCase2 := problem3.NewGetProblemUseCase(problemRepository, testCaseRepository)
+	getProblemHandler2 := problem4.NewGetProblemHandler(getProblemUseCase2)
 	publishProblemUseCase := problem3.NewPublishProblemUseCase(problemRepository)
 	publishProblemHandler := problem4.NewPublishProblemHandler(publishProblemUseCase)
 	hiddenProblemUseCase := problem3.NewHiddenProblemUseCase(problemRepository)
 	hiddenProblemHandler := problem4.NewHiddenProblemHandler(hiddenProblemUseCase)
-	testCaseRepository := postgres.NewTestCaseRepository(db)
 	minIOConfig := &cfg.MinIO
 	client, err := minio.NewMinioClient(minIOConfig)
 	if err != nil {
@@ -60,7 +64,7 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	}
 	uploadTestCaseUseCase := testcase.NewUploadTestCaseUseCase(problemRepository, testCaseRepository, testCaseStorage)
 	uploadTestCaseHandler := testcase2.NewUploadTestCaseHandler(uploadTestCaseUseCase)
-	adminHandler := handler.NewAdminHandler(createProblemHandler, publishProblemHandler, hiddenProblemHandler, uploadTestCaseHandler)
+	adminHandler := handler.NewAdminHandler(createProblemHandler, listProblemsHandler2, getProblemHandler2, publishProblemHandler, hiddenProblemHandler, uploadTestCaseHandler)
 	redisConfig := cfg.Redis
 	redisClient, err := cache.ConnectRedis(redisConfig)
 	if err != nil {
