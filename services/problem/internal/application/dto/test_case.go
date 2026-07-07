@@ -6,22 +6,18 @@ type UploadTestCaseRequest struct {
 	File *multipart.FileHeader `form:"file" binding:"required"`
 }
 
-type UploadTestCasesResponse struct {
-	TestCount int    `json:"test_count"`
-	Version   string `json:"version"`
-}
-
 type TestCaseMetadataResponse struct {
-	ProblemID   int64  `json:"problem_id"`
-	TestCount   int    `json:"test_count"`
-	Version     string `json:"version"`
-	DownloadURL string `json:"download_url,omitempty"`
-	CreatedAt   string `json:"created_at"`
+	ProblemID    int64  `json:"problem_id"`
+	ZipObjectKey string `json:"zip_object_key"`
+	TestCount    int    `json:"test_count"`
+	Version      int    `json:"version"`
+	CreatedAt    string `json:"created_at"`
+	UpdatedAt    string `json:"updated_at"`
 }
 
 type InternalTestCaseResponse struct {
 	ProblemID      int64  `json:"problem_id"`
 	TestCount      int    `json:"test_count"`
-	Version        string `json:"version"`
+	Version        int    `json:"version"`
 	ZipDownloadURL string `json:"zip_download_url"`
 }

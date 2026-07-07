@@ -7,15 +7,18 @@ import (
 	"go.uber.org/zap"
 
 	pkgmiddleware "go-judge-system/pkg/middleware"
+	"go-judge-system/pkg/rbac"
 )
 
 type Router struct {
 	engine     *gin.Engine
 	auth       *handler.AuthHandler
+	user       *handler.UserHandler
+	admin      *handler.AdminHandler
 	middleware gin.HandlerFunc
 }
 
-func NewRouter(authHandler *handler.AuthHandler, authMiddleware gin.HandlerFunc, logger *zap.Logger) *Router {
+func NewRouter(authHandler *handler.AuthHandler, userHandler *handler.UserHandler, adminHandler *handler.AdminHandler, authMiddleware gin.HandlerFunc, logger *zap.Logger) *Router {
 	r := gin.New()
 	r.Use(pkgmiddleware.Recovery(logger))
 	r.Use(pkgmiddleware.UnifiedLogger(logger))
@@ -23,6 +26,8 @@ func NewRouter(authHandler *handler.AuthHandler, authMiddleware gin.HandlerFunc,
 	return &Router{
 		engine:     r,
 		auth:       authHandler,
+		user:       userHandler,
+		admin:      adminHandler,
 		middleware: authMiddleware,
 	}
 }
@@ -33,6 +38,9 @@ func (r *Router) SetupRoutes() {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
 
+	isAdmin := pkgmiddleware.RequireRole(rbac.RoleAdmin)
+
+	// auth api
 	auth := r.engine.Group("/api/v1/auth")
 	{
 		auth.POST("/register", r.auth.Register.Handle)
@@ -53,6 +61,24 @@ func (r *Router) SetupRoutes() {
 			password.POST("/reset", r.auth.ResetPassword.Handle)
 			password.PUT("/change", r.middleware, r.auth.ChangePassword.Handle)
 		}
+	}
+
+	me := r.engine.Group("/api/v1/me", r.middleware)
+	{
+		me.GET("", r.user.GetMe.Handle)
+		me.PATCH("/profile", r.user.UpdateProfile.Handle)
+		me.POST("/avatar", r.user.UploadAvatar.Handle)
+	}
+
+	user := r.engine.Group("/api/v1/users")
+	{
+		user.GET("/:username/profile", r.user.GetProfile.Handle)
+	}
+
+	// admin api
+	admin := r.engine.Group("/api/v1/admin", r.middleware)
+	{
+		admin.PUT("/users/:user_id/role", isAdmin, r.admin.AssignRole.Handle)
 	}
 }
 

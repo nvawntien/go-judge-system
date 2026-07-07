@@ -1,11 +1,15 @@
 package auth
 
-import "github.com/gin-gonic/gin"
+import (
+	"go-judge-system/pkg/rbac"
+
+	"github.com/gin-gonic/gin"
+)
 
 type Claims struct {
 	UserID        string
 	Username      string
-	Role          string
+	Role          rbac.Role
 	TokenIssuedAt int64
 }
 
@@ -23,16 +27,4 @@ func GetClaims(c *gin.Context) (Claims, bool) {
 
 	claims, ok := val.(Claims)
 	return claims, ok
-}
-
-func (c Claims) IsSuperAdmin() bool {
-	return c.Role == "super_admin"
-}
-
-func (c Claims) IsAdmin() bool {
-	return c.Role == "admin" || c.IsSuperAdmin()
-}
-
-func (c Claims) CanManage(authorID string) bool {
-	return c.IsSuperAdmin() || (c.IsAdmin() && c.UserID == authorID)
 }

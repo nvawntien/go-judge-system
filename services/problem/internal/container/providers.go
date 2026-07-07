@@ -1,32 +1,38 @@
 package container
 
 import (
+	auth "go-judge-system/pkg/auth"
+	"go-judge-system/pkg/cache"
 	"go-judge-system/pkg/database"
 	"go-judge-system/pkg/logger"
-	minioclient "go-judge-system/pkg/minio"
+	"go-judge-system/pkg/middleware"
+	"go-judge-system/pkg/minio"
 	"go-judge-system/services/problem/internal/adapter/inbound/http"
 	"go-judge-system/services/problem/internal/adapter/inbound/http/handler"
-	probhd "go-judge-system/services/problem/internal/adapter/inbound/http/handler/problem"
-	testhd "go-judge-system/services/problem/internal/adapter/inbound/http/handler/test_case"
-	"go-judge-system/services/problem/internal/adapter/inbound/http/middleware"
+	adminproblemhandler "go-judge-system/services/problem/internal/adapter/inbound/http/handler/admin/problem"
+	admintestcasehandler "go-judge-system/services/problem/internal/adapter/inbound/http/handler/admin/testcase"
+	userproblemhandler "go-judge-system/services/problem/internal/adapter/inbound/http/handler/user/problem"
 	"go-judge-system/services/problem/internal/adapter/outbound/persistence/postgres"
-	miniostorage "go-judge-system/services/problem/internal/adapter/outbound/storage/minio"
-	probuc "go-judge-system/services/problem/internal/application/usecase/problem"
-	testuc "go-judge-system/services/problem/internal/application/usecase/test_case"
+	testcasestorage "go-judge-system/services/problem/internal/adapter/outbound/storage/minio"
+	adminproblemusecase "go-judge-system/services/problem/internal/application/usecase/admin/problem"
+	admintestcaseusecase "go-judge-system/services/problem/internal/application/usecase/admin/testcase"
+	userproblemusecase "go-judge-system/services/problem/internal/application/usecase/user/problem"
 
 	"github.com/google/wire"
 )
 
 var InfrastructureProviderSet = wire.NewSet(
 	database.ConnectDatabase,
+	cache.ConnectRedis,
 	logger.NewLogger,
-	minioclient.NewMinioClient,
+	minio.NewMinioClient,
 )
 
 var OutboundProviderSet = wire.NewSet(
 	postgres.NewProblemRepository,
 	postgres.NewTestCaseRepository,
-	miniostorage.NewMinioStorage,
+	testcasestorage.NewTestCaseStorage,
+	auth.NewRedisLogoutAllIATStore,
 )
 
 var MiddlewareProviderSet = wire.NewSet(
@@ -34,33 +40,31 @@ var MiddlewareProviderSet = wire.NewSet(
 )
 
 var UseCaseProviderSet = wire.NewSet(
-	probuc.NewCreateProblemUseCase,
-	probuc.NewUpdateProblemUseCase,
-	probuc.NewDeleteProblemUseCase,
-	probuc.NewGetProblemUseCase,
-	probuc.NewListProblemsUseCase,
-	probuc.NewPublishProblemUseCase,
-	probuc.NewHideProblemUseCase,
+	adminproblemusecase.NewCreateProblemUseCase,
+	adminproblemusecase.NewListProblemsUseCase,
+	adminproblemusecase.NewGetProblemUseCase,
+	adminproblemusecase.NewPublishProblemUseCase,
+	adminproblemusecase.NewHiddenProblemUseCase,
 
-	testuc.NewUploadTestCaseUseCase,
-	testuc.NewGetTestCaseForWorkerUseCase,
-	testuc.NewGCOrphanZipsUseCase,
-	testuc.NewGCRunner,
+	admintestcaseusecase.NewUploadTestCaseUseCase,
+
+	userproblemusecase.NewListProblemsUseCase,
+	userproblemusecase.NewGetProblemUseCase,
 )
 
 var InboundProviderSet = wire.NewSet(
-	probhd.NewCreateProblemHandler,
-	probhd.NewUpdateProblemHandler,
-	probhd.NewDeleteProblemHandler,
-	probhd.NewGetProblemHandler,
-	probhd.NewListProblemsHandler,
-	probhd.NewPublishProblemHandler,
-	probhd.NewHideProblemHandler,
+	adminproblemhandler.NewCreateProblemHandler,
+	adminproblemhandler.NewListProblemsHandler,
+	adminproblemhandler.NewGetProblemHandler,
+	adminproblemhandler.NewPublishProblemHandler,
+	adminproblemhandler.NewHiddenProblemHandler,
 
-	testhd.NewUploadTestCaseHandler,
-	testhd.NewGetTestCaseForWorkerHandler,
+	admintestcasehandler.NewUploadTestCaseHandler,
 
-	handler.NewProblemHandler,
-	handler.NewTestCaseHandler,
+	userproblemhandler.NewListProblemsHandler,
+	userproblemhandler.NewGetProblemHandler,
+
+	handler.NewAdminHandler,
+	handler.NewUserHandler,
 	http.NewRouter,
 )
