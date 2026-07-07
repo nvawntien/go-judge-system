@@ -1,21 +1,11 @@
 environment
 services/auth/logs/
 
-node_modules/
-.next/
-out/
-build/
-dist/
-.npm/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-.eslintcache
-.idea
 # Logs
 logs/
 *.log
 *.log.*
 
+.idea
 
+api-tests/
