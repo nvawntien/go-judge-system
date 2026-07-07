@@ -26,6 +26,23 @@ database:
   max_idle_conns: 10
   conn_max_lifetime: 3600
 
+redis:
+  host: redis
+  port: 6379
+  password: ""        # overridden by REDIS_PASSWORD env
+  db: 0
+  pool_size: 10
+  min_idle_conns: 5
+  dial_timeout: 5s
+  read_timeout: 3s
+  write_timeout: 3s
+
+jwt:
+  access_secret: ""   # overridden by JWT_ACCESS_SECRET env
+  refresh_secret: ""  # overridden by JWT_REFRESH_SECRET env
+  access_ttl: 15m
+  refresh_ttl: 168h
+
 minio:
   endpoint: "minio:9000"
   access_key: "" # overridden by MINIO_ACCESS_KEY env

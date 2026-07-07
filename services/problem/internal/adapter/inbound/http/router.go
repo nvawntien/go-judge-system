@@ -1,28 +1,36 @@
 package http
 
 import (
+	pkgmiddleware "go-judge-system/pkg/middleware"
+	"go-judge-system/pkg/rbac"
 	"go-judge-system/services/problem/internal/adapter/inbound/http/handler"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 type Router struct {
-	engine          *gin.Engine
-	problemHandler  *handler.ProblemHandler
-	testcaseHandler *handler.TestCaseHandler
-	authMiddleware  gin.HandlerFunc
+	engine         *gin.Engine
+	userHandler    *handler.UserHandler
+	adminHandler   *handler.AdminHandler
+	authMiddleware gin.HandlerFunc
 }
 
 func NewRouter(
-	problemHandler *handler.ProblemHandler,
-	testcaseHandler *handler.TestCaseHandler,
+	userHandler *handler.UserHandler,
+	adminHandler *handler.AdminHandler,
 	authMiddleware gin.HandlerFunc,
+	logger *zap.Logger,
 ) *Router {
+	r := gin.New()
+	r.Use(pkgmiddleware.Recovery(logger))
+	r.Use(pkgmiddleware.UnifiedLogger(logger))
+
 	return &Router{
-		engine:          gin.Default(),
-		problemHandler:  problemHandler,
-		testcaseHandler: testcaseHandler,
-		authMiddleware:  authMiddleware,
+		engine:         r,
+		userHandler:    userHandler,
+		adminHandler:   adminHandler,
+		authMiddleware: authMiddleware,
 	}
 }
 
@@ -33,42 +41,24 @@ func (r *Router) SetupRoutes() {
 	})
 
 	v1 := r.engine.Group("/api/v1")
+	isContributor := pkgmiddleware.RequireRole(rbac.RoleContributor)
+	isModerator := pkgmiddleware.RequireRole(rbac.RoleModerator)
 
-	// ---- Public routes (slug-based, user-facing) ----
-	problems := v1.Group("/problems")
-	{
-		problems.GET("", r.problemHandler.ListProblems.Handle)
-		problems.GET("/:slug", r.problemHandler.GetProblem.Handle)
-	}
+	v1.GET("/problems", r.userHandler.ListProblems.Handle)
+	v1.GET("/problems/:slug", r.userHandler.GetProblem.Handle)
 
-	// ---- Authenticated user routes ----
-	my := v1.Group("/my")
-	my.Use(r.authMiddleware)
-	{
-		my.GET("/problems", r.problemHandler.ListProblems.HandleMy)
-	}
-
-	// ---- Admin routes (id-based, protected) ----
+	// Admin routes
 	admin := v1.Group("/admin")
 	admin.Use(r.authMiddleware)
 	{
 		// Problem management
-		admin.GET("/problems", r.problemHandler.ListProblems.HandleAdmin)
-		admin.GET("/problems/:id", r.problemHandler.GetProblem.HandleAdmin)
-		admin.POST("/problems", r.problemHandler.CreateProblem.Handle)
-		admin.PUT("/problems/:id", r.problemHandler.UpdateProblem.Handle)
-		admin.DELETE("/problems/:id", r.problemHandler.DeleteProblem.Handle)
-		admin.PUT("/problems/:id/publish", r.problemHandler.PublishProblem.Handle)
-		admin.PUT("/problems/:id/hide", r.problemHandler.HideProblem.Handle)
-
-		// TestCase management (problem-scoped)
-		admin.POST("/problems/:id/testcases", r.testcaseHandler.UploadTestCase.Handle)
-	}
-
-	// ---- Internal routes (service-to-service, no auth — secured by network) ----
-	internal := r.engine.Group("/internal/v1")
-	{
-		internal.GET("/problems/:id/testcases", r.testcaseHandler.GetTestCaseForWorker.Handle)
+		admin.GET("/problems", isContributor, r.adminHandler.ListProblems.Handle)
+		admin.GET("/problems/:problem_id", isContributor, r.adminHandler.GetProblem.Handle)
+		admin.POST("/problems", isContributor, r.adminHandler.CreateProblem.Handle)
+		admin.PATCH("/problems/:problem_id/publish", isModerator, r.adminHandler.PublishProblem.Handle)
+		admin.PATCH("/problems/:problem_id/hidden", isModerator, r.adminHandler.HiddenProblem.Handle)
+		// test case management
+		admin.POST("/problems/:problem_id/testcases", isContributor, r.adminHandler.UploadTestCase.Handle)
 	}
 }
 

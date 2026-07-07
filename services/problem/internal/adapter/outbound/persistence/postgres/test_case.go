@@ -18,11 +18,14 @@ type TestCaseDAO struct {
 	ProblemID    int64     `gorm:"uniqueIndex;not null"`
 	ZipObjectKey string    `gorm:"type:varchar(500);not null"`
 	TestCount    int       `gorm:"not null"`
-	Version      string    `gorm:"type:varchar(50);not null"`
+	Version      int       `gorm:"not null"`
 	CreatedAt    time.Time `gorm:"autoCreateTime"`
+	UpdatedAt    time.Time `gorm:"autoUpdateTime"`
 }
 
-func (TestCaseDAO) TableName() string { return "test_cases" }
+func (TestCaseDAO) TableName() string {
+	return "test_cases"
+}
 
 type testCaseRepository struct {
 	db *gorm.DB
@@ -35,39 +38,62 @@ func NewTestCaseRepository(db *gorm.DB) outbound.TestCaseRepository {
 
 func (r *testCaseRepository) Upsert(ctx context.Context, tc *entity.TestCase) error {
 	dao := toTestCaseDAO(tc)
+
 	err := r.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "problem_id"}},
 		DoUpdates: clause.AssignmentColumns([]string{
 			"zip_object_key",
 			"test_count",
 			"version",
+			"updated_at",
 		}),
 	}).Create(dao).Error
 
-	if err == nil {
-		tc.ID = dao.ID
+	if err != nil {
+		return err
 	}
-	return err
+
+	updated, err := r.GetByProblemID(ctx, tc.ProblemID)
+	if err != nil {
+		return err
+	}
+
+	tc.ID = updated.ID
+	tc.CreatedAt = updated.CreatedAt
+	tc.UpdatedAt = updated.UpdatedAt
+
+	return nil
 }
 
 func (r *testCaseRepository) GetByProblemID(ctx context.Context, problemID int64) (*entity.TestCase, error) {
 	var dao TestCaseDAO
-	if err := r.db.WithContext(ctx).Where("problem_id = ?", problemID).First(&dao).Error; err != nil {
+
+	if err := r.db.WithContext(ctx).
+		Where("problem_id = ?", problemID).
+		First(&dao).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, domain.ErrTestCaseNotFound
 		}
+
 		return nil, err
 	}
+
 	return toTestCaseEntity(&dao), nil
 }
 
 func (r *testCaseRepository) DeleteByProblemID(ctx context.Context, problemID int64) error {
-	return r.db.WithContext(ctx).Where("problem_id = ?", problemID).Delete(&TestCaseDAO{}).Error
+	return r.db.WithContext(ctx).
+		Where("problem_id = ?", problemID).
+		Delete(&TestCaseDAO{}).Error
 }
 
 func (r *testCaseRepository) ListAllZipObjectKeys(ctx context.Context) ([]string, error) {
 	var keys []string
-	err := r.db.WithContext(ctx).Model(&TestCaseDAO{}).Pluck("zip_object_key", &keys).Error
+
+	err := r.db.WithContext(ctx).
+		Model(&TestCaseDAO{}).
+		Pluck("zip_object_key", &keys).Error
+
 	return keys, err
 }
 
@@ -79,6 +105,7 @@ func toTestCaseDAO(tc *entity.TestCase) *TestCaseDAO {
 		TestCount:    tc.TestCount,
 		Version:      tc.Version,
 		CreatedAt:    tc.CreatedAt,
+		UpdatedAt:    tc.UpdatedAt,
 	}
 }
 
@@ -90,5 +117,6 @@ func toTestCaseEntity(dao *TestCaseDAO) *entity.TestCase {
 		TestCount:    dao.TestCount,
 		Version:      dao.Version,
 		CreatedAt:    dao.CreatedAt,
+		UpdatedAt:    dao.UpdatedAt,
 	}
 }

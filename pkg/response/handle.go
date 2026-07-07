@@ -337,27 +337,33 @@ func HandleWithFormAndClaims[F any, Res any](c *gin.Context, fn func(context.Con
 	Success(c, successCode, res)
 }
 
-// HandleWithParamsAndForm: URI params + multipart form/form-data + claims → data.
-func HandleWithParamsAndForm[P any, F any, Res any](c *gin.Context, fn func(context.Context, P, F) (Res, error), successCode int) {
-    var params P
-    if err := c.ShouldBindUri(&params); err != nil {
-        HandleError(c, NewAppError(CodeParamInvalid, "invalid uri params", err))
-        return
-    }
+// HandleWithClaimsParamsAndForm: claims + URI params + multipart/form-data -> data.
+func HandleWithClaimsParamsAndForm[P any, F any, Res any](c *gin.Context, fn func(context.Context, auth.Claims, P, F) (Res, error), successCode int) {
+	claims, ok := auth.GetClaims(c)
+	if !ok {
+		HandleError(c, NewAppError(CodeUnauthorized, "unauthorized", nil))
+		return
+	}
 
-    var form F
-    if err := c.ShouldBind(&form); err != nil {
-        HandleError(c, NewAppError(CodeBadRequest, "invalid form data", err))
-        return
-    }
+	var params P
+	if err := c.ShouldBindUri(&params); err != nil {
+		HandleError(c, NewAppError(CodeParamInvalid, "invalid uri params", err))
+		return
+	}
 
-    res, err := fn(c.Request.Context(), params, form)
-    if err != nil {
-        HandleError(c, err)
-        return
-    }
+	var form F
+	if err := c.ShouldBind(&form); err != nil {
+		HandleError(c, NewAppError(CodeBadRequest, "invalid form data", err))
+		return
+	}
 
-    Success(c, successCode, res)
+	res, err := fn(c.Request.Context(), claims, params, form)
+	if err != nil {
+		HandleError(c, err)
+		return
+	}
+
+	Success(c, successCode, res)
 }
 
 // HandleError: Handles errors, logs them to the context for middleware, and returns HTTP responses.

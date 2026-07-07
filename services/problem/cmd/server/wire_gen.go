@@ -7,19 +7,23 @@
 package main
 
 import (
+	"go-judge-system/pkg/auth"
+	"go-judge-system/pkg/cache"
 	"go-judge-system/pkg/config"
 	"go-judge-system/pkg/database"
 	"go-judge-system/pkg/logger"
+	"go-judge-system/pkg/middleware"
 	"go-judge-system/pkg/minio"
 	"go-judge-system/services/problem/internal/adapter/inbound/http"
 	"go-judge-system/services/problem/internal/adapter/inbound/http/handler"
-	problem2 "go-judge-system/services/problem/internal/adapter/inbound/http/handler/problem"
-	testcase2 "go-judge-system/services/problem/internal/adapter/inbound/http/handler/test_case"
-	"go-judge-system/services/problem/internal/adapter/inbound/http/middleware"
+	problem4 "go-judge-system/services/problem/internal/adapter/inbound/http/handler/admin/problem"
+	testcase2 "go-judge-system/services/problem/internal/adapter/inbound/http/handler/admin/testcase"
+	problem2 "go-judge-system/services/problem/internal/adapter/inbound/http/handler/user/problem"
 	"go-judge-system/services/problem/internal/adapter/outbound/persistence/postgres"
 	minio2 "go-judge-system/services/problem/internal/adapter/outbound/storage/minio"
-	"go-judge-system/services/problem/internal/application/usecase/problem"
-	"go-judge-system/services/problem/internal/application/usecase/test_case"
+	problem3 "go-judge-system/services/problem/internal/application/usecase/admin/problem"
+	"go-judge-system/services/problem/internal/application/usecase/admin/testcase"
+	"go-judge-system/services/problem/internal/application/usecase/user/problem"
 	"go-judge-system/services/problem/internal/container"
 )
 
@@ -32,43 +36,49 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 		return nil, err
 	}
 	problemRepository := postgres.NewProblemRepository(db)
-	loggerConfig := cfg.Logger
-	serverConfig := cfg.Server
-	string2 := provideServerMode(serverConfig)
-	zapLogger := logger.NewLogger(loggerConfig, string2)
-	createProblemUseCase := problem.NewCreateProblemUseCase(problemRepository, zapLogger)
-	createProblemHandler := problem2.NewCreateProblemHandler(createProblemUseCase)
-	updateProblemUseCase := problem.NewUpdateProblemUseCase(problemRepository, zapLogger)
-	updateProblemHandler := problem2.NewUpdateProblemHandler(updateProblemUseCase)
-	deleteProblemUseCase := problem.NewDeleteProblemUseCase(problemRepository, zapLogger)
-	deleteProblemHandler := problem2.NewDeleteProblemHandler(deleteProblemUseCase)
-	getProblemUseCase := problem.NewGetProblemUseCase(problemRepository, zapLogger)
-	getProblemHandler := problem2.NewGetProblemHandler(getProblemUseCase)
-	listProblemsUseCase := problem.NewListProblemsUseCase(problemRepository, zapLogger)
+	listProblemsUseCase := problem.NewListProblemsUseCase(problemRepository)
 	listProblemsHandler := problem2.NewListProblemsHandler(listProblemsUseCase)
-	publishProblemUseCase := problem.NewPublishProblemUseCase(problemRepository, zapLogger)
-	publishProblemHandler := problem2.NewPublishProblemHandler(publishProblemUseCase)
-	hideProblemUseCase := problem.NewHideProblemUseCase(problemRepository, zapLogger)
-	hideProblemHandler := problem2.NewHideProblemHandler(hideProblemUseCase)
-	problemHandler := handler.NewProblemHandler(createProblemHandler, updateProblemHandler, deleteProblemHandler, getProblemHandler, listProblemsHandler, publishProblemHandler, hideProblemHandler)
+	getProblemUseCase := problem.NewGetProblemUseCase(problemRepository)
+	getProblemHandler := problem2.NewGetProblemHandler(getProblemUseCase)
+	userHandler := handler.NewUserHandler(listProblemsHandler, getProblemHandler)
+	createProblemUseCase := problem3.NewCreateProblemUseCase(problemRepository)
+	createProblemHandler := problem4.NewCreateProblemHandler(createProblemUseCase)
+	listProblemsUseCase2 := problem3.NewListProblemsUseCase(problemRepository)
+	listProblemsHandler2 := problem4.NewListProblemsHandler(listProblemsUseCase2)
 	testCaseRepository := postgres.NewTestCaseRepository(db)
+	getProblemUseCase2 := problem3.NewGetProblemUseCase(problemRepository, testCaseRepository)
+	getProblemHandler2 := problem4.NewGetProblemHandler(getProblemUseCase2)
+	publishProblemUseCase := problem3.NewPublishProblemUseCase(problemRepository)
+	publishProblemHandler := problem4.NewPublishProblemHandler(publishProblemUseCase)
+	hiddenProblemUseCase := problem3.NewHiddenProblemUseCase(problemRepository)
+	hiddenProblemHandler := problem4.NewHiddenProblemHandler(hiddenProblemUseCase)
 	minIOConfig := &cfg.MinIO
 	client, err := minio.NewMinioClient(minIOConfig)
 	if err != nil {
 		return nil, err
 	}
 	configMinIOConfig := cfg.MinIO
-	objectStorage := minio2.NewMinioStorage(client, configMinIOConfig)
-	uploadTestCaseUseCase := testcase.NewUploadTestCaseUseCase(problemRepository, testCaseRepository, objectStorage, zapLogger)
+	testCaseStorage, err := minio2.NewTestCaseStorage(client, configMinIOConfig)
+	if err != nil {
+		return nil, err
+	}
+	uploadTestCaseUseCase := testcase.NewUploadTestCaseUseCase(problemRepository, testCaseRepository, testCaseStorage)
 	uploadTestCaseHandler := testcase2.NewUploadTestCaseHandler(uploadTestCaseUseCase)
-	getTestCaseForWorkerUseCase := testcase.NewGetTestCaseForWorkerUseCase(testCaseRepository, objectStorage, zapLogger)
-	getTestCaseForWorkerHandler := testcase2.NewGetTestCaseForWorkerHandler(getTestCaseForWorkerUseCase)
-	testCaseHandler := handler.NewTestCaseHandler(uploadTestCaseHandler, getTestCaseForWorkerHandler)
-	handlerFunc := middleware.NewAuthMiddleware()
-	router := http.NewRouter(problemHandler, testCaseHandler, handlerFunc)
-	gcOrphanZipsUseCase := testcase.NewGCOrphanZipsUseCase(testCaseRepository, objectStorage, zapLogger)
-	gcRunner := testcase.NewGCRunner(gcOrphanZipsUseCase, zapLogger)
-	app := container.NewApp(cfg, router, zapLogger, gcRunner)
+	adminHandler := handler.NewAdminHandler(createProblemHandler, listProblemsHandler2, getProblemHandler2, publishProblemHandler, hiddenProblemHandler, uploadTestCaseHandler)
+	redisConfig := cfg.Redis
+	redisClient, err := cache.ConnectRedis(redisConfig)
+	if err != nil {
+		return nil, err
+	}
+	jwtConfig := cfg.JWT
+	logoutAllIATStore := auth.NewRedisLogoutAllIATStore(redisClient, jwtConfig)
+	handlerFunc := middleware.NewAuthMiddleware(logoutAllIATStore)
+	loggerConfig := cfg.Logger
+	serverConfig := cfg.Server
+	string2 := provideServerMode(serverConfig)
+	zapLogger := logger.NewLogger(loggerConfig, string2)
+	router := http.NewRouter(userHandler, adminHandler, handlerFunc, zapLogger)
+	app := container.NewApp(cfg, router, zapLogger)
 	return app, nil
 }
 
