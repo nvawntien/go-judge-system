@@ -6,19 +6,22 @@ import (
 )
 
 type UserHandler struct {
-	ListProblems *userproblem.ListProblemsHandler
-	GetProblem   *userproblem.GetProblemHandler
-	ListTags     *usertag.ListTagsHandler
+	ListProblems   *userproblem.ListProblemsHandler
+	ListMyProblems *userproblem.ListMyProblemsHandler
+	GetProblem     *userproblem.GetProblemHandler
+	ListTags       *usertag.ListTagsHandler
 }
 
 func NewUserHandler(
 	listProblems *userproblem.ListProblemsHandler,
+	listMyProblems *userproblem.ListMyProblemsHandler,
 	getProblem *userproblem.GetProblemHandler,
 	listTags *usertag.ListTagsHandler,
 ) *UserHandler {
 	return &UserHandler{
-		ListProblems: listProblems,
-		GetProblem:   getProblem,
-		ListTags:     listTags,
+		ListProblems:   listProblems,
+		ListMyProblems: listMyProblems,
+		GetProblem:     getProblem,
+		ListTags:       listTags,
 	}
 }

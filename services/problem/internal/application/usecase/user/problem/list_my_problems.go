@@ -6,25 +6,23 @@ import (
 
 	"go-judge-system/pkg/auth"
 	"go-judge-system/pkg/rbac"
-	"go-judge-system/pkg/response"
 	"go-judge-system/services/problem/internal/application/dto"
-	inbound "go-judge-system/services/problem/internal/application/port/inbound/admin"
+	inbound "go-judge-system/services/problem/internal/application/port/inbound/user"
 	"go-judge-system/services/problem/internal/application/port/outbound"
 	"go-judge-system/services/problem/internal/application/usecase"
 	"go-judge-system/services/problem/internal/domain"
-	"go-judge-system/services/problem/internal/domain/entity"
 )
 
-type listProblemsUseCase struct {
+type listMyProblemsUseCase struct {
 	problemRepo outbound.ProblemRepository
 }
 
-func NewListProblemsUseCase(problemRepo outbound.ProblemRepository) inbound.ListProblemsUseCase {
-	return &listProblemsUseCase{problemRepo: problemRepo}
+func NewListMyProblemsUseCase(problemRepo outbound.ProblemRepository) inbound.ListMyProblemsUseCase {
+	return &listMyProblemsUseCase{problemRepo: problemRepo}
 }
 
-func (uc *listProblemsUseCase) Execute(ctx context.Context, claims auth.Claims, req dto.ListProblemsRequest) (dto.ListProblemsResponse, error) {
-	if !claims.Role.AtLeast(rbac.RoleModerator) {
+func (uc *listMyProblemsUseCase) Execute(ctx context.Context, claims auth.Claims, req dto.ListProblemsRequest) (dto.ListProblemsResponse, error) {
+	if !claims.Role.AtLeast(rbac.RoleContributor) {
 		return dto.ListProblemsResponse{}, domain.ErrForbidden
 	}
 
@@ -42,25 +40,20 @@ func (uc *listProblemsUseCase) Execute(ctx context.Context, claims auth.Claims, 
 	}
 
 	difficulty := strings.ToLower(strings.TrimSpace(req.Difficulty))
-	search := strings.TrimSpace(req.Search)
-	tagSlug := strings.ToLower(strings.TrimSpace(req.TagSlug))
-
-	if difficulty != "" {
-		switch difficulty {
-		case string(entity.Easy), string(entity.Medium), string(entity.Hard):
-		default:
-			return dto.ListProblemsResponse{}, response.NewAppError(response.CodeBadRequest, "difficulty must be one of easy, medium, hard", nil)
-		}
+	if difficulty != "" && !isValidDifficulty(difficulty) {
+		return dto.ListProblemsResponse{}, domain.ErrInvalidDifficulty
 	}
 
+	search := strings.TrimSpace(req.Search)
+	tagSlug := strings.ToLower(strings.TrimSpace(req.TagSlug))
 	offset := (page - 1) * limit
 
-	problems, err := uc.problemRepo.List(ctx, offset, limit, difficulty, search, tagSlug, true)
+	problems, err := uc.problemRepo.ListByAuthor(ctx, claims.UserID, offset, limit, difficulty, search, tagSlug)
 	if err != nil {
 		return dto.ListProblemsResponse{}, domain.ErrInternalServer.Wrap(err)
 	}
 
-	total, err := uc.problemRepo.Count(ctx, difficulty, search, tagSlug, true)
+	total, err := uc.problemRepo.CountByAuthor(ctx, claims.UserID, difficulty, search, tagSlug)
 	if err != nil {
 		return dto.ListProblemsResponse{}, domain.ErrInternalServer.Wrap(err)
 	}

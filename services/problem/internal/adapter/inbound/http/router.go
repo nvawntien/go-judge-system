@@ -47,6 +47,11 @@ func (r *Router) SetupRoutes() {
 	v1.GET("/problems", r.userHandler.ListProblems.Handle)
 	v1.GET("/problems/:slug", r.userHandler.GetProblem.Handle)
 	v1.GET("/tags", r.userHandler.ListTags.Handle)
+	my := v1.Group("/my")
+	my.Use(r.authMiddleware)
+	{
+		my.GET("/problems", isContributor, r.userHandler.ListMyProblems.Handle)
+	}
 
 	// Admin routes
 	admin := v1.Group("/admin")

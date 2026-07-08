@@ -454,6 +454,13 @@
       "input_headers": [
         "*"
       ],
+      "input_query_strings": [
+        "page",
+        "limit",
+        "difficulty",
+        "search",
+        "tag_slug"
+      ],
       "extra_config": {
         "auth/validator": {
           "alg": "HS256",
