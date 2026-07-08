@@ -237,40 +237,12 @@ func (r *problemRepository) Delete(ctx context.Context, id int64) error {
 	return r.db.WithContext(ctx).Delete(&ProblemDAO{}, id).Error // GORM soft delete
 }
 
-func (r *problemRepository) List(ctx context.Context, offset, limit int, difficulty, search string, includeHidden bool) ([]*entity.Problem, error) {
-	query := r.db.WithContext(ctx)
-	if !includeHidden {
-		query = query.Where("is_hidden = ?", false)
-	}
-	query = applyFilters(query, difficulty, search)
-
-	var daos []ProblemDAO
-	if err := query.Order("created_at DESC").Offset(offset).Limit(limit).Find(&daos).Error; err != nil {
-		return nil, err
-	}
-
-	tagsByProblemID, err := loadTagsByProblemIDs(ctx, r.db, collectProblemIDs(daos))
-	if err != nil {
-		return nil, err
-	}
-
-	return toProblemEntities(daos, tagsByProblemID), nil
-}
-
-func (r *problemRepository) Count(ctx context.Context, difficulty, search string, includeHidden bool) (int64, error) {
+func (r *problemRepository) List(ctx context.Context, offset, limit int, difficulty, search, tagSlug string, includeHidden bool) ([]*entity.Problem, error) {
 	query := r.db.WithContext(ctx).Model(&ProblemDAO{})
 	if !includeHidden {
 		query = query.Where("is_hidden = ?", false)
 	}
-	query = applyFilters(query, difficulty, search)
-
-	var count int64
-	return count, query.Count(&count).Error
-}
-
-func (r *problemRepository) ListByAuthor(ctx context.Context, authorID string, offset, limit int, difficulty, search string) ([]*entity.Problem, error) {
-	query := r.db.WithContext(ctx).Where("author_id = ?", authorID)
-	query = applyFilters(query, difficulty, search)
+	query = applyFilters(query, difficulty, search, tagSlug, !includeHidden)
 
 	var daos []ProblemDAO
 	if err := query.Order("created_at DESC").Offset(offset).Limit(limit).Find(&daos).Error; err != nil {
@@ -285,17 +257,46 @@ func (r *problemRepository) ListByAuthor(ctx context.Context, authorID string, o
 	return toProblemEntities(daos, tagsByProblemID), nil
 }
 
-func (r *problemRepository) CountByAuthor(ctx context.Context, authorID string, difficulty, search string) (int64, error) {
-	query := r.db.WithContext(ctx).Model(&ProblemDAO{}).Where("author_id = ?", authorID)
-	query = applyFilters(query, difficulty, search)
+func (r *problemRepository) Count(ctx context.Context, difficulty, search, tagSlug string, includeHidden bool) (int64, error) {
+	query := r.db.WithContext(ctx).Model(&ProblemDAO{})
+	if !includeHidden {
+		query = query.Where("is_hidden = ?", false)
+	}
+	query = applyFilters(query, difficulty, search, tagSlug, !includeHidden)
 
 	var count int64
 	return count, query.Count(&count).Error
 }
 
-func applyFilters(query *gorm.DB, difficulty, search string) *gorm.DB {
+func (r *problemRepository) ListByAuthor(ctx context.Context, authorID string, offset, limit int, difficulty, search, tagSlug string) ([]*entity.Problem, error) {
+	query := r.db.WithContext(ctx).Model(&ProblemDAO{}).Where("author_id = ?", authorID)
+	query = applyFilters(query, difficulty, search, tagSlug, false)
+
+	var daos []ProblemDAO
+	if err := query.Order("created_at DESC").Offset(offset).Limit(limit).Find(&daos).Error; err != nil {
+		return nil, err
+	}
+
+	tagsByProblemID, err := loadTagsByProblemIDs(ctx, r.db, collectProblemIDs(daos))
+	if err != nil {
+		return nil, err
+	}
+
+	return toProblemEntities(daos, tagsByProblemID), nil
+}
+
+func (r *problemRepository) CountByAuthor(ctx context.Context, authorID string, difficulty, search, tagSlug string) (int64, error) {
+	query := r.db.WithContext(ctx).Model(&ProblemDAO{}).Where("author_id = ?", authorID)
+	query = applyFilters(query, difficulty, search, tagSlug, false)
+
+	var count int64
+	return count, query.Count(&count).Error
+}
+
+func applyFilters(query *gorm.DB, difficulty, search, tagSlug string, requireActiveTag bool) *gorm.DB {
 	difficulty = strings.ToLower(strings.TrimSpace(difficulty))
 	search = strings.TrimSpace(search)
+	tagSlug = strings.ToLower(strings.TrimSpace(tagSlug))
 
 	if difficulty != "" {
 		query = query.Where("difficulty = ?", difficulty)
@@ -304,7 +305,25 @@ func applyFilters(query *gorm.DB, difficulty, search string) *gorm.DB {
 		like := "%" + search + "%"
 		query = query.Where("title ILIKE ? OR title_slug ILIKE ?", like, like)
 	}
+	if tagSlug != "" {
+		query = query.Where("id IN (?)", filterProblemIDsByTagSlug(query.Session(&gorm.Session{NewDB: true}), tagSlug, requireActiveTag))
+	}
 	return query
+}
+
+func filterProblemIDsByTagSlug(query *gorm.DB, tagSlug string, requireActiveTag bool) *gorm.DB {
+	subQuery := query.
+		Table("problem_tags").
+		Select("problem_tags.problem_id").
+		Joins("JOIN tags ON tags.id = problem_tags.tag_id").
+		Where("tags.slug = ?", tagSlug).
+		Where("tags.deleted_at IS NULL")
+
+	if requireActiveTag {
+		subQuery = subQuery.Where("tags.is_active = ?", true)
+	}
+
+	return subQuery
 }
 
 func toProblemDAO(p *entity.Problem) *ProblemDAO {

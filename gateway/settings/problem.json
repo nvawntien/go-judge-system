@@ -8,6 +8,13 @@
       "input_headers": [
         "*"
       ],
+      "input_query_strings": [
+        "page",
+        "limit",
+        "difficulty",
+        "search",
+        "tag_slug"
+      ],
       "backend": [
         {
           "url_pattern": "/api/v1/problems",
@@ -494,7 +501,8 @@
         "page",
         "limit",
         "difficulty",
-        "search"
+        "search",
+        "tag_slug"
       ],
       "extra_config": {
         "auth/validator": {

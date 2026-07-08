@@ -43,6 +43,7 @@ func (uc *listProblemsUseCase) Execute(ctx context.Context, claims auth.Claims, 
 
 	difficulty := strings.ToLower(strings.TrimSpace(req.Difficulty))
 	search := strings.TrimSpace(req.Search)
+	tagSlug := strings.ToLower(strings.TrimSpace(req.TagSlug))
 
 	if difficulty != "" {
 		switch difficulty {
@@ -61,22 +62,22 @@ func (uc *listProblemsUseCase) Execute(ctx context.Context, claims auth.Claims, 
 	)
 
 	if claims.Role.AtLeast(rbac.RoleModerator) {
-		problems, err = uc.problemRepo.List(ctx, offset, limit, difficulty, search, true)
+		problems, err = uc.problemRepo.List(ctx, offset, limit, difficulty, search, tagSlug, true)
 		if err != nil {
 			return dto.ListProblemsResponse{}, domain.ErrInternalServer.Wrap(err)
 		}
 
-		total, err = uc.problemRepo.Count(ctx, difficulty, search, true)
+		total, err = uc.problemRepo.Count(ctx, difficulty, search, tagSlug, true)
 		if err != nil {
 			return dto.ListProblemsResponse{}, domain.ErrInternalServer.Wrap(err)
 		}
 	} else {
-		problems, err = uc.problemRepo.ListByAuthor(ctx, claims.UserID, offset, limit, difficulty, search)
+		problems, err = uc.problemRepo.ListByAuthor(ctx, claims.UserID, offset, limit, difficulty, search, tagSlug)
 		if err != nil {
 			return dto.ListProblemsResponse{}, domain.ErrInternalServer.Wrap(err)
 		}
 
-		total, err = uc.problemRepo.CountByAuthor(ctx, claims.UserID, difficulty, search)
+		total, err = uc.problemRepo.CountByAuthor(ctx, claims.UserID, difficulty, search, tagSlug)
 		if err != nil {
 			return dto.ListProblemsResponse{}, domain.ErrInternalServer.Wrap(err)
 		}

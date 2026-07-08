@@ -104,6 +104,7 @@ type ListProblemsRequest struct {
 	Limit      int    `form:"limit,default=20" binding:"min=1,max=100"`
 	Difficulty string `form:"difficulty" binding:"omitempty,oneof=easy medium hard"`
 	Search     string `form:"search"`
+	TagSlug    string `form:"tag_slug" json:"tag_slug" binding:"omitempty"`
 }
 
 type ListProblemsResponse struct {
