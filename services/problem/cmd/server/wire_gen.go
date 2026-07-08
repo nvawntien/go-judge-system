@@ -83,9 +83,11 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	if err != nil {
 		return nil, err
 	}
+	getTestCaseUseCase := testcase.NewGetTestCaseUseCase(problemRepository, testCaseRepository)
+	getTestCaseHandler := testcase2.NewGetTestCaseHandler(getTestCaseUseCase)
 	uploadTestCaseUseCase := testcase.NewUploadTestCaseUseCase(problemRepository, testCaseRepository, testCaseStorage)
 	uploadTestCaseHandler := testcase2.NewUploadTestCaseHandler(uploadTestCaseUseCase)
-	adminHandler := handler.NewAdminHandler(createProblemHandler, listProblemsHandler2, updateProblemHandler, getProblemHandler2, publishProblemHandler, hiddenProblemHandler, deleteProblemHandler, listTagsHandler2, createTagHandler, updateTagHandler, deleteTagHandler, uploadTestCaseHandler)
+	adminHandler := handler.NewAdminHandler(createProblemHandler, listProblemsHandler2, updateProblemHandler, getProblemHandler2, publishProblemHandler, hiddenProblemHandler, deleteProblemHandler, listTagsHandler2, createTagHandler, updateTagHandler, deleteTagHandler, getTestCaseHandler, uploadTestCaseHandler)
 	redisConfig := cfg.Redis
 	redisClient, err := cache.ConnectRedis(redisConfig)
 	if err != nil {

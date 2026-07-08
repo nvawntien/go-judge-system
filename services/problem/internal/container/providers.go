@@ -59,6 +59,7 @@ var UseCaseProviderSet = wire.NewSet(
 	admintagusecase.NewDeleteTagUseCase,
 
 	admintestcaseusecase.NewUploadTestCaseUseCase,
+	admintestcaseusecase.NewGetTestCaseUseCase,
 
 	userproblemusecase.NewListProblemsUseCase,
 	userproblemusecase.NewListMyProblemsUseCase,
@@ -81,6 +82,7 @@ var InboundProviderSet = wire.NewSet(
 	admintaghandler.NewDeleteTagHandler,
 
 	admintestcasehandler.NewUploadTestCaseHandler,
+	admintestcasehandler.NewGetTestCaseHandler,
 
 	userproblemhandler.NewListProblemsHandler,
 	userproblemhandler.NewListMyProblemsHandler,

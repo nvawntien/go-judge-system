@@ -9,3 +9,7 @@ import (
 type UploadTestCaseUseCase interface {
 	Execute(ctx context.Context, claims auth.Claims, params dto.ProblemIDRequest, req dto.UploadTestCaseRequest) (dto.TestCaseMetadataResponse, error)
 }
+
+type GetTestCaseUseCase interface {
+	Execute(ctx context.Context, claims auth.Claims, params dto.ProblemIDRequest) (dto.TestCaseMetadataResponse, error)
+}

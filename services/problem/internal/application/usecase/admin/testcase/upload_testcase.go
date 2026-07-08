@@ -10,6 +10,7 @@ import (
 	"go-judge-system/services/problem/internal/application/dto"
 	inbound "go-judge-system/services/problem/internal/application/port/inbound/admin"
 	"go-judge-system/services/problem/internal/application/port/outbound"
+	"go-judge-system/services/problem/internal/application/usecase"
 	"go-judge-system/services/problem/internal/domain"
 	"go-judge-system/services/problem/internal/domain/entity"
 	"io"
@@ -18,7 +19,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 )
 
 const (
@@ -130,14 +130,7 @@ func (uc *uploadTestCaseUseCase) Execute(ctx context.Context, claims auth.Claims
 		_ = uc.testcaseStorage.DeleteTestCase(ctx, oldObjectKey)
 	}
 
-	return dto.TestCaseMetadataResponse{
-		ProblemID:    tc.ProblemID,
-		ZipObjectKey: tc.ZipObjectKey,
-		TestCount:    tc.TestCount,
-		Version:      tc.Version,
-		CreatedAt:    tc.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:    tc.UpdatedAt.Format(time.RFC3339),
-	}, nil
+	return usecase.MapTestCaseToMetadataResponse(tc), nil
 }
 
 func validateTestCaseZip(filePath string) (int, error) {

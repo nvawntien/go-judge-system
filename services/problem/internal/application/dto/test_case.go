@@ -7,6 +7,7 @@ type UploadTestCaseRequest struct {
 }
 
 type TestCaseMetadataResponse struct {
+	ID           int64  `json:"id"`
 	ProblemID    int64  `json:"problem_id"`
 	ZipObjectKey string `json:"zip_object_key"`
 	TestCount    int    `json:"test_count"`

@@ -71,6 +71,7 @@ func (r *Router) SetupRoutes() {
 		admin.PUT("/tags/:tag_id", isModerator, r.adminHandler.UpdateTag.Handle)
 		admin.DELETE("/tags/:tag_id", isModerator, r.adminHandler.DeleteTag.Handle)
 		// test case management
+		admin.GET("/problems/:problem_id/testcases", isContributor, r.adminHandler.GetTestCase.Handle)
 		admin.POST("/problems/:problem_id/testcases", isContributor, r.adminHandler.UploadTestCase.Handle)
 	}
 }

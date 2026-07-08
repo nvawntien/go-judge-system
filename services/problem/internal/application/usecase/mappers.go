@@ -133,6 +133,18 @@ func MapExampleDTOsToEntity(dtos []dto.ProblemExampleDTO) []entity.ProblemExampl
 	return examples
 }
 
+func MapTestCaseToMetadataResponse(tc *entity.TestCase) dto.TestCaseMetadataResponse {
+	return dto.TestCaseMetadataResponse{
+		ID:           tc.ID,
+		ProblemID:    tc.ProblemID,
+		ZipObjectKey: tc.ZipObjectKey,
+		TestCount:    tc.TestCount,
+		Version:      tc.Version,
+		CreatedAt:    tc.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		UpdatedAt:    tc.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+	}
+}
+
 func int64Ptr(value int64) *int64 {
 	return &value
 }

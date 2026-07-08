@@ -21,6 +21,7 @@ type AdminHandler struct {
 	UpdateTag *tag.UpdateTagHandler
 	DeleteTag *tag.DeleteTagHandler
 	// Test case management
+	GetTestCase    *testcase.GetTestCaseHandler
 	UploadTestCase *testcase.UploadTestCaseHandler
 }
 
@@ -39,6 +40,7 @@ func NewAdminHandler(
 	updateTag *tag.UpdateTagHandler,
 	deleteTag *tag.DeleteTagHandler,
 	// Test case management
+	getTestCase *testcase.GetTestCaseHandler,
 	uploadTestCase *testcase.UploadTestCaseHandler,
 ) *AdminHandler {
 	return &AdminHandler{
@@ -56,6 +58,7 @@ func NewAdminHandler(
 		UpdateTag: updateTag,
 		DeleteTag: deleteTag,
 		// Test case management
+		GetTestCase:    getTestCase,
 		UploadTestCase: uploadTestCase,
 	}
 }
