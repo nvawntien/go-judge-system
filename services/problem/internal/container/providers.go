@@ -51,6 +51,7 @@ var UseCaseProviderSet = wire.NewSet(
 	adminproblemusecase.NewGetProblemUseCase,
 	adminproblemusecase.NewPublishProblemUseCase,
 	adminproblemusecase.NewHiddenProblemUseCase,
+	adminproblemusecase.NewDeleteProblemUseCase,
 
 	admintagusecase.NewListTagsUseCase,
 	admintagusecase.NewCreateTagUseCase,
@@ -72,6 +73,7 @@ var InboundProviderSet = wire.NewSet(
 	adminproblemhandler.NewGetProblemHandler,
 	adminproblemhandler.NewPublishProblemHandler,
 	adminproblemhandler.NewHiddenProblemHandler,
+	adminproblemhandler.NewDeleteProblemHandler,
 
 	admintaghandler.NewListTagsHandler,
 	admintaghandler.NewCreateTagHandler,

@@ -14,6 +14,7 @@ type AdminHandler struct {
 	GetProblem     *problem.GetProblemHandler
 	PublishProblem *problem.PublishProblemHandler
 	HiddenProblem  *problem.HiddenProblemHandler
+	DeleteProblem  *problem.DeleteProblemHandler
 	// Tag management
 	ListTags  *tag.ListTagsHandler
 	CreateTag *tag.CreateTagHandler
@@ -31,6 +32,7 @@ func NewAdminHandler(
 	getProblem *problem.GetProblemHandler,
 	publishProblem *problem.PublishProblemHandler,
 	hiddenProblem *problem.HiddenProblemHandler,
+	deleteProblem *problem.DeleteProblemHandler,
 	// Tag management
 	listTags *tag.ListTagsHandler,
 	createTag *tag.CreateTagHandler,
@@ -47,6 +49,7 @@ func NewAdminHandler(
 		GetProblem:     getProblem,
 		PublishProblem: publishProblem,
 		HiddenProblem:  hiddenProblem,
+		DeleteProblem:  deleteProblem,
 		// Tag management
 		ListTags:  listTags,
 		CreateTag: createTag,

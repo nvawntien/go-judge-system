@@ -63,6 +63,8 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	publishProblemHandler := problem4.NewPublishProblemHandler(publishProblemUseCase)
 	hiddenProblemUseCase := problem3.NewHiddenProblemUseCase(problemRepository)
 	hiddenProblemHandler := problem4.NewHiddenProblemHandler(hiddenProblemUseCase)
+	deleteProblemUseCase := problem3.NewDeleteProblemUseCase(problemRepository)
+	deleteProblemHandler := problem4.NewDeleteProblemHandler(deleteProblemUseCase)
 	listTagsUseCase2 := tag.NewListTagsUseCase(tagRepository)
 	listTagsHandler2 := tag2.NewListTagsHandler(listTagsUseCase2)
 	createTagUseCase := tag.NewCreateTagUseCase(tagRepository)
@@ -83,7 +85,7 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	}
 	uploadTestCaseUseCase := testcase.NewUploadTestCaseUseCase(problemRepository, testCaseRepository, testCaseStorage)
 	uploadTestCaseHandler := testcase2.NewUploadTestCaseHandler(uploadTestCaseUseCase)
-	adminHandler := handler.NewAdminHandler(createProblemHandler, listProblemsHandler2, updateProblemHandler, getProblemHandler2, publishProblemHandler, hiddenProblemHandler, listTagsHandler2, createTagHandler, updateTagHandler, deleteTagHandler, uploadTestCaseHandler)
+	adminHandler := handler.NewAdminHandler(createProblemHandler, listProblemsHandler2, updateProblemHandler, getProblemHandler2, publishProblemHandler, hiddenProblemHandler, deleteProblemHandler, listTagsHandler2, createTagHandler, updateTagHandler, deleteTagHandler, uploadTestCaseHandler)
 	redisConfig := cfg.Redis
 	redisClient, err := cache.ConnectRedis(redisConfig)
 	if err != nil {

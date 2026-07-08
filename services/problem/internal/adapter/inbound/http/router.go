@@ -62,6 +62,7 @@ func (r *Router) SetupRoutes() {
 		admin.GET("/problems/:problem_id", isContributor, r.adminHandler.GetProblem.Handle)
 		admin.POST("/problems", isContributor, r.adminHandler.CreateProblem.Handle)
 		admin.PUT("/problems/:problem_id", isContributor, r.adminHandler.UpdateProblem.Handle)
+		admin.DELETE("/problems/:problem_id", isContributor, r.adminHandler.DeleteProblem.Handle)
 		admin.PATCH("/problems/:problem_id/publish", isModerator, r.adminHandler.PublishProblem.Handle)
 		admin.PATCH("/problems/:problem_id/hidden", isModerator, r.adminHandler.HiddenProblem.Handle)
 		// tag management
