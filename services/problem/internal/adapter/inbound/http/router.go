@@ -46,6 +46,7 @@ func (r *Router) SetupRoutes() {
 
 	v1.GET("/problems", r.userHandler.ListProblems.Handle)
 	v1.GET("/problems/:slug", r.userHandler.GetProblem.Handle)
+	v1.GET("/tags", r.userHandler.ListTags.Handle)
 
 	// Admin routes
 	admin := v1.Group("/admin")
@@ -55,8 +56,14 @@ func (r *Router) SetupRoutes() {
 		admin.GET("/problems", isContributor, r.adminHandler.ListProblems.Handle)
 		admin.GET("/problems/:problem_id", isContributor, r.adminHandler.GetProblem.Handle)
 		admin.POST("/problems", isContributor, r.adminHandler.CreateProblem.Handle)
+		admin.PUT("/problems/:problem_id", isContributor, r.adminHandler.UpdateProblem.Handle)
 		admin.PATCH("/problems/:problem_id/publish", isModerator, r.adminHandler.PublishProblem.Handle)
 		admin.PATCH("/problems/:problem_id/hidden", isModerator, r.adminHandler.HiddenProblem.Handle)
+		// tag management
+		admin.GET("/tags", isContributor, r.adminHandler.ListTags.Handle)
+		admin.POST("/tags", isModerator, r.adminHandler.CreateTag.Handle)
+		admin.PUT("/tags/:tag_id", isModerator, r.adminHandler.UpdateTag.Handle)
+		admin.DELETE("/tags/:tag_id", isModerator, r.adminHandler.DeleteTag.Handle)
 		// test case management
 		admin.POST("/problems/:problem_id/testcases", isContributor, r.adminHandler.UploadTestCase.Handle)
 	}

@@ -15,12 +15,18 @@ func MapProblemToResponse(p *entity.Problem, includePrivate bool) dto.ProblemRes
 		})
 	}
 
+	tags := make([]dto.TagResponse, 0, len(p.Tags))
+	for _, tag := range p.Tags {
+		tags = append(tags, MapTagToResponse(&tag))
+	}
+
 	resp := dto.ProblemResponse{
 		ID:          p.ID,
 		Slug:        p.TitleSlug,
 		Title:       p.Title,
 		Description: p.Description,
 		Difficulty:  string(p.Difficulty),
+		Tags:        tags,
 		Examples:    examples,
 		Constraints: p.Constraints,
 		Hints:       p.Hints,
@@ -45,6 +51,11 @@ func MapProblemToAdminDetailResponse(p *entity.Problem, tc *entity.TestCase) dto
 		})
 	}
 
+	tags := make([]dto.TagResponse, 0, len(p.Tags))
+	for _, tag := range p.Tags {
+		tags = append(tags, MapTagToResponse(&tag))
+	}
+
 	var deletedAt *string
 	if p.DeletedAt != nil {
 		value := p.DeletedAt.Format("2006-01-02T15:04:05Z")
@@ -57,6 +68,7 @@ func MapProblemToAdminDetailResponse(p *entity.Problem, tc *entity.TestCase) dto
 		Title:       p.Title,
 		Description: p.Description,
 		Difficulty:  string(p.Difficulty),
+		Tags:        tags,
 		Examples:    examples,
 		Constraints: p.Constraints,
 		Hints:       p.Hints,
@@ -89,6 +101,24 @@ func MapProblemToAdminDetailResponse(p *entity.Problem, tc *entity.TestCase) dto
 	}
 
 	return resp
+}
+
+func MapTagToResponse(tag *entity.Tag) dto.TagResponse {
+	return dto.TagResponse{
+		ID:          tag.ID,
+		Name:        tag.Name,
+		Slug:        tag.Slug,
+		Description: tag.Description,
+	}
+}
+
+func MapTagToAdminResponse(tag *entity.Tag) dto.AdminTagResponse {
+	return dto.AdminTagResponse{
+		TagResponse: MapTagToResponse(tag),
+		IsActive:    tag.IsActive,
+		CreatedAt:   tag.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		UpdatedAt:   tag.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+	}
 }
 
 func MapExampleDTOsToEntity(dtos []dto.ProblemExampleDTO) []entity.ProblemExample {

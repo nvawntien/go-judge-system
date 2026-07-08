@@ -2,6 +2,7 @@ package handler
 
 import (
 	"go-judge-system/services/problem/internal/adapter/inbound/http/handler/admin/problem"
+	"go-judge-system/services/problem/internal/adapter/inbound/http/handler/admin/tag"
 	"go-judge-system/services/problem/internal/adapter/inbound/http/handler/admin/testcase"
 )
 
@@ -9,9 +10,15 @@ type AdminHandler struct {
 	// Problem management
 	CreateProblem  *problem.CreateProblemHandler
 	ListProblems   *problem.ListProblemsHandler
+	UpdateProblem  *problem.UpdateProblemHandler
 	GetProblem     *problem.GetProblemHandler
 	PublishProblem *problem.PublishProblemHandler
 	HiddenProblem  *problem.HiddenProblemHandler
+	// Tag management
+	ListTags  *tag.ListTagsHandler
+	CreateTag *tag.CreateTagHandler
+	UpdateTag *tag.UpdateTagHandler
+	DeleteTag *tag.DeleteTagHandler
 	// Test case management
 	UploadTestCase *testcase.UploadTestCaseHandler
 }
@@ -20,9 +27,15 @@ func NewAdminHandler(
 	// Problem management
 	createProblem *problem.CreateProblemHandler,
 	listProblems *problem.ListProblemsHandler,
+	updateProblem *problem.UpdateProblemHandler,
 	getProblem *problem.GetProblemHandler,
 	publishProblem *problem.PublishProblemHandler,
 	hiddenProblem *problem.HiddenProblemHandler,
+	// Tag management
+	listTags *tag.ListTagsHandler,
+	createTag *tag.CreateTagHandler,
+	updateTag *tag.UpdateTagHandler,
+	deleteTag *tag.DeleteTagHandler,
 	// Test case management
 	uploadTestCase *testcase.UploadTestCaseHandler,
 ) *AdminHandler {
@@ -30,9 +43,15 @@ func NewAdminHandler(
 		// Problem management
 		CreateProblem:  createProblem,
 		ListProblems:   listProblems,
+		UpdateProblem:  updateProblem,
 		GetProblem:     getProblem,
 		PublishProblem: publishProblem,
 		HiddenProblem:  hiddenProblem,
+		// Tag management
+		ListTags:  listTags,
+		CreateTag: createTag,
+		UpdateTag: updateTag,
+		DeleteTag: deleteTag,
 		// Test case management
 		UploadTestCase: uploadTestCase,
 	}

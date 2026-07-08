@@ -23,6 +23,7 @@ type Problem struct {
 	TitleSlug   string
 	Description string
 	Difficulty  Difficulty
+	Tags        []Tag
 
 	Examples    []ProblemExample
 	Constraints []string
@@ -42,6 +43,7 @@ type Problem struct {
 func NewProblem(
 	title, slug, desc string,
 	diff Difficulty,
+	tags []Tag,
 	examples []ProblemExample,
 	constraints []string,
 	hints []string,
@@ -54,6 +56,7 @@ func NewProblem(
 		TitleSlug:   slug,
 		Description: desc,
 		Difficulty:  diff,
+		Tags:        tags,
 		Examples:    examples,
 		Constraints: constraints,
 		Hints:       hints,

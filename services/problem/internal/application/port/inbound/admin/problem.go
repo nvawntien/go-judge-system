@@ -15,6 +15,10 @@ type ListProblemsUseCase interface {
 	Execute(ctx context.Context, claims auth.Claims, req dto.ListProblemsRequest) (dto.ListProblemsResponse, error)
 }
 
+type UpdateProblemUseCase interface {
+	Execute(ctx context.Context, claims auth.Claims, params dto.ProblemIDRequest, req dto.UpdateProblemRequest) (dto.ProblemDetailResponse, error)
+}
+
 type GetProblemUseCase interface {
 	Execute(ctx context.Context, claims auth.Claims, params dto.ProblemIDRequest) (dto.AdminProblemDetailResponse, error)
 }

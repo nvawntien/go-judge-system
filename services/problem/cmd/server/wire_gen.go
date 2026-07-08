@@ -17,13 +17,17 @@ import (
 	"go-judge-system/services/problem/internal/adapter/inbound/http"
 	"go-judge-system/services/problem/internal/adapter/inbound/http/handler"
 	problem4 "go-judge-system/services/problem/internal/adapter/inbound/http/handler/admin/problem"
+	tag2 "go-judge-system/services/problem/internal/adapter/inbound/http/handler/admin/tag"
 	testcase2 "go-judge-system/services/problem/internal/adapter/inbound/http/handler/admin/testcase"
 	problem2 "go-judge-system/services/problem/internal/adapter/inbound/http/handler/user/problem"
+	tag3 "go-judge-system/services/problem/internal/adapter/inbound/http/handler/user/tag"
 	"go-judge-system/services/problem/internal/adapter/outbound/persistence/postgres"
 	minio2 "go-judge-system/services/problem/internal/adapter/outbound/storage/minio"
 	problem3 "go-judge-system/services/problem/internal/application/usecase/admin/problem"
+	tag "go-judge-system/services/problem/internal/application/usecase/admin/tag"
 	"go-judge-system/services/problem/internal/application/usecase/admin/testcase"
 	"go-judge-system/services/problem/internal/application/usecase/user/problem"
+	tag4 "go-judge-system/services/problem/internal/application/usecase/user/tag"
 	"go-judge-system/services/problem/internal/container"
 )
 
@@ -36,15 +40,20 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 		return nil, err
 	}
 	problemRepository := postgres.NewProblemRepository(db)
+	tagRepository := postgres.NewTagRepository(db)
 	listProblemsUseCase := problem.NewListProblemsUseCase(problemRepository)
 	listProblemsHandler := problem2.NewListProblemsHandler(listProblemsUseCase)
 	getProblemUseCase := problem.NewGetProblemUseCase(problemRepository)
 	getProblemHandler := problem2.NewGetProblemHandler(getProblemUseCase)
-	userHandler := handler.NewUserHandler(listProblemsHandler, getProblemHandler)
-	createProblemUseCase := problem3.NewCreateProblemUseCase(problemRepository)
+	listTagsUseCase := tag4.NewListTagsUseCase(tagRepository)
+	listTagsHandler := tag3.NewListTagsHandler(listTagsUseCase)
+	userHandler := handler.NewUserHandler(listProblemsHandler, getProblemHandler, listTagsHandler)
+	createProblemUseCase := problem3.NewCreateProblemUseCase(problemRepository, tagRepository)
 	createProblemHandler := problem4.NewCreateProblemHandler(createProblemUseCase)
 	listProblemsUseCase2 := problem3.NewListProblemsUseCase(problemRepository)
 	listProblemsHandler2 := problem4.NewListProblemsHandler(listProblemsUseCase2)
+	updateProblemUseCase := problem3.NewUpdateProblemUseCase(problemRepository, tagRepository)
+	updateProblemHandler := problem4.NewUpdateProblemHandler(updateProblemUseCase)
 	testCaseRepository := postgres.NewTestCaseRepository(db)
 	getProblemUseCase2 := problem3.NewGetProblemUseCase(problemRepository, testCaseRepository)
 	getProblemHandler2 := problem4.NewGetProblemHandler(getProblemUseCase2)
@@ -52,6 +61,14 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	publishProblemHandler := problem4.NewPublishProblemHandler(publishProblemUseCase)
 	hiddenProblemUseCase := problem3.NewHiddenProblemUseCase(problemRepository)
 	hiddenProblemHandler := problem4.NewHiddenProblemHandler(hiddenProblemUseCase)
+	listTagsUseCase2 := tag.NewListTagsUseCase(tagRepository)
+	listTagsHandler2 := tag2.NewListTagsHandler(listTagsUseCase2)
+	createTagUseCase := tag.NewCreateTagUseCase(tagRepository)
+	createTagHandler := tag2.NewCreateTagHandler(createTagUseCase)
+	updateTagUseCase := tag.NewUpdateTagUseCase(tagRepository)
+	updateTagHandler := tag2.NewUpdateTagHandler(updateTagUseCase)
+	deleteTagUseCase := tag.NewDeleteTagUseCase(tagRepository)
+	deleteTagHandler := tag2.NewDeleteTagHandler(deleteTagUseCase)
 	minIOConfig := &cfg.MinIO
 	client, err := minio.NewMinioClient(minIOConfig)
 	if err != nil {
@@ -64,7 +81,7 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	}
 	uploadTestCaseUseCase := testcase.NewUploadTestCaseUseCase(problemRepository, testCaseRepository, testCaseStorage)
 	uploadTestCaseHandler := testcase2.NewUploadTestCaseHandler(uploadTestCaseUseCase)
-	adminHandler := handler.NewAdminHandler(createProblemHandler, listProblemsHandler2, getProblemHandler2, publishProblemHandler, hiddenProblemHandler, uploadTestCaseHandler)
+	adminHandler := handler.NewAdminHandler(createProblemHandler, listProblemsHandler2, updateProblemHandler, getProblemHandler2, publishProblemHandler, hiddenProblemHandler, listTagsHandler2, createTagHandler, updateTagHandler, deleteTagHandler, uploadTestCaseHandler)
 	redisConfig := cfg.Redis
 	redisClient, err := cache.ConnectRedis(redisConfig)
 	if err != nil {
