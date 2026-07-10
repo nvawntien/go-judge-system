@@ -13,3 +13,7 @@ type UploadTestCaseUseCase interface {
 type GetTestCaseUseCase interface {
 	Execute(ctx context.Context, claims auth.Claims, params dto.ProblemIDRequest) (dto.TestCaseMetadataResponse, error)
 }
+
+type DeleteTestCaseUseCase interface {
+	Execute(ctx context.Context, claims auth.Claims, params dto.ProblemIDRequest) error
+}

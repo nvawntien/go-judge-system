@@ -23,6 +23,7 @@ type AdminHandler struct {
 	// Test case management
 	GetTestCase    *testcase.GetTestCaseHandler
 	UploadTestCase *testcase.UploadTestCaseHandler
+	DeleteTestCase *testcase.DeleteTestCaseHandler
 }
 
 func NewAdminHandler(
@@ -42,6 +43,7 @@ func NewAdminHandler(
 	// Test case management
 	getTestCase *testcase.GetTestCaseHandler,
 	uploadTestCase *testcase.UploadTestCaseHandler,
+	deleteTestCase *testcase.DeleteTestCaseHandler,
 ) *AdminHandler {
 	return &AdminHandler{
 		// Problem management
@@ -60,5 +62,6 @@ func NewAdminHandler(
 		// Test case management
 		GetTestCase:    getTestCase,
 		UploadTestCase: uploadTestCase,
+		DeleteTestCase: deleteTestCase,
 	}
 }

@@ -73,6 +73,7 @@ func (r *Router) SetupRoutes() {
 		// test case management
 		admin.GET("/problems/:problem_id/testcases", isContributor, r.adminHandler.GetTestCase.Handle)
 		admin.POST("/problems/:problem_id/testcases", isContributor, r.adminHandler.UploadTestCase.Handle)
+		admin.DELETE("/problems/:problem_id/testcases", isContributor, r.adminHandler.DeleteTestCase.Handle)
 	}
 }
 
