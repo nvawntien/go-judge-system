@@ -17,7 +17,6 @@ type TestCaseMetadataResponse struct {
 }
 
 type InternalTestCaseResponse struct {
-	ProblemID      int64  `json:"problem_id"`
 	TestCount      int    `json:"test_count"`
 	Version        int    `json:"version"`
 	ZipDownloadURL string `json:"zip_download_url"`

@@ -49,7 +49,7 @@ COPY --from=builder --chown=appuser:appgroup /workspace/problem-service ./app
 
 USER appuser
 
-EXPOSE 8082
+EXPOSE 8082 9092
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD wget -qO- http://localhost:8082/health || exit 1

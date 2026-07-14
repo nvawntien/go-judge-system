@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package problem.v1;
+
+option go_package = "go-judge-system/pkg/pb/problem/v1;problemv1";
+
+service ProblemService {
+    rpc GetTestCase(GetTestCaseRequest) returns (GetTestCaseResponse);
+}
+
+message GetTestCaseRequest {
+    int64 problem_id = 1;
+}
+
+message GetTestCaseResponse {
+    string zip_download_url = 1;
+    int32 test_count = 2;
+    int32 version = 3;
+}

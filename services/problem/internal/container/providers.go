@@ -7,6 +7,9 @@ import (
 	"go-judge-system/pkg/logger"
 	"go-judge-system/pkg/middleware"
 	"go-judge-system/pkg/minio"
+	"go-judge-system/services/problem/internal/adapter/inbound/grpc"
+	grpchandler "go-judge-system/services/problem/internal/adapter/inbound/grpc/handler"
+	grpctestcasehandler "go-judge-system/services/problem/internal/adapter/inbound/grpc/handler/worker/testcase"
 	"go-judge-system/services/problem/internal/adapter/inbound/http"
 	"go-judge-system/services/problem/internal/adapter/inbound/http/handler"
 	adminproblemhandler "go-judge-system/services/problem/internal/adapter/inbound/http/handler/admin/problem"
@@ -21,6 +24,7 @@ import (
 	admintestcaseusecase "go-judge-system/services/problem/internal/application/usecase/admin/testcase"
 	userproblemusecase "go-judge-system/services/problem/internal/application/usecase/user/problem"
 	usertagusecase "go-judge-system/services/problem/internal/application/usecase/user/tag"
+	workertestcaseusecase "go-judge-system/services/problem/internal/application/usecase/worker/testcase"
 
 	"github.com/google/wire"
 )
@@ -66,6 +70,8 @@ var UseCaseProviderSet = wire.NewSet(
 	userproblemusecase.NewListMyProblemsUseCase,
 	userproblemusecase.NewGetProblemUseCase,
 	usertagusecase.NewListTagsUseCase,
+
+	workertestcaseusecase.NewGetTestCaseUseCase,
 )
 
 var InboundProviderSet = wire.NewSet(
@@ -94,4 +100,9 @@ var InboundProviderSet = wire.NewSet(
 	handler.NewAdminHandler,
 	handler.NewUserHandler,
 	http.NewRouter,
+
+	grpctestcasehandler.NewGetTestCaseHandler,
+	grpchandler.NewWorkerHandler,
+	grpc.NewProblemServer,
+	grpc.NewServer,
 )

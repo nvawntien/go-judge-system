@@ -14,20 +14,24 @@ import (
 	"go-judge-system/pkg/logger"
 	"go-judge-system/pkg/middleware"
 	"go-judge-system/pkg/minio"
+	"go-judge-system/services/problem/internal/adapter/inbound/grpc"
+	handler2 "go-judge-system/services/problem/internal/adapter/inbound/grpc/handler"
+	testcase3 "go-judge-system/services/problem/internal/adapter/inbound/grpc/handler/worker/testcase"
 	"go-judge-system/services/problem/internal/adapter/inbound/http"
 	"go-judge-system/services/problem/internal/adapter/inbound/http/handler"
 	problem4 "go-judge-system/services/problem/internal/adapter/inbound/http/handler/admin/problem"
-	tag2 "go-judge-system/services/problem/internal/adapter/inbound/http/handler/admin/tag"
+	tag4 "go-judge-system/services/problem/internal/adapter/inbound/http/handler/admin/tag"
 	testcase2 "go-judge-system/services/problem/internal/adapter/inbound/http/handler/admin/testcase"
 	problem2 "go-judge-system/services/problem/internal/adapter/inbound/http/handler/user/problem"
-	tag3 "go-judge-system/services/problem/internal/adapter/inbound/http/handler/user/tag"
+	tag2 "go-judge-system/services/problem/internal/adapter/inbound/http/handler/user/tag"
 	"go-judge-system/services/problem/internal/adapter/outbound/persistence/postgres"
 	minio2 "go-judge-system/services/problem/internal/adapter/outbound/storage/minio"
 	problem3 "go-judge-system/services/problem/internal/application/usecase/admin/problem"
-	tag "go-judge-system/services/problem/internal/application/usecase/admin/tag"
+	tag3 "go-judge-system/services/problem/internal/application/usecase/admin/tag"
 	"go-judge-system/services/problem/internal/application/usecase/admin/testcase"
 	"go-judge-system/services/problem/internal/application/usecase/user/problem"
-	tag4 "go-judge-system/services/problem/internal/application/usecase/user/tag"
+	"go-judge-system/services/problem/internal/application/usecase/user/tag"
+	"go-judge-system/services/problem/internal/application/usecase/worker/testcase"
 	"go-judge-system/services/problem/internal/container"
 )
 
@@ -40,39 +44,41 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 		return nil, err
 	}
 	problemRepository := postgres.NewProblemRepository(db)
-	tagRepository := postgres.NewTagRepository(db)
 	listProblemsUseCase := problem.NewListProblemsUseCase(problemRepository)
 	listProblemsHandler := problem2.NewListProblemsHandler(listProblemsUseCase)
 	listMyProblemsUseCase := problem.NewListMyProblemsUseCase(problemRepository)
 	listMyProblemsHandler := problem2.NewListMyProblemsHandler(listMyProblemsUseCase)
 	getProblemUseCase := problem.NewGetProblemUseCase(problemRepository)
 	getProblemHandler := problem2.NewGetProblemHandler(getProblemUseCase)
-	listTagsUseCase := tag4.NewListTagsUseCase(tagRepository)
-	listTagsHandler := tag3.NewListTagsHandler(listTagsUseCase)
+	tagRepository := postgres.NewTagRepository(db)
+	listTagsUseCase := tag.NewListTagsUseCase(tagRepository)
+	listTagsHandler := tag2.NewListTagsHandler(listTagsUseCase)
 	userHandler := handler.NewUserHandler(listProblemsHandler, listMyProblemsHandler, getProblemHandler, listTagsHandler)
 	createProblemUseCase := problem3.NewCreateProblemUseCase(problemRepository, tagRepository)
 	createProblemHandler := problem4.NewCreateProblemHandler(createProblemUseCase)
-	listProblemsUseCase2 := problem3.NewListProblemsUseCase(problemRepository)
-	listProblemsHandler2 := problem4.NewListProblemsHandler(listProblemsUseCase2)
+	adminListProblemsUseCase := problem3.NewListProblemsUseCase(problemRepository)
+	problemListProblemsHandler := problem4.NewListProblemsHandler(adminListProblemsUseCase)
 	updateProblemUseCase := problem3.NewUpdateProblemUseCase(problemRepository, tagRepository)
 	updateProblemHandler := problem4.NewUpdateProblemHandler(updateProblemUseCase)
 	testCaseRepository := postgres.NewTestCaseRepository(db)
-	getProblemUseCase2 := problem3.NewGetProblemUseCase(problemRepository, testCaseRepository)
-	getProblemHandler2 := problem4.NewGetProblemHandler(getProblemUseCase2)
+	adminGetProblemUseCase := problem3.NewGetProblemUseCase(problemRepository, testCaseRepository)
+	problemGetProblemHandler := problem4.NewGetProblemHandler(adminGetProblemUseCase)
 	publishProblemUseCase := problem3.NewPublishProblemUseCase(problemRepository)
 	publishProblemHandler := problem4.NewPublishProblemHandler(publishProblemUseCase)
 	hiddenProblemUseCase := problem3.NewHiddenProblemUseCase(problemRepository)
 	hiddenProblemHandler := problem4.NewHiddenProblemHandler(hiddenProblemUseCase)
 	deleteProblemUseCase := problem3.NewDeleteProblemUseCase(problemRepository)
 	deleteProblemHandler := problem4.NewDeleteProblemHandler(deleteProblemUseCase)
-	listTagsUseCase2 := tag.NewListTagsUseCase(tagRepository)
-	listTagsHandler2 := tag2.NewListTagsHandler(listTagsUseCase2)
-	createTagUseCase := tag.NewCreateTagUseCase(tagRepository)
-	createTagHandler := tag2.NewCreateTagHandler(createTagUseCase)
-	updateTagUseCase := tag.NewUpdateTagUseCase(tagRepository)
-	updateTagHandler := tag2.NewUpdateTagHandler(updateTagUseCase)
-	deleteTagUseCase := tag.NewDeleteTagUseCase(tagRepository)
-	deleteTagHandler := tag2.NewDeleteTagHandler(deleteTagUseCase)
+	adminListTagsUseCase := tag3.NewListTagsUseCase(tagRepository)
+	tagListTagsHandler := tag4.NewListTagsHandler(adminListTagsUseCase)
+	createTagUseCase := tag3.NewCreateTagUseCase(tagRepository)
+	createTagHandler := tag4.NewCreateTagHandler(createTagUseCase)
+	updateTagUseCase := tag3.NewUpdateTagUseCase(tagRepository)
+	updateTagHandler := tag4.NewUpdateTagHandler(updateTagUseCase)
+	deleteTagUseCase := tag3.NewDeleteTagUseCase(tagRepository)
+	deleteTagHandler := tag4.NewDeleteTagHandler(deleteTagUseCase)
+	getTestCaseUseCase := testcase.NewGetTestCaseUseCase(problemRepository, testCaseRepository)
+	getTestCaseHandler := testcase2.NewGetTestCaseHandler(getTestCaseUseCase)
 	minIOConfig := &cfg.MinIO
 	client, err := minio.NewMinioClient(minIOConfig)
 	if err != nil {
@@ -83,13 +89,11 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	if err != nil {
 		return nil, err
 	}
-	getTestCaseUseCase := testcase.NewGetTestCaseUseCase(problemRepository, testCaseRepository)
-	getTestCaseHandler := testcase2.NewGetTestCaseHandler(getTestCaseUseCase)
 	uploadTestCaseUseCase := testcase.NewUploadTestCaseUseCase(problemRepository, testCaseRepository, testCaseStorage)
 	uploadTestCaseHandler := testcase2.NewUploadTestCaseHandler(uploadTestCaseUseCase)
 	deleteTestCaseUseCase := testcase.NewDeleteTestCaseUseCase(problemRepository, testCaseRepository, testCaseStorage)
 	deleteTestCaseHandler := testcase2.NewDeleteTestCaseHandler(deleteTestCaseUseCase)
-	adminHandler := handler.NewAdminHandler(createProblemHandler, listProblemsHandler2, updateProblemHandler, getProblemHandler2, publishProblemHandler, hiddenProblemHandler, deleteProblemHandler, listTagsHandler2, createTagHandler, updateTagHandler, deleteTagHandler, getTestCaseHandler, uploadTestCaseHandler, deleteTestCaseHandler)
+	adminHandler := handler.NewAdminHandler(createProblemHandler, problemListProblemsHandler, updateProblemHandler, problemGetProblemHandler, publishProblemHandler, hiddenProblemHandler, deleteProblemHandler, tagListTagsHandler, createTagHandler, updateTagHandler, deleteTagHandler, getTestCaseHandler, uploadTestCaseHandler, deleteTestCaseHandler)
 	redisConfig := cfg.Redis
 	redisClient, err := cache.ConnectRedis(redisConfig)
 	if err != nil {
@@ -103,7 +107,12 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	string2 := provideServerMode(serverConfig)
 	zapLogger := logger.NewLogger(loggerConfig, string2)
 	router := http.NewRouter(userHandler, adminHandler, handlerFunc, zapLogger)
-	app := container.NewApp(cfg, router, zapLogger)
+	workerGetTestCaseUseCase := worker.NewGetTestCaseUseCase(testCaseRepository, testCaseStorage)
+	testcaseGetTestCaseHandler := testcase3.NewGetTestCaseHandler(workerGetTestCaseUseCase)
+	workerHandler := handler2.NewWorkerHandler(testcaseGetTestCaseHandler)
+	problemServer := grpc.NewProblemServer(workerHandler)
+	server := grpc.NewServer(serverConfig, problemServer)
+	app := container.NewApp(cfg, router, server, zapLogger)
 	return app, nil
 }
 

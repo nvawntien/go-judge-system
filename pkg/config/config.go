@@ -24,9 +24,10 @@ type AppConfig struct {
 }
 
 type ServerConfig struct {
-	Name string `mapstructure:"name"`
-	Port int    `mapstructure:"port"`
-	Mode string `mapstructure:"mode"`
+	Name     string `mapstructure:"name"`
+	Port     int    `mapstructure:"port"`
+	GRPCPort int    `mapstructure:"grpc_port"`
+	Mode     string `mapstructure:"mode"`
 }
 
 type DatabaseConfig struct {
