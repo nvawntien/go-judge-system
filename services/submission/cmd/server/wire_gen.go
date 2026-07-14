@@ -7,20 +7,16 @@
 package main
 
 import (
+	"go-judge-system/pkg/auth"
+	"go-judge-system/pkg/cache"
 	"go-judge-system/pkg/config"
 	"go-judge-system/pkg/database"
 	"go-judge-system/pkg/kafka"
 	"go-judge-system/pkg/logger"
+	"go-judge-system/pkg/middleware"
 	"go-judge-system/services/submission/internal/adapter/inbound/http"
-	"go-judge-system/services/submission/internal/adapter/inbound/http/handler"
-	submission2 "go-judge-system/services/submission/internal/adapter/inbound/http/handler/submission"
-	"go-judge-system/services/submission/internal/adapter/inbound/http/middleware"
-	kafka2 "go-judge-system/services/submission/internal/adapter/inbound/kafka"
-	"go-judge-system/services/submission/internal/adapter/outbound/judge"
 	"go-judge-system/services/submission/internal/adapter/outbound/outbox"
 	"go-judge-system/services/submission/internal/adapter/outbound/persistence/postgres"
-	"go-judge-system/services/submission/internal/adapter/outbound/problem"
-	"go-judge-system/services/submission/internal/application/usecase/submission"
 	"go-judge-system/services/submission/internal/container"
 )
 
@@ -32,40 +28,27 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	if err != nil {
 		return nil, err
 	}
-	transactionManager := postgres.NewTransactionManager(db)
-	submissionRepository := postgres.NewSubmissionRepository(db)
-	outboxRepository := postgres.NewOutboxRepository(db)
-	kafkaConfig := cfg.Kafka
+	redisConfig := cfg.Redis
+	client, err := cache.ConnectRedis(redisConfig)
+	if err != nil {
+		return nil, err
+	}
+	jwtConfig := cfg.JWT
+	logoutAllIATStore := auth.NewRedisLogoutAllIATStore(client, jwtConfig)
+	handlerFunc := middleware.NewAuthMiddleware(logoutAllIATStore)
 	loggerConfig := cfg.Logger
 	serverConfig := cfg.Server
 	string2 := provideServerMode(serverConfig)
 	zapLogger := logger.NewLogger(loggerConfig, string2)
-	judgePublisher := judge.NewOutboxJudgePublisher(outboxRepository, kafkaConfig, zapLogger)
-	createSubmissionUseCase := submission.NewCreateSubmissionUseCase(transactionManager, submissionRepository, judgePublisher, zapLogger)
-	createSubmissionHandler := submission2.NewCreateSubmissionHandler(createSubmissionUseCase)
-	listSubmissionsUseCase := submission.NewListSubmissionsUseCase(submissionRepository, zapLogger)
-	listSubmissionsHandler := submission2.NewListSubmissionsHandler(listSubmissionsUseCase)
-	submissionResultRepository := postgres.NewSubmissionResultRepository(db)
-	problemAccessChecker := problem.NewProblemAccessChecker()
-	getSubmissionUseCase := submission.NewGetSubmissionUseCase(submissionRepository, submissionResultRepository, problemAccessChecker, zapLogger)
-	getSubmissionHandler := submission2.NewGetSubmissionHandler(getSubmissionUseCase)
-	rejudgeSubmissionUseCase := submission.NewRejudgeSubmissionUseCase(transactionManager, submissionRepository, submissionResultRepository, problemAccessChecker, judgePublisher, zapLogger)
-	rejudgeSubmissionHandler := submission2.NewRejudgeSubmissionHandler(rejudgeSubmissionUseCase)
-	submissionHandler := handler.NewSubmissionHandler(createSubmissionHandler, listSubmissionsHandler, getSubmissionHandler, rejudgeSubmissionHandler)
-	handlerFunc := middleware.NewAuthMiddleware()
-	router := http.NewRouter(submissionHandler, handlerFunc)
-	consumerGroup, err := kafka.NewConsumerGroup(kafkaConfig, zapLogger)
-	if err != nil {
-		return nil, err
-	}
-	processJudgeResultUseCase := submission.NewProcessJudgeResultUseCase(submissionRepository, submissionResultRepository, zapLogger)
-	judgeResultConsumer := kafka2.NewJudgeResultConsumer(consumerGroup, kafkaConfig, processJudgeResultUseCase, zapLogger)
+	router := http.NewRouter(handlerFunc, zapLogger)
+	outboxRepository := postgres.NewOutboxRepository(db)
+	kafkaConfig := cfg.Kafka
 	syncProducer, err := kafka.NewSyncProducer(kafkaConfig, zapLogger)
 	if err != nil {
 		return nil, err
 	}
 	outboxRelay := outbox.NewOutboxRelay(outboxRepository, syncProducer, zapLogger)
-	app := container.NewApp(cfg, db, router, judgeResultConsumer, outboxRelay, zapLogger, syncProducer)
+	app := container.NewApp(cfg, db, router, outboxRelay, zapLogger, syncProducer)
 	return app, nil
 }
 

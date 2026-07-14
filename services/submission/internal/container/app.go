@@ -4,10 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
 	"go-judge-system/pkg/config"
 	"go-judge-system/services/submission/internal/adapter/inbound/http"
-	kafkain "go-judge-system/services/submission/internal/adapter/inbound/kafka"
 	"go-judge-system/services/submission/internal/adapter/outbound/outbox"
+
 	nethttp "net/http"
 	"os"
 	"os/signal"
@@ -20,32 +21,29 @@ import (
 )
 
 type App struct {
-	Config         *config.Config
-	Database       *gorm.DB
-	Router         *http.Router
-	ResultConsumer *kafkain.JudgeResultConsumer
-	OutboxRelay    *outbox.OutboxRelay
-	Logger         *zap.Logger
-	KafkaProducer  sarama.SyncProducer
+	Config        *config.Config
+	Database      *gorm.DB
+	Router        *http.Router
+	OutboxRelay   *outbox.OutboxRelay
+	Logger        *zap.Logger
+	KafkaProducer sarama.SyncProducer
 }
 
 func NewApp(
 	cfg *config.Config,
 	database *gorm.DB,
 	router *http.Router,
-	resultConsumer *kafkain.JudgeResultConsumer,
 	outboxRelay *outbox.OutboxRelay,
 	logger *zap.Logger,
 	producer sarama.SyncProducer,
 ) *App {
 	return &App{
-		Config:         cfg,
-		Database:       database,
-		Router:         router,
-		ResultConsumer: resultConsumer,
-		OutboxRelay:    outboxRelay,
-		Logger:         logger,
-		KafkaProducer:  producer,
+		Config:        cfg,
+		Database:      database,
+		Router:        router,
+		OutboxRelay:   outboxRelay,
+		Logger:        logger,
+		KafkaProducer: producer,
 	}
 }
 
@@ -62,11 +60,6 @@ func (a *App) Run() error {
 	workerCtx, workerCancel := context.WithCancel(context.Background())
 	defer workerCancel()
 
-	consumerErrCh := make(chan error, 1)
-	go func() {
-		consumerErrCh <- a.ResultConsumer.Run(workerCtx)
-	}()
-
 	outboxErrCh := make(chan error, 1)
 	go func() {
 		outboxErrCh <- a.OutboxRelay.Start(workerCtx, 2*time.Second)
@@ -78,18 +71,12 @@ func (a *App) Run() error {
 
 	select {
 	case err := <-serverErrCh:
+		workerCancel()
+		<-outboxErrCh
 		if err != nil && !errors.Is(err, nethttp.ErrServerClosed) {
 			return err
 		}
-		workerCancel()
-		<-consumerErrCh
-		<-outboxErrCh
 		return nil
-	case err := <-consumerErrCh:
-		if err == nil {
-			err = errors.New("judge result consumer stopped unexpectedly")
-		}
-		return a.shutdownGracefully(err, serverErrCh, workerCancel)
 	case err := <-outboxErrCh:
 		if err == nil {
 			err = errors.New("outbox relay stopped unexpectedly")
@@ -113,7 +100,6 @@ func (a *App) Run() error {
 		return err
 	}
 
-	<-consumerErrCh
 	<-outboxErrCh
 
 	return nil
@@ -141,13 +127,6 @@ func (a *App) Close() error {
 	if a.KafkaProducer != nil {
 		if err := a.KafkaProducer.Close(); err != nil {
 			a.Logger.Error("failed to close kafka producer", zap.Error(err))
-			closeErr = errors.Join(closeErr, err)
-		}
-	}
-
-	if a.ResultConsumer != nil {
-		if err := a.ResultConsumer.Close(); err != nil {
-			a.Logger.Error("failed to close judge result consumer", zap.Error(err))
 			closeErr = errors.Join(closeErr, err)
 		}
 	}

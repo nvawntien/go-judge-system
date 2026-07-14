@@ -26,6 +26,20 @@ database:
   max_idle_conns: 10
   conn_max_lifetime: 3600
 
+redis:
+  host: redis
+  port: 6379
+  password: ""        # overridden by REDIS_PASSWORD env
+  db: 0
+  pool_size: 10
+  min_idle_conns: 5
+  dial_timeout: 5s
+  read_timeout: 3s
+  write_timeout: 3s
+
+jwt:
+  refresh_ttl: 168h
+
 kafka:
   brokers: "kafka:9092"
   job_topic: "judge.submission.jobs"

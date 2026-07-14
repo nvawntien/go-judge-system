@@ -3,7 +3,6 @@ package outbound
 import (
 	"context"
 
-	"go-judge-system/pkg/auth"
 	"go-judge-system/services/submission/internal/domain/entity"
 )
 
@@ -34,10 +33,6 @@ type OutboxRepository interface {
 	GetPending(ctx context.Context, limit int) ([]*entity.OutboxMessage, error)
 	MarkPublished(ctx context.Context, id int64) error
 	MarkFailed(ctx context.Context, id int64, errReason string) error
-}
-
-type ProblemAccessChecker interface {
-	CanManageProblem(ctx context.Context, claims auth.Claims, problemID int64) (bool, error)
 }
 
 type JudgePublisher interface {
