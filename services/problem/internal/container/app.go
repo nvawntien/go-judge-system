@@ -1,8 +1,14 @@
 package container
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	nethttp "net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"go-judge-system/pkg/config"
 	"go-judge-system/services/problem/internal/adapter/inbound/grpc"
@@ -32,25 +38,51 @@ func (a *App) Run() error {
 
 	httpPort := fmt.Sprintf("%d", a.Config.Server.Port)
 	grpcPort := fmt.Sprintf("%d", a.Config.Server.GRPCPort)
-	errorCh := make(chan error, 2)
+	httpErrCh := make(chan error, 1)
+	grpcErrCh := make(chan error, 1)
 
 	go func() {
 		a.Logger.Info("Starting Problem Service HTTP server", zap.String("port", httpPort))
-		if err := a.Router.Start(httpPort); err != nil {
-			errorCh <- fmt.Errorf("start HTTP server: %w", err)
-			return
-		}
-		errorCh <- errors.New("HTTP server stopped")
+		httpErrCh <- a.Router.Start(httpPort)
 	}()
 
 	go func() {
 		a.Logger.Info("Starting Problem Service gRPC server", zap.String("port", grpcPort))
-		if err := a.GRPC.Start(); err != nil {
-			errorCh <- fmt.Errorf("start gRPC server: %w", err)
-			return
-		}
-		errorCh <- errors.New("gRPC server stopped")
+		grpcErrCh <- a.GRPC.Start()
 	}()
 
-	return <-errorCh
+	signalCh := make(chan os.Signal, 1)
+	signal.Notify(signalCh, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(signalCh)
+
+	select {
+	case err := <-httpErrCh:
+		if err != nil && !errors.Is(err, nethttp.ErrServerClosed) {
+			return fmt.Errorf("start HTTP server: %w", err)
+		}
+		return nil
+	case err := <-grpcErrCh:
+		if err == nil {
+			err = errors.New("gRPC server stopped")
+		}
+		return errors.Join(fmt.Errorf("start gRPC server: %w", err), a.shutdownHTTP(httpErrCh))
+	case sig := <-signalCh:
+		a.Logger.Info("shutdown signal received", zap.String("signal", sig.String()))
+		return a.shutdownHTTP(httpErrCh)
+	}
+}
+
+func (a *App) shutdownHTTP(serverErrCh <-chan error) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	shutdownErr := a.Router.Shutdown(ctx)
+	serverErr := <-serverErrCh
+	if serverErr != nil && !errors.Is(serverErr, nethttp.ErrServerClosed) {
+		serverErr = fmt.Errorf("stop HTTP server: %w", serverErr)
+	} else {
+		serverErr = nil
+	}
+
+	return errors.Join(shutdownErr, serverErr)
 }
