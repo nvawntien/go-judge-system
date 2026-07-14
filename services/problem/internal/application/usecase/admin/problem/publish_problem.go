@@ -27,6 +27,10 @@ func (uc *publishProblemUseCase) Execute(ctx context.Context, params dto.Problem
 		return dto.ProblemDetailResponse{}, domain.ErrInternalServer.Wrap(err)
 	}
 
+	if hasInactiveTags(problem.Tags) {
+		return dto.ProblemDetailResponse{}, domain.ErrProblemContainsInactiveTags
+	}
+
 	problem.Publish()
 
 	if err := uc.problemRepo.Update(ctx, problem); err != nil {

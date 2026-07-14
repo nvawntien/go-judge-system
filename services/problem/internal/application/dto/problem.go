@@ -16,9 +16,9 @@ type ProblemExampleDTO struct {
 
 type CreateProblemRequest struct {
 	Title       string              `json:"title" binding:"required,min=3"`
-	Slug        string              `json:"slug,omitempty"`
 	Description string              `json:"description" binding:"required,min=3"`
 	Difficulty  string              `json:"difficulty" binding:"required"`
+	TagIDs      []uint              `json:"tag_ids" binding:"omitempty,max=20,dive,min=1"`
 	Examples    []ProblemExampleDTO `json:"examples" binding:"required,min=1,dive"`
 	Constraints []string            `json:"constraints"`
 	Hints       []string            `json:"hints"`
@@ -35,6 +35,7 @@ type UpdateProblemRequest struct {
 	NewSlug     *string              `json:"slug,omitempty" binding:"omitempty,min=3"`
 	Description *string              `json:"description,omitempty" binding:"omitempty,min=3"`
 	Difficulty  *string              `json:"difficulty,omitempty" binding:"omitempty,oneof=easy medium hard"`
+	TagIDs      *[]uint              `json:"tag_ids,omitempty" binding:"omitempty,max=20,dive,min=1"`
 	Examples    *[]ProblemExampleDTO `json:"examples,omitempty" binding:"omitempty,min=1,dive"`
 	Constraints *[]string            `json:"constraints,omitempty"`
 	Hints       *[]string            `json:"hints,omitempty"`
@@ -48,6 +49,7 @@ type ProblemResponse struct {
 	Title       string              `json:"title"`
 	Description string              `json:"description"`
 	Difficulty  string              `json:"difficulty"`
+	Tags        []TagResponse       `json:"tags,omitempty"`
 	Examples    []ProblemExampleDTO `json:"examples,omitempty"`
 	Constraints []string            `json:"constraints,omitempty"`
 	Hints       []string            `json:"hints,omitempty"`
@@ -63,12 +65,12 @@ type ProblemDetailResponse struct {
 }
 
 type AdminProblemDetailResponse struct {
-	ID          int64  `json:"id"`
-	Slug        string `json:"slug"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Difficulty  string `json:"difficulty"`
-
+	ID          int64               `json:"id"`
+	Slug        string              `json:"slug"`
+	Title       string              `json:"title"`
+	Description string              `json:"description"`
+	Difficulty  string              `json:"difficulty"`
+	Tags        []TagResponse       `json:"tags"`
 	Examples    []ProblemExampleDTO `json:"examples"`
 	Constraints []string            `json:"constraints"`
 	Hints       []string            `json:"hints"`
@@ -102,6 +104,7 @@ type ListProblemsRequest struct {
 	Limit      int    `form:"limit,default=20" binding:"min=1,max=100"`
 	Difficulty string `form:"difficulty" binding:"omitempty,oneof=easy medium hard"`
 	Search     string `form:"search"`
+	TagSlug    string `form:"tag_slug" json:"tag_slug" binding:"omitempty"`
 }
 
 type ListProblemsResponse struct {

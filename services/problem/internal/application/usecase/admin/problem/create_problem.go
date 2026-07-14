@@ -20,6 +20,7 @@ import (
 
 type createProblemUseCase struct {
 	problemRepo outbound.ProblemRepository
+	tagRepo     outbound.TagRepository
 }
 
 const (
@@ -29,8 +30,11 @@ const (
 
 var nonSlugCharsPattern = regexp.MustCompile(`[^a-z0-9]+`)
 
-func NewCreateProblemUseCase(problemRepo outbound.ProblemRepository) inbound.CreateProblemUseCase {
-	return &createProblemUseCase{problemRepo: problemRepo}
+func NewCreateProblemUseCase(problemRepo outbound.ProblemRepository, tagRepo outbound.TagRepository) inbound.CreateProblemUseCase {
+	return &createProblemUseCase{
+		problemRepo: problemRepo,
+		tagRepo:     tagRepo,
+	}
 }
 
 func (uc *createProblemUseCase) Execute(ctx context.Context, claims auth.Claims, req dto.CreateProblemRequest) (dto.ProblemDetailResponse, error) {
@@ -49,6 +53,11 @@ func (uc *createProblemUseCase) Execute(ctx context.Context, claims auth.Claims,
 	}
 
 	difficulty, err := normalizeDifficulty(req.Difficulty)
+	if err != nil {
+		return dto.ProblemDetailResponse{}, err
+	}
+
+	tags, err := resolveProblemTags(ctx, uc.tagRepo, req.TagIDs)
 	if err != nil {
 		return dto.ProblemDetailResponse{}, err
 	}
@@ -75,6 +84,7 @@ func (uc *createProblemUseCase) Execute(ctx context.Context, claims auth.Claims,
 		slug,
 		description,
 		difficulty,
+		tags,
 		examples, req.Constraints, req.Hints,
 		timeLimit, memoryLimit,
 		claims.UserID,

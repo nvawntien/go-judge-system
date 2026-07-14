@@ -5,6 +5,7 @@
 server:
   name: problem-service
   port: 8082
+  grpc_port: 9092
   mode: debug
 
 logger:

@@ -13,10 +13,9 @@ import (
 	"go-judge-system/services/problem/internal/domain"
 	"go-judge-system/services/problem/internal/domain/entity"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 )
-
-// ── JSONB custom types for GORM ─────────────────────────────────────────────
 
 // exampleJSON is an adapter-level struct with json tags for JSONB serialization.
 // Domain entity.ProblemExample has no tags (clean domain).
@@ -119,8 +118,6 @@ func (c *ConstraintsJSON) Scan(src interface{}) error {
 	return json.Unmarshal(data, c)
 }
 
-// ── DAO ─────────────────────────────────────────────────────────────────────
-
 type ProblemDAO struct {
 	ID          int64           `gorm:"primaryKey;autoIncrement"`
 	TitleSlug   string          `gorm:"column:title_slug;uniqueIndex;not null;size:500"`
@@ -146,18 +143,34 @@ func (ProblemDAO) TableName() string { return "problems" }
 type problemRepository struct{ db *gorm.DB }
 
 func NewProblemRepository(db *gorm.DB) outbound.ProblemRepository {
-	db.AutoMigrate(&ProblemDAO{})
+	_ = db.AutoMigrate(&ProblemDAO{})
 	return &problemRepository{db: db}
 }
 
 func (r *problemRepository) Create(ctx context.Context, problem *entity.Problem) error {
 	dao := toProblemDAO(problem)
-	if err := r.db.WithContext(ctx).Create(dao).Error; err != nil {
-		if strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "unique constraint") {
+	tx := r.db.WithContext(ctx).Begin()
+	if tx.Error != nil {
+		return tx.Error
+	}
+
+	if err := tx.Create(dao).Error; err != nil {
+		tx.Rollback()
+		if isUniqueViolation(err) {
 			return domain.ErrProblemAlreadyExists
 		}
 		return err
 	}
+
+	if err := syncProblemTags(tx, dao.ID, problem.Tags); err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		return err
+	}
+
 	problem.ID = dao.ID
 	return nil
 }
@@ -170,7 +183,11 @@ func (r *problemRepository) GetByID(ctx context.Context, id int64) (*entity.Prob
 		}
 		return nil, err
 	}
-	return toProblemEntity(&dao), nil
+	tagsByProblemID, err := loadTagsByProblemIDs(ctx, r.db, []int64{dao.ID})
+	if err != nil {
+		return nil, err
+	}
+	return toProblemEntity(&dao, tagsByProblemID[dao.ID]), nil
 }
 
 func (r *problemRepository) GetBySlug(ctx context.Context, slug string) (*entity.Problem, error) {
@@ -181,16 +198,25 @@ func (r *problemRepository) GetBySlug(ctx context.Context, slug string) (*entity
 		}
 		return nil, err
 	}
-	return toProblemEntity(&dao), nil
+	tagsByProblemID, err := loadTagsByProblemIDs(ctx, r.db, []int64{dao.ID})
+	if err != nil {
+		return nil, err
+	}
+	return toProblemEntity(&dao, tagsByProblemID[dao.ID]), nil
 }
 
 func (r *problemRepository) Update(ctx context.Context, problem *entity.Problem) error {
-	return r.db.WithContext(ctx).Model(&ProblemDAO{}).Where("id = ?", problem.ID).
+	tx := r.db.WithContext(ctx).Begin()
+	if tx.Error != nil {
+		return tx.Error
+	}
+
+	if err := tx.Model(&ProblemDAO{}).Where("id = ?", problem.ID).
 		Updates(map[string]interface{}{
 			"title_slug":   problem.TitleSlug,
 			"title":        problem.Title,
 			"description":  problem.Description,
-			"difficulty":   string(problem.Difficulty),
+			"difficulty":   normalizeDifficultyValue(problem.Difficulty),
 			"examples":     ExamplesJSON(problem.Examples),
 			"constraints":  ConstraintsJSON(problem.Constraints),
 			"hints":        HintsJSON(problem.Hints),
@@ -198,69 +224,124 @@ func (r *problemRepository) Update(ctx context.Context, problem *entity.Problem)
 			"memory_limit": problem.MemoryLimit,
 			"is_hidden":    problem.IsHidden,
 			"updated_at":   time.Now(),
-		}).Error
+		}).Error; err != nil {
+		tx.Rollback()
+		if isUniqueViolation(err) {
+			return domain.ErrProblemAlreadyExists
+		}
+		return err
+	}
+
+	if err := syncProblemTags(tx, problem.ID, problem.Tags); err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	return tx.Commit().Error
 }
 
 func (r *problemRepository) Delete(ctx context.Context, id int64) error {
-	return r.db.WithContext(ctx).Delete(&ProblemDAO{}, id).Error // GORM soft delete
+	result := r.db.WithContext(ctx).Delete(&ProblemDAO{}, id)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return domain.ErrProblemNotFound
+	}
+	return nil
 }
 
-func (r *problemRepository) List(ctx context.Context, offset, limit int, difficulty, search string, includeHidden bool) ([]*entity.Problem, error) {
-	query := r.db.WithContext(ctx)
+func (r *problemRepository) List(ctx context.Context, offset, limit int, difficulty, search, tagSlug string, includeHidden bool) ([]*entity.Problem, error) {
+	db := r.db.WithContext(ctx)
+	query := db.Model(&ProblemDAO{})
 	if !includeHidden {
 		query = query.Where("is_hidden = ?", false)
 	}
-	query = applyFilters(query, difficulty, search)
+	query = applyFilters(db, query, difficulty, search, tagSlug, !includeHidden)
 
 	var daos []ProblemDAO
 	if err := query.Order("created_at DESC").Offset(offset).Limit(limit).Find(&daos).Error; err != nil {
 		return nil, err
 	}
-	return toProblemEntities(daos), nil
+
+	tagsByProblemID, err := loadTagsByProblemIDs(ctx, r.db, collectProblemIDs(daos))
+	if err != nil {
+		return nil, err
+	}
+
+	return toProblemEntities(daos, tagsByProblemID), nil
 }
 
-func (r *problemRepository) Count(ctx context.Context, difficulty, search string, includeHidden bool) (int64, error) {
-	query := r.db.WithContext(ctx).Model(&ProblemDAO{})
+func (r *problemRepository) Count(ctx context.Context, difficulty, search, tagSlug string, includeHidden bool) (int64, error) {
+	db := r.db.WithContext(ctx)
+	query := db.Model(&ProblemDAO{})
 	if !includeHidden {
 		query = query.Where("is_hidden = ?", false)
 	}
-	query = applyFilters(query, difficulty, search)
+	query = applyFilters(db, query, difficulty, search, tagSlug, !includeHidden)
 
 	var count int64
 	return count, query.Count(&count).Error
 }
 
-func (r *problemRepository) ListByAuthor(ctx context.Context, authorID string, offset, limit int, difficulty, search string) ([]*entity.Problem, error) {
-	query := r.db.WithContext(ctx).Where("author_id = ?", authorID)
-	query = applyFilters(query, difficulty, search)
+func (r *problemRepository) ListByAuthor(ctx context.Context, authorID string, offset, limit int, difficulty, search, tagSlug string) ([]*entity.Problem, error) {
+	db := r.db.WithContext(ctx)
+	query := db.Model(&ProblemDAO{}).Where("author_id = ?", authorID)
+	query = applyFilters(db, query, difficulty, search, tagSlug, false)
 
 	var daos []ProblemDAO
 	if err := query.Order("created_at DESC").Offset(offset).Limit(limit).Find(&daos).Error; err != nil {
 		return nil, err
 	}
-	return toProblemEntities(daos), nil
+
+	tagsByProblemID, err := loadTagsByProblemIDs(ctx, r.db, collectProblemIDs(daos))
+	if err != nil {
+		return nil, err
+	}
+
+	return toProblemEntities(daos, tagsByProblemID), nil
 }
 
-func (r *problemRepository) CountByAuthor(ctx context.Context, authorID string, difficulty, search string) (int64, error) {
-	query := r.db.WithContext(ctx).Model(&ProblemDAO{}).Where("author_id = ?", authorID)
-	query = applyFilters(query, difficulty, search)
+func (r *problemRepository) CountByAuthor(ctx context.Context, authorID string, difficulty, search, tagSlug string) (int64, error) {
+	db := r.db.WithContext(ctx)
+	query := db.Model(&ProblemDAO{}).Where("author_id = ?", authorID)
+	query = applyFilters(db, query, difficulty, search, tagSlug, false)
 
 	var count int64
 	return count, query.Count(&count).Error
 }
 
-func applyFilters(query *gorm.DB, difficulty, search string) *gorm.DB {
+func applyFilters(db *gorm.DB, query *gorm.DB, difficulty, search, tagSlug string, requireActiveTag bool) *gorm.DB {
 	difficulty = strings.ToLower(strings.TrimSpace(difficulty))
 	search = strings.TrimSpace(search)
+	tagSlug = strings.ToLower(strings.TrimSpace(tagSlug))
 
 	if difficulty != "" {
 		query = query.Where("difficulty = ?", difficulty)
 	}
 	if search != "" {
-		like := "%" + search + "%"
-		query = query.Where("title ILIKE ? OR title_slug ILIKE ?", like, like)
+		like := "%" + escapeLikePattern(search) + "%"
+		query = query.Where("(title ILIKE ? ESCAPE '\\' OR title_slug ILIKE ? ESCAPE '\\')", like, like)
+	}
+	if tagSlug != "" {
+		query = query.Where("id IN (?)", filterProblemIDsByTagSlug(db, tagSlug, requireActiveTag))
 	}
 	return query
+}
+
+func filterProblemIDsByTagSlug(db *gorm.DB, tagSlug string, requireActiveTag bool) *gorm.DB {
+	subQuery := db.
+		Table("problem_tags").
+		Select("problem_tags.problem_id").
+		Joins("JOIN tags ON tags.id = problem_tags.tag_id").
+		Where("tags.slug = ?", tagSlug).
+		Where("tags.deleted_at IS NULL")
+
+	if requireActiveTag {
+		subQuery = subQuery.Where("tags.is_active = ?", true)
+	}
+
+	return subQuery
 }
 
 func toProblemDAO(p *entity.Problem) *ProblemDAO {
@@ -269,7 +350,7 @@ func toProblemDAO(p *entity.Problem) *ProblemDAO {
 		TitleSlug:   p.TitleSlug,
 		Title:       p.Title,
 		Description: p.Description,
-		Difficulty:  string(p.Difficulty),
+		Difficulty:  normalizeDifficultyValue(p.Difficulty),
 		Examples:    ExamplesJSON(p.Examples),
 		Constraints: ConstraintsJSON(p.Constraints),
 		Hints:       HintsJSON(p.Hints),
@@ -282,13 +363,14 @@ func toProblemDAO(p *entity.Problem) *ProblemDAO {
 	}
 }
 
-func toProblemEntity(dao *ProblemDAO) *entity.Problem {
+func toProblemEntity(dao *ProblemDAO, tags []entity.Tag) *entity.Problem {
 	p := &entity.Problem{
 		ID:          dao.ID,
 		TitleSlug:   dao.TitleSlug,
 		Title:       dao.Title,
 		Description: dao.Description,
 		Difficulty:  entity.Difficulty(dao.Difficulty),
+		Tags:        tags,
 		Examples:    []entity.ProblemExample(dao.Examples),
 		Constraints: []string(dao.Constraints),
 		Hints:       []string(dao.Hints),
@@ -306,10 +388,34 @@ func toProblemEntity(dao *ProblemDAO) *entity.Problem {
 	return p
 }
 
-func toProblemEntities(daos []ProblemDAO) []*entity.Problem {
+func toProblemEntities(daos []ProblemDAO, tagsByProblemID map[int64][]entity.Tag) []*entity.Problem {
 	results := make([]*entity.Problem, 0, len(daos))
 	for _, dao := range daos {
-		results = append(results, toProblemEntity(&dao))
+		results = append(results, toProblemEntity(&dao, tagsByProblemID[dao.ID]))
 	}
 	return results
+}
+
+func collectProblemIDs(daos []ProblemDAO) []int64 {
+	ids := make([]int64, 0, len(daos))
+	for _, dao := range daos {
+		ids = append(ids, dao.ID)
+	}
+	return ids
+}
+
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+}
+
+func normalizeDifficultyValue(difficulty entity.Difficulty) string {
+	return strings.ToLower(strings.TrimSpace(string(difficulty)))
+}
+
+func escapeLikePattern(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `%`, `\%`)
+	s = strings.ReplaceAll(s, `_`, `\_`)
+	return s
 }

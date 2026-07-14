@@ -40,14 +40,15 @@ func (uc *listProblemsUseCase) Execute(ctx context.Context, req dto.ListProblems
 	}
 
 	search := strings.TrimSpace(req.Search)
+	tagSlug := strings.ToLower(strings.TrimSpace(req.TagSlug))
 	offset := (page - 1) * limit
 
-	problems, err := uc.problemRepo.List(ctx, offset, limit, difficulty, search, false)
+	problems, err := uc.problemRepo.List(ctx, offset, limit, difficulty, search, tagSlug, false)
 	if err != nil {
 		return dto.ListProblemsResponse{}, domain.ErrInternalServer.Wrap(err)
 	}
 
-	total, err := uc.problemRepo.Count(ctx, difficulty, search, false)
+	total, err := uc.problemRepo.Count(ctx, difficulty, search, tagSlug, false)
 	if err != nil {
 		return dto.ListProblemsResponse{}, domain.ErrInternalServer.Wrap(err)
 	}

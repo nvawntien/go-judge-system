@@ -3,11 +3,16 @@ package user
 import (
 	"context"
 
+	"go-judge-system/pkg/auth"
 	"go-judge-system/services/problem/internal/application/dto"
 )
 
 type ListProblemsUseCase interface {
 	Execute(ctx context.Context, req dto.ListProblemsRequest) (dto.ListProblemsResponse, error)
+}
+
+type ListMyProblemsUseCase interface {
+	Execute(ctx context.Context, claims auth.Claims, req dto.ListProblemsRequest) (dto.ListProblemsResponse, error)
 }
 
 type GetProblemUseCase interface {

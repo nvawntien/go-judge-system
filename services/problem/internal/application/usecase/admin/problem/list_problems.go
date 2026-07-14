@@ -24,7 +24,7 @@ func NewListProblemsUseCase(problemRepo outbound.ProblemRepository) inbound.List
 }
 
 func (uc *listProblemsUseCase) Execute(ctx context.Context, claims auth.Claims, req dto.ListProblemsRequest) (dto.ListProblemsResponse, error) {
-	if !claims.Role.AtLeast(rbac.RoleContributor) {
+	if !claims.Role.AtLeast(rbac.RoleModerator) {
 		return dto.ListProblemsResponse{}, domain.ErrForbidden
 	}
 
@@ -43,6 +43,7 @@ func (uc *listProblemsUseCase) Execute(ctx context.Context, claims auth.Claims, 
 
 	difficulty := strings.ToLower(strings.TrimSpace(req.Difficulty))
 	search := strings.TrimSpace(req.Search)
+	tagSlug := strings.ToLower(strings.TrimSpace(req.TagSlug))
 
 	if difficulty != "" {
 		switch difficulty {
@@ -54,32 +55,14 @@ func (uc *listProblemsUseCase) Execute(ctx context.Context, claims auth.Claims, 
 
 	offset := (page - 1) * limit
 
-	var (
-		problems []*entity.Problem
-		total    int64
-		err      error
-	)
+	problems, err := uc.problemRepo.List(ctx, offset, limit, difficulty, search, tagSlug, true)
+	if err != nil {
+		return dto.ListProblemsResponse{}, domain.ErrInternalServer.Wrap(err)
+	}
 
-	if claims.Role.AtLeast(rbac.RoleModerator) {
-		problems, err = uc.problemRepo.List(ctx, offset, limit, difficulty, search, true)
-		if err != nil {
-			return dto.ListProblemsResponse{}, domain.ErrInternalServer.Wrap(err)
-		}
-
-		total, err = uc.problemRepo.Count(ctx, difficulty, search, true)
-		if err != nil {
-			return dto.ListProblemsResponse{}, domain.ErrInternalServer.Wrap(err)
-		}
-	} else {
-		problems, err = uc.problemRepo.ListByAuthor(ctx, claims.UserID, offset, limit, difficulty, search)
-		if err != nil {
-			return dto.ListProblemsResponse{}, domain.ErrInternalServer.Wrap(err)
-		}
-
-		total, err = uc.problemRepo.CountByAuthor(ctx, claims.UserID, difficulty, search)
-		if err != nil {
-			return dto.ListProblemsResponse{}, domain.ErrInternalServer.Wrap(err)
-		}
+	total, err := uc.problemRepo.Count(ctx, difficulty, search, tagSlug, true)
+	if err != nil {
+		return dto.ListProblemsResponse{}, domain.ErrInternalServer.Wrap(err)
 	}
 
 	items := make([]dto.ProblemResponse, 0, len(problems))

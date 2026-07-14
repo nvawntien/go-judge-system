@@ -1,13 +1,13 @@
 module go-judge-system/services/auth
 
-go 1.25
+go 1.25.0
 
 require (
 	github.com/gin-gonic/gin v1.11.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/google/wire v0.7.0
-	github.com/minio/minio-go/v7 v7.2.1
+	github.com/minio/minio-go/v7 v7.0.100
 	github.com/redis/go-redis/v9 v9.18.0
 	go.uber.org/zap v1.27.1
 	gorm.io/gorm v1.31.1
@@ -15,6 +15,7 @@ require (
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
+	github.com/go-ini/ini v1.67.0 // indirect
 	github.com/klauspost/compress v1.18.6 // indirect
 	github.com/klauspost/crc32 v1.3.0 // indirect
 	github.com/minio/crc64nvme v1.1.1 // indirect
@@ -25,7 +26,6 @@ require (
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/arch v0.20.0 // indirect
-	gopkg.in/ini.v1 v1.67.2 // indirect
 )
 
 require (
