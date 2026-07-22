@@ -6,6 +6,7 @@ import (
 	"time"
 
 	problemv1 "go-judge-system/pkg/pb/problem/v1"
+	"go-judge-system/services/submission/internal/application/dto"
 	"go-judge-system/services/submission/internal/application/port/outbound"
 	"go-judge-system/services/submission/internal/domain"
 
@@ -28,8 +29,8 @@ func NewGRPCProblemReader(
 func (r *grpcProblemReader) GetProblem(
 	ctx context.Context,
 	problemID int64,
-	actor outbound.ProblemActor,
-) (outbound.ProblemMetadata, error) {
+	actor dto.ProblemActor,
+) (dto.ProblemMetadata, error) {
 	callCtx, cancel := context.WithTimeout(ctx, r.timeout)
 	defer cancel()
 
@@ -44,29 +45,29 @@ func (r *grpcProblemReader) GetProblem(
 	if err != nil {
 		switch status.Code(err) {
 		case codes.InvalidArgument:
-			return outbound.ProblemMetadata{}, domain.ErrInvalidProblemID
+			return dto.ProblemMetadata{}, domain.ErrInvalidProblemID
 		case codes.Unauthenticated:
-			return outbound.ProblemMetadata{}, domain.ErrProblemActorUnauthenticated
+			return dto.ProblemMetadata{}, domain.ErrProblemActorUnauthenticated
 		case codes.PermissionDenied:
-			return outbound.ProblemMetadata{}, domain.ErrProblemActorForbidden
+			return dto.ProblemMetadata{}, domain.ErrProblemActorForbidden
 		case codes.NotFound:
-			return outbound.ProblemMetadata{}, domain.ErrProblemNotFound
+			return dto.ProblemMetadata{}, domain.ErrProblemNotFound
 		case codes.Canceled:
 			if ctx.Err() != nil {
-				return outbound.ProblemMetadata{}, ctx.Err()
+				return dto.ProblemMetadata{}, ctx.Err()
 			}
-			return outbound.ProblemMetadata{}, context.Canceled
+			return dto.ProblemMetadata{}, context.Canceled
 		case codes.DeadlineExceeded, codes.Unavailable, codes.Internal:
-			return outbound.ProblemMetadata{}, domain.ErrProblemServiceUnavailable.Wrap(err)
+			return dto.ProblemMetadata{}, domain.ErrProblemServiceUnavailable.Wrap(err)
 		default:
-			return outbound.ProblemMetadata{}, domain.ErrProblemServiceUnavailable.Wrap(err)
+			return dto.ProblemMetadata{}, domain.ErrProblemServiceUnavailable.Wrap(err)
 		}
 	}
 	if response == nil || response.GetProblemId() <= 0 || strings.TrimSpace(response.GetTitle()) == "" || strings.TrimSpace(response.GetSlug()) == "" {
-		return outbound.ProblemMetadata{}, domain.ErrProblemServiceUnavailable
+		return dto.ProblemMetadata{}, domain.ErrProblemServiceUnavailable
 	}
 
-	return outbound.ProblemMetadata{
+	return dto.ProblemMetadata{
 		ID:    response.GetProblemId(),
 		Title: response.GetTitle(),
 		Slug:  response.GetSlug(),

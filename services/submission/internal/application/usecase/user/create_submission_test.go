@@ -109,19 +109,19 @@ func (p *fakeJudgePublisher) Publish(
 }
 
 type fakeProblemReader struct {
-	problem   outbound.ProblemMetadata
+	problem   dto.ProblemMetadata
 	err       error
 	calls     int
 	order     *[]string
 	problemID int64
-	actor     outbound.ProblemActor
+	actor     dto.ProblemActor
 }
 
 func (r *fakeProblemReader) GetProblem(
 	_ context.Context,
 	problemID int64,
-	actor outbound.ProblemActor,
-) (outbound.ProblemMetadata, error) {
+	actor dto.ProblemActor,
+) (dto.ProblemMetadata, error) {
 	r.calls++
 	r.problemID = problemID
 	r.actor = actor
@@ -132,7 +132,7 @@ func (r *fakeProblemReader) GetProblem(
 }
 
 func validProblemReader(problemID int64) *fakeProblemReader {
-	return &fakeProblemReader{problem: outbound.ProblemMetadata{
+	return &fakeProblemReader{problem: dto.ProblemMetadata{
 		ID:    problemID,
 		Title: "Two Sum",
 		Slug:  "two-sum",

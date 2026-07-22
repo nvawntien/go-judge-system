@@ -8,6 +8,7 @@ import (
 
 	problemv1 "go-judge-system/pkg/pb/problem/v1"
 	"go-judge-system/pkg/rbac"
+	"go-judge-system/services/submission/internal/application/dto"
 	"go-judge-system/services/submission/internal/application/port/outbound"
 	"go-judge-system/services/submission/internal/domain"
 
@@ -44,7 +45,7 @@ func TestGRPCProblemReaderMapsSuccess(t *testing.T) {
 	}}
 	var reader outbound.ProblemReader = NewGRPCProblemReader(client, time.Second)
 
-	got, err := reader.GetProblem(context.Background(), 42, outbound.ProblemActor{UserID: "contributor-a", Role: rbac.RoleContributor})
+	got, err := reader.GetProblem(context.Background(), 42, dto.ProblemActor{UserID: "contributor-a", Role: rbac.RoleContributor})
 	if err != nil {
 		t.Fatalf("GetProblem() error = %v", err)
 	}
@@ -78,7 +79,7 @@ func TestGRPCProblemReaderMapsStatuses(t *testing.T) {
 				&fakeProblemServiceClient{err: status.Error(tt.code, "transport detail")},
 				time.Second,
 			)
-			_, err := reader.GetProblem(context.Background(), 42, outbound.ProblemActor{UserID: "user-1", Role: rbac.RoleUser})
+			_, err := reader.GetProblem(context.Background(), 42, dto.ProblemActor{UserID: "user-1", Role: rbac.RoleUser})
 			if !errors.Is(err, tt.want) {
 				t.Fatalf("GetProblem() error = %v, want %v", err, tt.want)
 			}
@@ -93,7 +94,7 @@ func TestGRPCProblemReaderPreservesRequestCancellation(t *testing.T) {
 		return nil, status.FromContextError(ctx.Err()).Err()
 	}}
 
-	_, err := NewGRPCProblemReader(client, time.Second).GetProblem(ctx, 42, outbound.ProblemActor{UserID: "user-1", Role: rbac.RoleUser})
+	_, err := NewGRPCProblemReader(client, time.Second).GetProblem(ctx, 42, dto.ProblemActor{UserID: "user-1", Role: rbac.RoleUser})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("GetProblem() error = %v, want context canceled", err)
 	}
@@ -101,7 +102,7 @@ func TestGRPCProblemReaderPreservesRequestCancellation(t *testing.T) {
 
 func TestGRPCProblemReaderRejectsMalformedSuccess(t *testing.T) {
 	client := &fakeProblemServiceClient{response: &problemv1.GetProblemResponse{ProblemId: 42}}
-	_, err := NewGRPCProblemReader(client, time.Second).GetProblem(context.Background(), 42, outbound.ProblemActor{UserID: "user-1", Role: rbac.RoleUser})
+	_, err := NewGRPCProblemReader(client, time.Second).GetProblem(context.Background(), 42, dto.ProblemActor{UserID: "user-1", Role: rbac.RoleUser})
 	if !errors.Is(err, domain.ErrProblemServiceUnavailable) {
 		t.Fatalf("GetProblem() error = %v, want service unavailable", err)
 	}
@@ -117,7 +118,7 @@ func TestGRPCProblemReaderAppliesConfiguredTimeout(t *testing.T) {
 	}}
 
 	started := time.Now()
-	_, err := NewGRPCProblemReader(client, timeout).GetProblem(context.Background(), 42, outbound.ProblemActor{UserID: "user-1", Role: rbac.RoleUser})
+	_, err := NewGRPCProblemReader(client, timeout).GetProblem(context.Background(), 42, dto.ProblemActor{UserID: "user-1", Role: rbac.RoleUser})
 	if !errors.Is(err, domain.ErrProblemServiceUnavailable) {
 		t.Fatalf("GetProblem() error = %v, want service unavailable", err)
 	}

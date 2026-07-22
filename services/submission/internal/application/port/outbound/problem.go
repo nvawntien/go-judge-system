@@ -2,21 +2,9 @@ package outbound
 
 import (
 	"context"
-
-	"go-judge-system/pkg/rbac"
+	"go-judge-system/services/submission/internal/application/dto"
 )
 
-type ProblemActor struct {
-	UserID string
-	Role   rbac.Role
-}
-
-type ProblemMetadata struct {
-	ID    int64
-	Title string
-	Slug  string
-}
-
 type ProblemReader interface {
-	GetProblem(ctx context.Context, problemID int64, actor ProblemActor) (ProblemMetadata, error)
+	GetProblem(ctx context.Context, problemID int64, actor dto.ProblemActor) (dto.ProblemMetadata, error)
 }

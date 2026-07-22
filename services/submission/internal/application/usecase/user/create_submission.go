@@ -59,7 +59,7 @@ func (uc *createSubmissionUseCase) Execute(
 		return dto.CreateSubmissionResponse{}, domain.ErrSourceCodeTooLarge
 	}
 
-	problem, err := uc.problemReader.GetProblem(ctx, req.ProblemID, outbound.ProblemActor{
+	problem, err := uc.problemReader.GetProblem(ctx, req.ProblemID, dto.ProblemActor{
 		UserID: claims.UserID,
 		Role:   claims.Role,
 	})
