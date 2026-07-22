@@ -8,15 +8,16 @@ import (
 )
 
 type Config struct {
-	App      AppConfig      `mapstructure:"app"`
-	Server   ServerConfig   `mapstructure:"server"`
-	Database DatabaseConfig `mapstructure:"database"`
-	Redis    RedisConfig    `mapstructure:"redis"`
-	Logger   LoggerConfig   `mapstructure:"logger"`
-	SMTP     SMTPConfig     `mapstructure:"smtp"`
-	JWT      JWTConfig      `mapstructure:"jwt"`
-	Kafka    KafkaConfig    `mapstructure:"kafka"`
-	MinIO    MinIOConfig    `mapstructure:"minio"`
+	App         AppConfig         `mapstructure:"app"`
+	Server      ServerConfig      `mapstructure:"server"`
+	Database    DatabaseConfig    `mapstructure:"database"`
+	Redis       RedisConfig       `mapstructure:"redis"`
+	Logger      LoggerConfig      `mapstructure:"logger"`
+	SMTP        SMTPConfig        `mapstructure:"smtp"`
+	JWT         JWTConfig         `mapstructure:"jwt"`
+	Kafka       KafkaConfig       `mapstructure:"kafka"`
+	MinIO       MinIOConfig       `mapstructure:"minio"`
+	ProblemGRPC ProblemGRPCConfig `mapstructure:"problem_grpc"`
 }
 
 type AppConfig struct {
@@ -78,6 +79,11 @@ type MinIOConfig struct {
 	UseSSL    bool   `mapstructure:"use_ssl"`
 	Bucket    string `mapstructure:"bucket"`
 	PublicURL string `mapstructure:"public_url"`
+}
+
+type ProblemGRPCConfig struct {
+	Address string        `mapstructure:"address"`
+	Timeout time.Duration `mapstructure:"timeout"`
 }
 
 type SMTPConfig struct {

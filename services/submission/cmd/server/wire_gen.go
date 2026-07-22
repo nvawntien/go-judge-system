@@ -20,6 +20,7 @@ import (
 	"go-judge-system/services/submission/internal/adapter/outbound/judge"
 	"go-judge-system/services/submission/internal/adapter/outbound/outbox"
 	"go-judge-system/services/submission/internal/adapter/outbound/persistence/postgres"
+	"go-judge-system/services/submission/internal/adapter/outbound/problem"
 	"go-judge-system/services/submission/internal/application/usecase/user"
 	"go-judge-system/services/submission/internal/container"
 )
@@ -37,7 +38,18 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	outboxRepository := postgres.NewOutboxRepository(db)
 	kafkaConfig := cfg.Kafka
 	judgePublisher := judge.NewOutboxJudgePublisher(outboxRepository, kafkaConfig)
-	createSubmissionUseCase := user.NewCreateSubmissionUseCase(submissionRepository, transactionManager, judgePublisher)
+	problemGRPCConfig, err := container.ProvideProblemGRPCConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
+	clientConn, err := container.ProvideProblemClientConn(problemGRPCConfig)
+	if err != nil {
+		return nil, err
+	}
+	problemServiceClient := container.ProvideProblemServiceClient(clientConn)
+	duration := container.ProvideProblemGRPCTimeout(problemGRPCConfig)
+	problemReader := problem.NewGRPCProblemReader(problemServiceClient, duration)
+	createSubmissionUseCase := user.NewCreateSubmissionUseCase(submissionRepository, transactionManager, judgePublisher, problemReader)
 	createSubmissionHandler := user2.NewCreateSubmissionHandler(createSubmissionUseCase)
 	userHandler := handler.NewUserHandler(createSubmissionHandler)
 	redisConfig := cfg.Redis
@@ -58,7 +70,7 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 		return nil, err
 	}
 	outboxRelay := outbox.NewOutboxRelay(outboxRepository, syncProducer, zapLogger)
-	app := container.NewApp(cfg, db, router, outboxRelay, zapLogger, syncProducer)
+	app := container.NewApp(cfg, db, router, outboxRelay, zapLogger, syncProducer, clientConn)
 	return app, nil
 }
 

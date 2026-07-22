@@ -17,6 +17,7 @@ import (
 
 	"github.com/IBM/sarama"
 	"go.uber.org/zap"
+	googlegrpc "google.golang.org/grpc"
 	"gorm.io/gorm"
 )
 
@@ -27,6 +28,7 @@ type App struct {
 	OutboxRelay   *outbox.OutboxRelay
 	Logger        *zap.Logger
 	KafkaProducer sarama.SyncProducer
+	ProblemConn   *googlegrpc.ClientConn
 }
 
 func NewApp(
@@ -36,6 +38,7 @@ func NewApp(
 	outboxRelay *outbox.OutboxRelay,
 	logger *zap.Logger,
 	producer sarama.SyncProducer,
+	problemConn *googlegrpc.ClientConn,
 ) *App {
 	return &App{
 		Config:        cfg,
@@ -44,6 +47,7 @@ func NewApp(
 		OutboxRelay:   outboxRelay,
 		Logger:        logger,
 		KafkaProducer: producer,
+		ProblemConn:   problemConn,
 	}
 }
 
@@ -123,6 +127,12 @@ func (a *App) shutdownGracefully(cause error, serverErrCh <-chan error, workerCa
 
 func (a *App) Close() error {
 	var closeErr error
+
+	if a.ProblemConn != nil {
+		if err := a.ProblemConn.Close(); err != nil {
+			closeErr = errors.Join(closeErr, fmt.Errorf("close Problem Service gRPC connection: %w", err))
+		}
+	}
 
 	if a.KafkaProducer != nil {
 		if err := a.KafkaProducer.Close(); err != nil {

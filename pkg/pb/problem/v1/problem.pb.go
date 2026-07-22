@@ -125,6 +125,110 @@ func (x *GetTestCaseResponse) GetVersion() int32 {
 	return 0
 }
 
+type GetProblemForSubmissionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ProblemId     int64                  `protobuf:"varint,1,opt,name=problem_id,json=problemId,proto3" json:"problem_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetProblemForSubmissionRequest) Reset() {
+	*x = GetProblemForSubmissionRequest{}
+	mi := &file_proto_problem_v1_problem_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetProblemForSubmissionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetProblemForSubmissionRequest) ProtoMessage() {}
+
+func (x *GetProblemForSubmissionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_problem_v1_problem_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetProblemForSubmissionRequest.ProtoReflect.Descriptor instead.
+func (*GetProblemForSubmissionRequest) Descriptor() ([]byte, []int) {
+	return file_proto_problem_v1_problem_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *GetProblemForSubmissionRequest) GetProblemId() int64 {
+	if x != nil {
+		return x.ProblemId
+	}
+	return 0
+}
+
+type GetProblemForSubmissionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ProblemId     int64                  `protobuf:"varint,1,opt,name=problem_id,json=problemId,proto3" json:"problem_id,omitempty"`
+	Title         string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
+	Slug          string                 `protobuf:"bytes,3,opt,name=slug,proto3" json:"slug,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetProblemForSubmissionResponse) Reset() {
+	*x = GetProblemForSubmissionResponse{}
+	mi := &file_proto_problem_v1_problem_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetProblemForSubmissionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetProblemForSubmissionResponse) ProtoMessage() {}
+
+func (x *GetProblemForSubmissionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_problem_v1_problem_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetProblemForSubmissionResponse.ProtoReflect.Descriptor instead.
+func (*GetProblemForSubmissionResponse) Descriptor() ([]byte, []int) {
+	return file_proto_problem_v1_problem_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *GetProblemForSubmissionResponse) GetProblemId() int64 {
+	if x != nil {
+		return x.ProblemId
+	}
+	return 0
+}
+
+func (x *GetProblemForSubmissionResponse) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *GetProblemForSubmissionResponse) GetSlug() string {
+	if x != nil {
+		return x.Slug
+	}
+	return ""
+}
+
 var File_proto_problem_v1_problem_proto protoreflect.FileDescriptor
 
 const file_proto_problem_v1_problem_proto_rawDesc = "" +
@@ -138,9 +242,18 @@ const file_proto_problem_v1_problem_proto_rawDesc = "" +
 	"\x10zip_download_url\x18\x01 \x01(\tR\x0ezipDownloadUrl\x12\x1d\n" +
 	"\n" +
 	"test_count\x18\x02 \x01(\x05R\ttestCount\x12\x18\n" +
-	"\aversion\x18\x03 \x01(\x05R\aversion2`\n" +
+	"\aversion\x18\x03 \x01(\x05R\aversion\"?\n" +
+	"\x1eGetProblemForSubmissionRequest\x12\x1d\n" +
+	"\n" +
+	"problem_id\x18\x01 \x01(\x03R\tproblemId\"j\n" +
+	"\x1fGetProblemForSubmissionResponse\x12\x1d\n" +
+	"\n" +
+	"problem_id\x18\x01 \x01(\x03R\tproblemId\x12\x14\n" +
+	"\x05title\x18\x02 \x01(\tR\x05title\x12\x12\n" +
+	"\x04slug\x18\x03 \x01(\tR\x04slug2\xd4\x01\n" +
 	"\x0eProblemService\x12N\n" +
-	"\vGetTestCase\x12\x1e.problem.v1.GetTestCaseRequest\x1a\x1f.problem.v1.GetTestCaseResponseB-Z+go-judge-system/pkg/pb/problem/v1;problemv1b\x06proto3"
+	"\vGetTestCase\x12\x1e.problem.v1.GetTestCaseRequest\x1a\x1f.problem.v1.GetTestCaseResponse\x12r\n" +
+	"\x17GetProblemForSubmission\x12*.problem.v1.GetProblemForSubmissionRequest\x1a+.problem.v1.GetProblemForSubmissionResponseB-Z+go-judge-system/pkg/pb/problem/v1;problemv1b\x06proto3"
 
 var (
 	file_proto_problem_v1_problem_proto_rawDescOnce sync.Once
@@ -154,16 +267,20 @@ func file_proto_problem_v1_problem_proto_rawDescGZIP() []byte {
 	return file_proto_problem_v1_problem_proto_rawDescData
 }
 
-var file_proto_problem_v1_problem_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_proto_problem_v1_problem_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_proto_problem_v1_problem_proto_goTypes = []any{
-	(*GetTestCaseRequest)(nil),  // 0: problem.v1.GetTestCaseRequest
-	(*GetTestCaseResponse)(nil), // 1: problem.v1.GetTestCaseResponse
+	(*GetTestCaseRequest)(nil),              // 0: problem.v1.GetTestCaseRequest
+	(*GetTestCaseResponse)(nil),             // 1: problem.v1.GetTestCaseResponse
+	(*GetProblemForSubmissionRequest)(nil),  // 2: problem.v1.GetProblemForSubmissionRequest
+	(*GetProblemForSubmissionResponse)(nil), // 3: problem.v1.GetProblemForSubmissionResponse
 }
 var file_proto_problem_v1_problem_proto_depIdxs = []int32{
 	0, // 0: problem.v1.ProblemService.GetTestCase:input_type -> problem.v1.GetTestCaseRequest
-	1, // 1: problem.v1.ProblemService.GetTestCase:output_type -> problem.v1.GetTestCaseResponse
-	1, // [1:2] is the sub-list for method output_type
-	0, // [0:1] is the sub-list for method input_type
+	2, // 1: problem.v1.ProblemService.GetProblemForSubmission:input_type -> problem.v1.GetProblemForSubmissionRequest
+	1, // 2: problem.v1.ProblemService.GetTestCase:output_type -> problem.v1.GetTestCaseResponse
+	3, // 3: problem.v1.ProblemService.GetProblemForSubmission:output_type -> problem.v1.GetProblemForSubmissionResponse
+	2, // [2:4] is the sub-list for method output_type
+	0, // [0:2] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
@@ -180,7 +297,7 @@ func file_proto_problem_v1_problem_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_problem_v1_problem_proto_rawDesc), len(file_proto_problem_v1_problem_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

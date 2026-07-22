@@ -36,5 +36,9 @@ type OutboxRepository interface {
 }
 
 type JudgePublisher interface {
-	Publish(ctx context.Context, submission *entity.Submission) error
+	Publish(ctx context.Context, submission *entity.Submission, metadata JudgeJobMetadata) error
+}
+
+type JudgeJobMetadata struct {
+	ProblemSlug string
 }

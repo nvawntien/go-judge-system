@@ -6,9 +6,9 @@ import (
 
 	"go-judge-system/pkg/config"
 	problemv1 "go-judge-system/pkg/pb/problem/v1"
-	workertestcase"go-judge-system/services/problem/internal/adapter/inbound/grpc/handler/worker/testcase"
-	"go-judge-system/services/problem/internal/application/dto"
 	"go-judge-system/services/problem/internal/adapter/inbound/grpc/handler"
+	workertestcase "go-judge-system/services/problem/internal/adapter/inbound/grpc/handler/worker/testcase"
+	"go-judge-system/services/problem/internal/application/dto"
 )
 
 type stubGetTestCaseUseCase struct {
@@ -34,7 +34,10 @@ func TestProblemServerDelegatesGetTestCaseToWorkerHandler(t *testing.T) {
 			Version:        3,
 		},
 	}
-	server := NewProblemServer(handler.NewWorkerHandler(workertestcase.NewGetTestCaseHandler(useCase)))
+	server := NewProblemServer(
+		handler.NewWorkerHandler(workertestcase.NewGetTestCaseHandler(useCase)),
+		handler.NewSubmissionHandler(nil),
+	)
 
 	response, err := server.GetTestCase(context.Background(), &problemv1.GetTestCaseRequest{ProblemId: 42})
 	if err != nil {
@@ -54,7 +57,10 @@ func TestNewServerRegistersProblemService(t *testing.T) {
 	getTestCaseHandler := workertestcase.NewGetTestCaseHandler(&stubGetTestCaseUseCase{
 		result: &dto.InternalTestCaseResponse{},
 	})
-	problemServer := NewProblemServer(handler.NewWorkerHandler(getTestCaseHandler))
+	problemServer := NewProblemServer(
+		handler.NewWorkerHandler(getTestCaseHandler),
+		handler.NewSubmissionHandler(nil),
+	)
 	server := NewServer(config.ServerConfig{GRPCPort: 9092}, problemServer)
 
 	if server.address != ":9092" {

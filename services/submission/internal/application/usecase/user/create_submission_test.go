@@ -9,6 +9,7 @@ import (
 	"go-judge-system/pkg/auth"
 	"go-judge-system/pkg/response"
 	"go-judge-system/services/submission/internal/application/dto"
+	"go-judge-system/services/submission/internal/application/port/outbound"
 	"go-judge-system/services/submission/internal/domain"
 	"go-judge-system/services/submission/internal/domain/entity"
 )
@@ -25,10 +26,14 @@ type fakeTransactionManager struct {
 	committedSubmission *entity.Submission
 	committedOutbox     bool
 	rolledBack          bool
+	order               *[]string
 }
 
 func (m *fakeTransactionManager) ExecuteInTx(ctx context.Context, fn func(context.Context) error) error {
 	m.called = true
+	if m.order != nil {
+		*m.order = append(*m.order, "transaction")
+	}
 	state := &transactionState{}
 	err := fn(context.WithValue(ctx, transactionStateKey{}, state))
 	if err != nil {
@@ -84,16 +89,48 @@ type fakeJudgePublisher struct {
 	publishErr error
 	called     bool
 	published  *entity.Submission
+	metadata   outbound.JudgeJobMetadata
 }
 
-func (p *fakeJudgePublisher) Publish(ctx context.Context, submission *entity.Submission) error {
+func (p *fakeJudgePublisher) Publish(
+	ctx context.Context,
+	submission *entity.Submission,
+	metadata outbound.JudgeJobMetadata,
+) error {
 	p.called = true
+	p.metadata = metadata
 	if p.publishErr != nil {
 		return p.publishErr
 	}
 	p.published = submission
 	ctx.Value(transactionStateKey{}).(*transactionState).outbox = true
 	return nil
+}
+
+type fakeProblemReader struct {
+	problem outbound.ProblemForSubmission
+	err     error
+	calls   int
+	order   *[]string
+}
+
+func (r *fakeProblemReader) GetForSubmission(
+	_ context.Context,
+	_ int64,
+) (outbound.ProblemForSubmission, error) {
+	r.calls++
+	if r.order != nil {
+		*r.order = append(*r.order, "problem")
+	}
+	return r.problem, r.err
+}
+
+func validProblemReader(problemID int64) *fakeProblemReader {
+	return &fakeProblemReader{problem: outbound.ProblemForSubmission{
+		ID:    problemID,
+		Title: "Two Sum",
+		Slug:  "two-sum",
+	}}
 }
 
 func executeSubmission(
@@ -104,7 +141,7 @@ func executeSubmission(
 	publisher *fakeJudgePublisher,
 ) (dto.CreateSubmissionResponse, error) {
 	t.Helper()
-	uc := NewCreateSubmissionUseCase(repo, tx, publisher)
+	uc := NewCreateSubmissionUseCase(repo, tx, publisher, validProblemReader(req.ProblemID))
 	return uc.Execute(context.Background(), auth.Claims{UserID: "user-1", Username: "alice"}, req)
 }
 
@@ -135,11 +172,14 @@ func TestCreateSubmission_ExecutableLanguages(t *testing.T) {
 			if repo.created.SourceCode != "  source preserved exactly\n" {
 				t.Fatalf("source was modified: %q", repo.created.SourceCode)
 			}
-			if repo.created.ProblemName != "" {
-				t.Fatalf("problem name = %q, want temporary empty value", repo.created.ProblemName)
+			if repo.created.ProblemName != "Two Sum" {
+				t.Fatalf("problem name = %q, want canonical title", repo.created.ProblemName)
 			}
 			if publisher.published == nil || publisher.published.ID != 77 {
 				t.Fatal("publisher must receive the database-generated submission ID")
+			}
+			if publisher.metadata.ProblemSlug != "two-sum" {
+				t.Fatalf("problem slug = %q, want canonical slug", publisher.metadata.ProblemSlug)
 			}
 		})
 	}
@@ -166,13 +206,78 @@ func TestCreateSubmission_Validation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tx := &fakeTransactionManager{}
-			uc := NewCreateSubmissionUseCase(&fakeSubmissionRepository{}, tx, &fakeJudgePublisher{})
+			problemReader := validProblemReader(tt.req.ProblemID)
+			uc := NewCreateSubmissionUseCase(&fakeSubmissionRepository{}, tx, &fakeJudgePublisher{}, problemReader)
 			_, err := uc.Execute(context.Background(), tt.claims, tt.req)
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("Execute() error = %v, want %v", err, tt.wantErr)
 			}
 			if tx.called {
 				t.Fatal("transaction must not start for invalid input")
+			}
+			if problemReader.calls != 0 {
+				t.Fatalf("ProblemReader calls = %d, want 0", problemReader.calls)
+			}
+		})
+	}
+}
+
+func TestCreateSubmissionValidatesProblemBeforeTransaction(t *testing.T) {
+	order := []string{}
+	problemReader := validProblemReader(84)
+	problemReader.order = &order
+	tx := &fakeTransactionManager{order: &order}
+	repo := &fakeSubmissionRepository{}
+	publisher := &fakeJudgePublisher{}
+	uc := NewCreateSubmissionUseCase(repo, tx, publisher, problemReader)
+
+	got, err := uc.Execute(
+		context.Background(),
+		auth.Claims{UserID: "trusted-user", Username: "trusted-name"},
+		dto.CreateSubmissionRequest{ProblemID: 42, Language: "GO", SourceCode: "package main"},
+	)
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if problemReader.calls != 1 {
+		t.Fatalf("ProblemReader calls = %d, want 1", problemReader.calls)
+	}
+	if len(order) != 2 || order[0] != "problem" || order[1] != "transaction" {
+		t.Fatalf("call order = %v, want [problem transaction]", order)
+	}
+	if got.ProblemID != 84 || repo.created.ProblemID != 84 {
+		t.Fatalf("canonical problem ID response/stored = %d/%d, want 84", got.ProblemID, repo.created.ProblemID)
+	}
+	if repo.created.ProblemName != "Two Sum" {
+		t.Fatalf("ProblemName = %q, want canonical title", repo.created.ProblemName)
+	}
+	if repo.created.UserID != "trusted-user" || repo.created.Username != "trusted-name" {
+		t.Fatalf("ownership = %q/%q", repo.created.UserID, repo.created.Username)
+	}
+	if repo.created.Status != entity.StatusPending {
+		t.Fatalf("status = %q, want %q", repo.created.Status, entity.StatusPending)
+	}
+}
+
+func TestCreateSubmissionProblemValidationFailureStartsNoTransaction(t *testing.T) {
+	for _, wantErr := range []error{domain.ErrProblemNotFound, domain.ErrProblemServiceUnavailable} {
+		t.Run(wantErr.Error(), func(t *testing.T) {
+			problemReader := &fakeProblemReader{err: wantErr}
+			tx := &fakeTransactionManager{}
+			repo := &fakeSubmissionRepository{}
+			publisher := &fakeJudgePublisher{}
+			uc := NewCreateSubmissionUseCase(repo, tx, publisher, problemReader)
+
+			_, err := uc.Execute(
+				context.Background(),
+				auth.Claims{UserID: "user-1"},
+				dto.CreateSubmissionRequest{ProblemID: 42, Language: "GO", SourceCode: "x"},
+			)
+			if !errors.Is(err, wantErr) {
+				t.Fatalf("Execute() error = %v, want %v", err, wantErr)
+			}
+			if problemReader.calls != 1 || tx.called || repo.created != nil || publisher.called {
+				t.Fatalf("calls: problem=%d transaction=%t repository=%t publisher=%t", problemReader.calls, tx.called, repo.created != nil, publisher.called)
 			}
 		})
 	}

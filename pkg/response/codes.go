@@ -31,4 +31,6 @@ const (
 	CodeDatabaseError  = 50002
 	CodeMongoDBError   = 50003
 	CodeRedisError     = 50004
+
+	CodeServiceUnavailable = 50300
 )

@@ -11,13 +11,21 @@ import (
 type ProblemServer struct {
 	problemv1.UnimplementedProblemServiceServer
 
-	worker *handler.WorkerHandler
+	worker     *handler.WorkerHandler
+	submission *handler.SubmissionHandler
 }
 
 var _ problemv1.ProblemServiceServer = (*ProblemServer)(nil)
 
-func NewProblemServer(worker *handler.WorkerHandler) *ProblemServer {
-	return &ProblemServer{worker: worker}
+func NewProblemServer(worker *handler.WorkerHandler, submission *handler.SubmissionHandler) *ProblemServer {
+	return &ProblemServer{worker: worker, submission: submission}
+}
+
+func (s *ProblemServer) GetProblemForSubmission(
+	ctx context.Context,
+	req *problemv1.GetProblemForSubmissionRequest,
+) (*problemv1.GetProblemForSubmissionResponse, error) {
+	return s.submission.GetProblemForSubmission.Handle(ctx, req)
 }
 
 func (s *ProblemServer) GetTestCase(

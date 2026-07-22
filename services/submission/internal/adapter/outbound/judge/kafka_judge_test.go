@@ -9,6 +9,7 @@ import (
 
 	"go-judge-system/pkg/config"
 	pkgjudge "go-judge-system/pkg/judge"
+	"go-judge-system/services/submission/internal/application/port/outbound"
 	"go-judge-system/services/submission/internal/domain/entity"
 )
 
@@ -77,8 +78,11 @@ func TestPublish_Success(t *testing.T) {
 		if payload.ProblemID != sub.ProblemID {
 			t.Fatalf("problem_id = %d, want %d", payload.ProblemID, sub.ProblemID)
 		}
-		if payload.ProblemSlug != sub.ProblemName {
-			t.Fatalf("problem_slug = %q, want %q", payload.ProblemSlug, sub.ProblemName)
+		if payload.ProblemSlug != "two-sum" {
+			t.Fatalf("problem_slug = %q, want canonical slug", payload.ProblemSlug)
+		}
+		if payload.ProblemSlug == sub.ProblemName {
+			t.Fatal("problem title must never be serialized as problem_slug")
 		}
 		if payload.UserID != sub.UserID {
 			t.Fatalf("user_id = %q, want %q", payload.UserID, sub.UserID)
@@ -105,7 +109,7 @@ func TestPublish_Success(t *testing.T) {
 		config.KafkaConfig{JobTopic: "judge.submission.jobs"},
 	)
 
-	if err := publisher.Publish(context.Background(), sub); err != nil {
+	if err := publisher.Publish(context.Background(), sub, outbound.JudgeJobMetadata{ProblemSlug: "two-sum"}); err != nil {
 		t.Fatalf("Publish returned error: %v", err)
 	}
 }
@@ -125,11 +129,33 @@ func TestPublish_OutboxCreateError(t *testing.T) {
 
 	publisher := NewOutboxJudgePublisher(repo, config.KafkaConfig{})
 
-	err := publisher.Publish(context.Background(), sub)
+	err := publisher.Publish(context.Background(), sub, outbound.JudgeJobMetadata{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("error = %v, want wrapped %v", err, wantErr)
+	}
+}
+
+func TestPublish_OmitsEmptyProblemSlug(t *testing.T) {
+	t.Parallel()
+
+	sub := entity.NewSubmission(1001, "Two Sum", "u-1", "alice", entity.LanguageGo, "package main")
+	sub.ID = 77
+	repo := &mockOutboxRepository{createFn: func(_ context.Context, msg *entity.OutboxMessage) error {
+		var raw map[string]any
+		if err := json.Unmarshal(msg.Payload, &raw); err != nil {
+			t.Fatalf("unmarshal payload: %v", err)
+		}
+		if _, exists := raw["problem_slug"]; exists {
+			t.Fatal("empty problem_slug must be omitted")
+		}
+		return nil
+	}}
+
+	publisher := NewOutboxJudgePublisher(repo, config.KafkaConfig{})
+	if err := publisher.Publish(context.Background(), sub, outbound.JudgeJobMetadata{}); err != nil {
+		t.Fatalf("Publish() error = %v", err)
 	}
 }

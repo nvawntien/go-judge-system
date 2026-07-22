@@ -11,6 +11,7 @@ import (
 
 	"go-judge-system/pkg/auth"
 	"go-judge-system/services/submission/internal/application/dto"
+	"go-judge-system/services/submission/internal/domain"
 
 	"github.com/gin-gonic/gin"
 )
@@ -44,8 +45,17 @@ func (f *fakeCreateSubmissionUseCase) Execute(
 
 func performRequest(t *testing.T, body string, claims *auth.Claims) (*httptest.ResponseRecorder, *fakeCreateSubmissionUseCase) {
 	t.Helper()
+	return performRequestWithUseCase(t, body, claims, &fakeCreateSubmissionUseCase{})
+}
+
+func performRequestWithUseCase(
+	t *testing.T,
+	body string,
+	claims *auth.Claims,
+	useCase *fakeCreateSubmissionUseCase,
+) (*httptest.ResponseRecorder, *fakeCreateSubmissionUseCase) {
+	t.Helper()
 	gin.SetMode(gin.TestMode)
-	useCase := &fakeCreateSubmissionUseCase{}
 	handler := NewCreateSubmissionHandler(useCase)
 	router := gin.New()
 	router.POST("/api/v1/submissions", func(c *gin.Context) {
@@ -95,11 +105,52 @@ func TestCreateSubmissionHandler_Success(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &responseBody); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if responseBody.Status != "success" || responseBody.Code != 20100 || responseBody.Msg != "submission created" {
+	if responseBody.Status != "success" || responseBody.Code != 20100 || responseBody.Msg != "" {
 		t.Fatalf("unexpected envelope: %+v", responseBody)
 	}
 	if responseBody.Data.ID != 77 || responseBody.Data.Status != "PENDING" {
 		t.Fatalf("unexpected response data: %+v", responseBody.Data)
+	}
+}
+
+func TestCreateSubmissionHandlerProblemErrors(t *testing.T) {
+	claims := auth.Claims{UserID: "user-1"}
+	tests := []struct {
+		name       string
+		err        error
+		wantStatus int
+		wantCode   int
+	}{
+		{name: "problem not found", err: domain.ErrProblemNotFound, wantStatus: http.StatusNotFound, wantCode: 40400},
+		{name: "problem service unavailable", err: domain.ErrProblemServiceUnavailable, wantStatus: http.StatusServiceUnavailable, wantCode: 50300},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			recorder, useCase := performRequestWithUseCase(
+				t,
+				`{"problem_id":42,"language":"GO","source_code":"x"}`,
+				&claims,
+				&fakeCreateSubmissionUseCase{err: tt.err},
+			)
+			if recorder.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d; body=%s", recorder.Code, tt.wantStatus, recorder.Body.String())
+			}
+			if !useCase.called {
+				t.Fatal("use case was not called")
+			}
+
+			var responseBody struct {
+				Status string `json:"status"`
+				Code   int    `json:"code"`
+			}
+			if err := json.Unmarshal(recorder.Body.Bytes(), &responseBody); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			if responseBody.Status != "error" || responseBody.Code != tt.wantCode {
+				t.Fatalf("unexpected envelope: %+v", responseBody)
+			}
+		})
 	}
 }
 

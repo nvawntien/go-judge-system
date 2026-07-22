@@ -19,7 +19,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ProblemService_GetTestCase_FullMethodName = "/problem.v1.ProblemService/GetTestCase"
+	ProblemService_GetTestCase_FullMethodName             = "/problem.v1.ProblemService/GetTestCase"
+	ProblemService_GetProblemForSubmission_FullMethodName = "/problem.v1.ProblemService/GetProblemForSubmission"
 )
 
 // ProblemServiceClient is the client API for ProblemService service.
@@ -27,6 +28,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ProblemServiceClient interface {
 	GetTestCase(ctx context.Context, in *GetTestCaseRequest, opts ...grpc.CallOption) (*GetTestCaseResponse, error)
+	GetProblemForSubmission(ctx context.Context, in *GetProblemForSubmissionRequest, opts ...grpc.CallOption) (*GetProblemForSubmissionResponse, error)
 }
 
 type problemServiceClient struct {
@@ -47,11 +49,22 @@ func (c *problemServiceClient) GetTestCase(ctx context.Context, in *GetTestCaseR
 	return out, nil
 }
 
+func (c *problemServiceClient) GetProblemForSubmission(ctx context.Context, in *GetProblemForSubmissionRequest, opts ...grpc.CallOption) (*GetProblemForSubmissionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetProblemForSubmissionResponse)
+	err := c.cc.Invoke(ctx, ProblemService_GetProblemForSubmission_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ProblemServiceServer is the server API for ProblemService service.
 // All implementations must embed UnimplementedProblemServiceServer
 // for forward compatibility.
 type ProblemServiceServer interface {
 	GetTestCase(context.Context, *GetTestCaseRequest) (*GetTestCaseResponse, error)
+	GetProblemForSubmission(context.Context, *GetProblemForSubmissionRequest) (*GetProblemForSubmissionResponse, error)
 	mustEmbedUnimplementedProblemServiceServer()
 }
 
@@ -64,6 +77,9 @@ type UnimplementedProblemServiceServer struct{}
 
 func (UnimplementedProblemServiceServer) GetTestCase(context.Context, *GetTestCaseRequest) (*GetTestCaseResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetTestCase not implemented")
+}
+func (UnimplementedProblemServiceServer) GetProblemForSubmission(context.Context, *GetProblemForSubmissionRequest) (*GetProblemForSubmissionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetProblemForSubmission not implemented")
 }
 func (UnimplementedProblemServiceServer) mustEmbedUnimplementedProblemServiceServer() {}
 func (UnimplementedProblemServiceServer) testEmbeddedByValue()                        {}
@@ -104,6 +120,24 @@ func _ProblemService_GetTestCase_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ProblemService_GetProblemForSubmission_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetProblemForSubmissionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProblemServiceServer).GetProblemForSubmission(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ProblemService_GetProblemForSubmission_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProblemServiceServer).GetProblemForSubmission(ctx, req.(*GetProblemForSubmissionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ProblemService_ServiceDesc is the grpc.ServiceDesc for ProblemService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -114,6 +148,10 @@ var ProblemService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetTestCase",
 			Handler:    _ProblemService_GetTestCase_Handler,
+		},
+		{
+			MethodName: "GetProblemForSubmission",
+			Handler:    _ProblemService_GetProblemForSubmission_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

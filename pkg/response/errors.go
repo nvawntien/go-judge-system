@@ -78,6 +78,8 @@ func GetHTTPStatus(code int) int {
 		return http.StatusTooManyRequests
 	case CodeInternalServer, CodeDatabaseError, CodeMongoDBError, CodeRedisError:
 		return http.StatusInternalServerError
+	case CodeServiceUnavailable:
+		return http.StatusServiceUnavailable
 	}
 
 	// Fallback range mapping

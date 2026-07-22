@@ -31,11 +31,15 @@ func NewOutboxJudgePublisher(outboxRepo outbound.OutboxRepository, kafkaCfg conf
 	}
 }
 
-func (p *outboxJudgePublisher) Publish(ctx context.Context, submission *entity.Submission) error {
+func (p *outboxJudgePublisher) Publish(
+	ctx context.Context,
+	submission *entity.Submission,
+	metadata outbound.JudgeJobMetadata,
+) error {
 	payload := pkgjudge.JobMessage{
 		SubmissionID: submission.ID,
 		ProblemID:    submission.ProblemID,
-		ProblemSlug:  submission.ProblemName,
+		ProblemSlug:  metadata.ProblemSlug,
 		UserID:       submission.UserID,
 		Language:     string(submission.Language),
 		SourceCode:   submission.SourceCode,

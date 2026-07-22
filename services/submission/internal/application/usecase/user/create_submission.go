@@ -17,17 +17,20 @@ type createSubmissionUseCase struct {
 	submissionRepo outbound.SubmissionRepository
 	txManager      outbound.TransactionManager
 	judgePublisher outbound.JudgePublisher
+	problemReader  outbound.ProblemReader
 }
 
 func NewCreateSubmissionUseCase(
 	submissionRepo outbound.SubmissionRepository,
 	txManager outbound.TransactionManager,
 	judgePublisher outbound.JudgePublisher,
+	problemReader outbound.ProblemReader,
 ) inbound.CreateSubmissionUseCase {
 	return &createSubmissionUseCase{
 		submissionRepo: submissionRepo,
 		txManager:      txManager,
 		judgePublisher: judgePublisher,
+		problemReader:  problemReader,
 	}
 }
 
@@ -56,23 +59,26 @@ func (uc *createSubmissionUseCase) Execute(
 		return dto.CreateSubmissionResponse{}, domain.ErrSourceCodeTooLarge
 	}
 
-	// TODO: Resolve and validate the canonical problem name through an internal
-	// Problem Service contract once that contract is available.
+	problem, err := uc.problemReader.GetForSubmission(ctx, req.ProblemID)
+	if err != nil {
+		return dto.CreateSubmissionResponse{}, err
+	}
+
 	submission := entity.NewSubmission(
-		req.ProblemID,
-		"",
+		problem.ID,
+		problem.Title,
 		claims.UserID,
 		claims.Username,
 		language,
 		req.SourceCode,
 	)
 
-	err := uc.txManager.ExecuteInTx(ctx, func(txCtx context.Context) error {
+	err = uc.txManager.ExecuteInTx(ctx, func(txCtx context.Context) error {
 		if err := uc.submissionRepo.Create(txCtx, submission); err != nil {
 			return err
 		}
 
-		if err := uc.judgePublisher.Publish(txCtx, submission); err != nil {
+		if err := uc.judgePublisher.Publish(txCtx, submission, outbound.JudgeJobMetadata{ProblemSlug: problem.Slug}); err != nil {
 			return err
 		}
 
