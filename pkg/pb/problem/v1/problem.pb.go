@@ -125,27 +125,29 @@ func (x *GetTestCaseResponse) GetVersion() int32 {
 	return 0
 }
 
-type GetProblemForSubmissionRequest struct {
+type GetProblemRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ProblemId     int64                  `protobuf:"varint,1,opt,name=problem_id,json=problemId,proto3" json:"problem_id,omitempty"`
+	ActorUserId   string                 `protobuf:"bytes,2,opt,name=actor_user_id,json=actorUserId,proto3" json:"actor_user_id,omitempty"`
+	ActorRole     string                 `protobuf:"bytes,3,opt,name=actor_role,json=actorRole,proto3" json:"actor_role,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *GetProblemForSubmissionRequest) Reset() {
-	*x = GetProblemForSubmissionRequest{}
+func (x *GetProblemRequest) Reset() {
+	*x = GetProblemRequest{}
 	mi := &file_proto_problem_v1_problem_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *GetProblemForSubmissionRequest) String() string {
+func (x *GetProblemRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*GetProblemForSubmissionRequest) ProtoMessage() {}
+func (*GetProblemRequest) ProtoMessage() {}
 
-func (x *GetProblemForSubmissionRequest) ProtoReflect() protoreflect.Message {
+func (x *GetProblemRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_proto_problem_v1_problem_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -157,19 +159,33 @@ func (x *GetProblemForSubmissionRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use GetProblemForSubmissionRequest.ProtoReflect.Descriptor instead.
-func (*GetProblemForSubmissionRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use GetProblemRequest.ProtoReflect.Descriptor instead.
+func (*GetProblemRequest) Descriptor() ([]byte, []int) {
 	return file_proto_problem_v1_problem_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *GetProblemForSubmissionRequest) GetProblemId() int64 {
+func (x *GetProblemRequest) GetProblemId() int64 {
 	if x != nil {
 		return x.ProblemId
 	}
 	return 0
 }
 
-type GetProblemForSubmissionResponse struct {
+func (x *GetProblemRequest) GetActorUserId() string {
+	if x != nil {
+		return x.ActorUserId
+	}
+	return ""
+}
+
+func (x *GetProblemRequest) GetActorRole() string {
+	if x != nil {
+		return x.ActorRole
+	}
+	return ""
+}
+
+type GetProblemResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ProblemId     int64                  `protobuf:"varint,1,opt,name=problem_id,json=problemId,proto3" json:"problem_id,omitempty"`
 	Title         string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
@@ -178,20 +194,20 @@ type GetProblemForSubmissionResponse struct {
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *GetProblemForSubmissionResponse) Reset() {
-	*x = GetProblemForSubmissionResponse{}
+func (x *GetProblemResponse) Reset() {
+	*x = GetProblemResponse{}
 	mi := &file_proto_problem_v1_problem_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *GetProblemForSubmissionResponse) String() string {
+func (x *GetProblemResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*GetProblemForSubmissionResponse) ProtoMessage() {}
+func (*GetProblemResponse) ProtoMessage() {}
 
-func (x *GetProblemForSubmissionResponse) ProtoReflect() protoreflect.Message {
+func (x *GetProblemResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_proto_problem_v1_problem_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -203,26 +219,26 @@ func (x *GetProblemForSubmissionResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use GetProblemForSubmissionResponse.ProtoReflect.Descriptor instead.
-func (*GetProblemForSubmissionResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use GetProblemResponse.ProtoReflect.Descriptor instead.
+func (*GetProblemResponse) Descriptor() ([]byte, []int) {
 	return file_proto_problem_v1_problem_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *GetProblemForSubmissionResponse) GetProblemId() int64 {
+func (x *GetProblemResponse) GetProblemId() int64 {
 	if x != nil {
 		return x.ProblemId
 	}
 	return 0
 }
 
-func (x *GetProblemForSubmissionResponse) GetTitle() string {
+func (x *GetProblemResponse) GetTitle() string {
 	if x != nil {
 		return x.Title
 	}
 	return ""
 }
 
-func (x *GetProblemForSubmissionResponse) GetSlug() string {
+func (x *GetProblemResponse) GetSlug() string {
 	if x != nil {
 		return x.Slug
 	}
@@ -242,18 +258,22 @@ const file_proto_problem_v1_problem_proto_rawDesc = "" +
 	"\x10zip_download_url\x18\x01 \x01(\tR\x0ezipDownloadUrl\x12\x1d\n" +
 	"\n" +
 	"test_count\x18\x02 \x01(\x05R\ttestCount\x12\x18\n" +
-	"\aversion\x18\x03 \x01(\x05R\aversion\"?\n" +
-	"\x1eGetProblemForSubmissionRequest\x12\x1d\n" +
+	"\aversion\x18\x03 \x01(\x05R\aversion\"u\n" +
+	"\x11GetProblemRequest\x12\x1d\n" +
 	"\n" +
-	"problem_id\x18\x01 \x01(\x03R\tproblemId\"j\n" +
-	"\x1fGetProblemForSubmissionResponse\x12\x1d\n" +
+	"problem_id\x18\x01 \x01(\x03R\tproblemId\x12\"\n" +
+	"\ractor_user_id\x18\x02 \x01(\tR\vactorUserId\x12\x1d\n" +
+	"\n" +
+	"actor_role\x18\x03 \x01(\tR\tactorRole\"]\n" +
+	"\x12GetProblemResponse\x12\x1d\n" +
 	"\n" +
 	"problem_id\x18\x01 \x01(\x03R\tproblemId\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12\x12\n" +
-	"\x04slug\x18\x03 \x01(\tR\x04slug2\xd4\x01\n" +
+	"\x04slug\x18\x03 \x01(\tR\x04slug2\xad\x01\n" +
 	"\x0eProblemService\x12N\n" +
-	"\vGetTestCase\x12\x1e.problem.v1.GetTestCaseRequest\x1a\x1f.problem.v1.GetTestCaseResponse\x12r\n" +
-	"\x17GetProblemForSubmission\x12*.problem.v1.GetProblemForSubmissionRequest\x1a+.problem.v1.GetProblemForSubmissionResponseB-Z+go-judge-system/pkg/pb/problem/v1;problemv1b\x06proto3"
+	"\vGetTestCase\x12\x1e.problem.v1.GetTestCaseRequest\x1a\x1f.problem.v1.GetTestCaseResponse\x12K\n" +
+	"\n" +
+	"GetProblem\x12\x1d.problem.v1.GetProblemRequest\x1a\x1e.problem.v1.GetProblemResponseB-Z+go-judge-system/pkg/pb/problem/v1;problemv1b\x06proto3"
 
 var (
 	file_proto_problem_v1_problem_proto_rawDescOnce sync.Once
@@ -269,16 +289,16 @@ func file_proto_problem_v1_problem_proto_rawDescGZIP() []byte {
 
 var file_proto_problem_v1_problem_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_proto_problem_v1_problem_proto_goTypes = []any{
-	(*GetTestCaseRequest)(nil),              // 0: problem.v1.GetTestCaseRequest
-	(*GetTestCaseResponse)(nil),             // 1: problem.v1.GetTestCaseResponse
-	(*GetProblemForSubmissionRequest)(nil),  // 2: problem.v1.GetProblemForSubmissionRequest
-	(*GetProblemForSubmissionResponse)(nil), // 3: problem.v1.GetProblemForSubmissionResponse
+	(*GetTestCaseRequest)(nil),  // 0: problem.v1.GetTestCaseRequest
+	(*GetTestCaseResponse)(nil), // 1: problem.v1.GetTestCaseResponse
+	(*GetProblemRequest)(nil),   // 2: problem.v1.GetProblemRequest
+	(*GetProblemResponse)(nil),  // 3: problem.v1.GetProblemResponse
 }
 var file_proto_problem_v1_problem_proto_depIdxs = []int32{
 	0, // 0: problem.v1.ProblemService.GetTestCase:input_type -> problem.v1.GetTestCaseRequest
-	2, // 1: problem.v1.ProblemService.GetProblemForSubmission:input_type -> problem.v1.GetProblemForSubmissionRequest
+	2, // 1: problem.v1.ProblemService.GetProblem:input_type -> problem.v1.GetProblemRequest
 	1, // 2: problem.v1.ProblemService.GetTestCase:output_type -> problem.v1.GetTestCaseResponse
-	3, // 3: problem.v1.ProblemService.GetProblemForSubmission:output_type -> problem.v1.GetProblemForSubmissionResponse
+	3, // 3: problem.v1.ProblemService.GetProblem:output_type -> problem.v1.GetProblemResponse
 	2, // [2:4] is the sub-list for method output_type
 	0, // [0:2] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name

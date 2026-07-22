@@ -25,39 +25,48 @@ func NewGRPCProblemReader(
 	return &grpcProblemReader{client: client, timeout: timeout}
 }
 
-func (r *grpcProblemReader) GetForSubmission(
+func (r *grpcProblemReader) GetProblem(
 	ctx context.Context,
 	problemID int64,
-) (outbound.ProblemForSubmission, error) {
+	actor outbound.ProblemActor,
+) (outbound.ProblemMetadata, error) {
 	callCtx, cancel := context.WithTimeout(ctx, r.timeout)
 	defer cancel()
 
-	response, err := r.client.GetProblemForSubmission(
+	response, err := r.client.GetProblem(
 		callCtx,
-		&problemv1.GetProblemForSubmissionRequest{ProblemId: problemID},
+		&problemv1.GetProblemRequest{
+			ProblemId:   problemID,
+			ActorUserId: actor.UserID,
+			ActorRole:   string(actor.Role),
+		},
 	)
 	if err != nil {
 		switch status.Code(err) {
 		case codes.InvalidArgument:
-			return outbound.ProblemForSubmission{}, domain.ErrInvalidProblemID
+			return outbound.ProblemMetadata{}, domain.ErrInvalidProblemID
+		case codes.Unauthenticated:
+			return outbound.ProblemMetadata{}, domain.ErrProblemActorUnauthenticated
+		case codes.PermissionDenied:
+			return outbound.ProblemMetadata{}, domain.ErrProblemActorForbidden
 		case codes.NotFound:
-			return outbound.ProblemForSubmission{}, domain.ErrProblemNotFound
+			return outbound.ProblemMetadata{}, domain.ErrProblemNotFound
 		case codes.Canceled:
 			if ctx.Err() != nil {
-				return outbound.ProblemForSubmission{}, ctx.Err()
+				return outbound.ProblemMetadata{}, ctx.Err()
 			}
-			return outbound.ProblemForSubmission{}, context.Canceled
+			return outbound.ProblemMetadata{}, context.Canceled
 		case codes.DeadlineExceeded, codes.Unavailable, codes.Internal:
-			return outbound.ProblemForSubmission{}, domain.ErrProblemServiceUnavailable.Wrap(err)
+			return outbound.ProblemMetadata{}, domain.ErrProblemServiceUnavailable.Wrap(err)
 		default:
-			return outbound.ProblemForSubmission{}, domain.ErrProblemServiceUnavailable.Wrap(err)
+			return outbound.ProblemMetadata{}, domain.ErrProblemServiceUnavailable.Wrap(err)
 		}
 	}
 	if response == nil || response.GetProblemId() <= 0 || strings.TrimSpace(response.GetTitle()) == "" || strings.TrimSpace(response.GetSlug()) == "" {
-		return outbound.ProblemForSubmission{}, domain.ErrProblemServiceUnavailable
+		return outbound.ProblemMetadata{}, domain.ErrProblemServiceUnavailable
 	}
 
-	return outbound.ProblemForSubmission{
+	return outbound.ProblemMetadata{
 		ID:    response.GetProblemId(),
 		Title: response.GetTitle(),
 		Slug:  response.GetSlug(),

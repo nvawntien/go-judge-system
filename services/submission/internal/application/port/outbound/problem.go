@@ -1,13 +1,22 @@
 package outbound
 
-import "context"
+import (
+	"context"
 
-type ProblemForSubmission struct {
+	"go-judge-system/pkg/rbac"
+)
+
+type ProblemActor struct {
+	UserID string
+	Role   rbac.Role
+}
+
+type ProblemMetadata struct {
 	ID    int64
 	Title string
 	Slug  string
 }
 
 type ProblemReader interface {
-	GetForSubmission(ctx context.Context, problemID int64) (ProblemForSubmission, error)
+	GetProblem(ctx context.Context, problemID int64, actor ProblemActor) (ProblemMetadata, error)
 }

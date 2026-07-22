@@ -16,7 +16,7 @@ import (
 	"go-judge-system/pkg/minio"
 	"go-judge-system/services/problem/internal/adapter/inbound/grpc"
 	handler2 "go-judge-system/services/problem/internal/adapter/inbound/grpc/handler"
-	problem6 "go-judge-system/services/problem/internal/adapter/inbound/grpc/handler/submission/problem"
+	problem6 "go-judge-system/services/problem/internal/adapter/inbound/grpc/handler/problem"
 	testcase3 "go-judge-system/services/problem/internal/adapter/inbound/grpc/handler/worker/testcase"
 	"go-judge-system/services/problem/internal/adapter/inbound/http"
 	"go-judge-system/services/problem/internal/adapter/inbound/http/handler"
@@ -30,7 +30,7 @@ import (
 	problem3 "go-judge-system/services/problem/internal/application/usecase/admin/problem"
 	tag3 "go-judge-system/services/problem/internal/application/usecase/admin/tag"
 	"go-judge-system/services/problem/internal/application/usecase/admin/testcase"
-	problem5 "go-judge-system/services/problem/internal/application/usecase/submission/problem"
+	problem5 "go-judge-system/services/problem/internal/application/usecase/problem"
 	"go-judge-system/services/problem/internal/application/usecase/user/problem"
 	"go-judge-system/services/problem/internal/application/usecase/user/tag"
 	"go-judge-system/services/problem/internal/application/usecase/worker/testcase"
@@ -112,10 +112,10 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	workerGetTestCaseUseCase := worker.NewGetTestCaseUseCase(testCaseRepository, testCaseStorage)
 	testcaseGetTestCaseHandler := testcase3.NewGetTestCaseHandler(workerGetTestCaseUseCase)
 	workerHandler := handler2.NewWorkerHandler(testcaseGetTestCaseHandler)
-	getProblemForSubmissionUseCase := problem5.NewGetProblemForSubmissionUseCase(problemRepository)
-	getProblemForSubmissionHandler := problem6.NewGetProblemForSubmissionHandler(getProblemForSubmissionUseCase)
-	submissionHandler := handler2.NewSubmissionHandler(getProblemForSubmissionHandler)
-	problemServer := grpc.NewProblemServer(workerHandler, submissionHandler)
+	inboundGetProblemUseCase := problem5.NewGetProblemUseCase(problemRepository)
+	getProblemHandler2 := problem6.NewGetProblemHandler(inboundGetProblemUseCase)
+	problemHandler := handler2.NewProblemHandler(getProblemHandler2)
+	problemServer := grpc.NewProblemServer(workerHandler, problemHandler)
 	server := grpc.NewServer(serverConfig, problemServer)
 	app := container.NewApp(cfg, router, server, zapLogger)
 	return app, nil

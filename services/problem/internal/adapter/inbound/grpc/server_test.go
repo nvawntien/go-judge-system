@@ -36,7 +36,7 @@ func TestProblemServerDelegatesGetTestCaseToWorkerHandler(t *testing.T) {
 	}
 	server := NewProblemServer(
 		handler.NewWorkerHandler(workertestcase.NewGetTestCaseHandler(useCase)),
-		handler.NewSubmissionHandler(nil),
+		handler.NewProblemHandler(nil),
 	)
 
 	response, err := server.GetTestCase(context.Background(), &problemv1.GetTestCaseRequest{ProblemId: 42})
@@ -59,7 +59,7 @@ func TestNewServerRegistersProblemService(t *testing.T) {
 	})
 	problemServer := NewProblemServer(
 		handler.NewWorkerHandler(getTestCaseHandler),
-		handler.NewSubmissionHandler(nil),
+		handler.NewProblemHandler(nil),
 	)
 	server := NewServer(config.ServerConfig{GRPCPort: 9092}, problemServer)
 

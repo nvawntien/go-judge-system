@@ -7,25 +7,25 @@ import (
 	"go-judge-system/services/problem/internal/adapter/inbound/grpc/handler"
 )
 
-// ProblemServer composes actor-specific handlers into ProblemService.
+// ProblemServer composes ProblemService handlers.
 type ProblemServer struct {
 	problemv1.UnimplementedProblemServiceServer
 
-	worker     *handler.WorkerHandler
-	submission *handler.SubmissionHandler
+	worker  *handler.WorkerHandler
+	problem *handler.ProblemHandler
 }
 
 var _ problemv1.ProblemServiceServer = (*ProblemServer)(nil)
 
-func NewProblemServer(worker *handler.WorkerHandler, submission *handler.SubmissionHandler) *ProblemServer {
-	return &ProblemServer{worker: worker, submission: submission}
+func NewProblemServer(worker *handler.WorkerHandler, problem *handler.ProblemHandler) *ProblemServer {
+	return &ProblemServer{worker: worker, problem: problem}
 }
 
-func (s *ProblemServer) GetProblemForSubmission(
+func (s *ProblemServer) GetProblem(
 	ctx context.Context,
-	req *problemv1.GetProblemForSubmissionRequest,
-) (*problemv1.GetProblemForSubmissionResponse, error) {
-	return s.submission.GetProblemForSubmission.Handle(ctx, req)
+	req *problemv1.GetProblemRequest,
+) (*problemv1.GetProblemResponse, error) {
+	return s.problem.GetProblem.Handle(ctx, req)
 }
 
 func (s *ProblemServer) GetTestCase(

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go-judge-system/pkg/auth"
+	"go-judge-system/pkg/rbac"
 	"go-judge-system/pkg/response"
 	"go-judge-system/services/submission/internal/application/dto"
 	"go-judge-system/services/submission/internal/application/port/outbound"
@@ -108,17 +109,22 @@ func (p *fakeJudgePublisher) Publish(
 }
 
 type fakeProblemReader struct {
-	problem outbound.ProblemForSubmission
-	err     error
-	calls   int
-	order   *[]string
+	problem   outbound.ProblemMetadata
+	err       error
+	calls     int
+	order     *[]string
+	problemID int64
+	actor     outbound.ProblemActor
 }
 
-func (r *fakeProblemReader) GetForSubmission(
+func (r *fakeProblemReader) GetProblem(
 	_ context.Context,
-	_ int64,
-) (outbound.ProblemForSubmission, error) {
+	problemID int64,
+	actor outbound.ProblemActor,
+) (outbound.ProblemMetadata, error) {
 	r.calls++
+	r.problemID = problemID
+	r.actor = actor
 	if r.order != nil {
 		*r.order = append(*r.order, "problem")
 	}
@@ -126,7 +132,7 @@ func (r *fakeProblemReader) GetForSubmission(
 }
 
 func validProblemReader(problemID int64) *fakeProblemReader {
-	return &fakeProblemReader{problem: outbound.ProblemForSubmission{
+	return &fakeProblemReader{problem: outbound.ProblemMetadata{
 		ID:    problemID,
 		Title: "Two Sum",
 		Slug:  "two-sum",
@@ -142,7 +148,7 @@ func executeSubmission(
 ) (dto.CreateSubmissionResponse, error) {
 	t.Helper()
 	uc := NewCreateSubmissionUseCase(repo, tx, publisher, validProblemReader(req.ProblemID))
-	return uc.Execute(context.Background(), auth.Claims{UserID: "user-1", Username: "alice"}, req)
+	return uc.Execute(context.Background(), auth.Claims{UserID: "user-1", Username: "alice", Role: rbac.RoleUser}, req)
 }
 
 func TestCreateSubmission_ExecutableLanguages(t *testing.T) {
@@ -233,7 +239,7 @@ func TestCreateSubmissionValidatesProblemBeforeTransaction(t *testing.T) {
 
 	got, err := uc.Execute(
 		context.Background(),
-		auth.Claims{UserID: "trusted-user", Username: "trusted-name"},
+		auth.Claims{UserID: "trusted-user", Username: "trusted-name", Role: rbac.RoleModerator},
 		dto.CreateSubmissionRequest{ProblemID: 42, Language: "GO", SourceCode: "package main"},
 	)
 	if err != nil {
@@ -241,6 +247,9 @@ func TestCreateSubmissionValidatesProblemBeforeTransaction(t *testing.T) {
 	}
 	if problemReader.calls != 1 {
 		t.Fatalf("ProblemReader calls = %d, want 1", problemReader.calls)
+	}
+	if problemReader.problemID != 42 || problemReader.actor.UserID != "trusted-user" || problemReader.actor.Role != rbac.RoleModerator {
+		t.Fatalf("ProblemReader problem/actor = %d/%+v", problemReader.problemID, problemReader.actor)
 	}
 	if len(order) != 2 || order[0] != "problem" || order[1] != "transaction" {
 		t.Fatalf("call order = %v, want [problem transaction]", order)
@@ -260,7 +269,7 @@ func TestCreateSubmissionValidatesProblemBeforeTransaction(t *testing.T) {
 }
 
 func TestCreateSubmissionProblemValidationFailureStartsNoTransaction(t *testing.T) {
-	for _, wantErr := range []error{domain.ErrProblemNotFound, domain.ErrProblemServiceUnavailable} {
+	for _, wantErr := range []error{domain.ErrProblemNotFound, domain.ErrProblemActorForbidden, domain.ErrProblemServiceUnavailable} {
 		t.Run(wantErr.Error(), func(t *testing.T) {
 			problemReader := &fakeProblemReader{err: wantErr}
 			tx := &fakeTransactionManager{}
@@ -270,7 +279,7 @@ func TestCreateSubmissionProblemValidationFailureStartsNoTransaction(t *testing.
 
 			_, err := uc.Execute(
 				context.Background(),
-				auth.Claims{UserID: "user-1"},
+				auth.Claims{UserID: "user-1", Role: rbac.RoleUser},
 				dto.CreateSubmissionRequest{ProblemID: 42, Language: "GO", SourceCode: "x"},
 			)
 			if !errors.Is(err, wantErr) {
@@ -278,6 +287,40 @@ func TestCreateSubmissionProblemValidationFailureStartsNoTransaction(t *testing.
 			}
 			if problemReader.calls != 1 || tx.called || repo.created != nil || publisher.called {
 				t.Fatalf("calls: problem=%d transaction=%t repository=%t publisher=%t", problemReader.calls, tx.called, repo.created != nil, publisher.called)
+			}
+		})
+	}
+}
+
+func TestCreateSubmissionPropagatesActorRoleForHiddenProblemAccess(t *testing.T) {
+	tests := []struct {
+		name string
+		role rbac.Role
+	}{
+		{name: "contributor own hidden", role: rbac.RoleContributor},
+		{name: "moderator hidden", role: rbac.RoleModerator},
+		{name: "admin hidden", role: rbac.RoleAdmin},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			problemReader := validProblemReader(42)
+			uc := NewCreateSubmissionUseCase(
+				&fakeSubmissionRepository{},
+				&fakeTransactionManager{},
+				&fakeJudgePublisher{},
+				problemReader,
+			)
+			_, err := uc.Execute(
+				context.Background(),
+				auth.Claims{UserID: "actor-1", Username: "actor", Role: tt.role},
+				dto.CreateSubmissionRequest{ProblemID: 42, Language: "GO", SourceCode: "x"},
+			)
+			if err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+			if problemReader.actor.UserID != "actor-1" || problemReader.actor.Role != tt.role {
+				t.Fatalf("actor = %+v", problemReader.actor)
 			}
 		})
 	}

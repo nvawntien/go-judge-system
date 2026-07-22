@@ -9,7 +9,7 @@ import (
 	"go-judge-system/pkg/minio"
 	"go-judge-system/services/problem/internal/adapter/inbound/grpc"
 	grpchandler "go-judge-system/services/problem/internal/adapter/inbound/grpc/handler"
-	grpcsubmissionproblemhandler "go-judge-system/services/problem/internal/adapter/inbound/grpc/handler/submission/problem"
+	grpcproblemhandler "go-judge-system/services/problem/internal/adapter/inbound/grpc/handler/problem"
 	grpctestcasehandler "go-judge-system/services/problem/internal/adapter/inbound/grpc/handler/worker/testcase"
 	"go-judge-system/services/problem/internal/adapter/inbound/http"
 	"go-judge-system/services/problem/internal/adapter/inbound/http/handler"
@@ -23,7 +23,7 @@ import (
 	adminproblemusecase "go-judge-system/services/problem/internal/application/usecase/admin/problem"
 	admintagusecase "go-judge-system/services/problem/internal/application/usecase/admin/tag"
 	admintestcaseusecase "go-judge-system/services/problem/internal/application/usecase/admin/testcase"
-	submissionproblemusecase "go-judge-system/services/problem/internal/application/usecase/submission/problem"
+	grpcproblemusecase "go-judge-system/services/problem/internal/application/usecase/problem"
 	userproblemusecase "go-judge-system/services/problem/internal/application/usecase/user/problem"
 	usertagusecase "go-judge-system/services/problem/internal/application/usecase/user/tag"
 	workertestcaseusecase "go-judge-system/services/problem/internal/application/usecase/worker/testcase"
@@ -74,7 +74,7 @@ var UseCaseProviderSet = wire.NewSet(
 	usertagusecase.NewListTagsUseCase,
 
 	workertestcaseusecase.NewGetTestCaseUseCase,
-	submissionproblemusecase.NewGetProblemForSubmissionUseCase,
+	grpcproblemusecase.NewGetProblemUseCase,
 )
 
 var InboundProviderSet = wire.NewSet(
@@ -105,9 +105,9 @@ var InboundProviderSet = wire.NewSet(
 	http.NewRouter,
 
 	grpctestcasehandler.NewGetTestCaseHandler,
-	grpcsubmissionproblemhandler.NewGetProblemForSubmissionHandler,
+	grpcproblemhandler.NewGetProblemHandler,
 	grpchandler.NewWorkerHandler,
-	grpchandler.NewSubmissionHandler,
+	grpchandler.NewProblemHandler,
 	grpc.NewProblemServer,
 	grpc.NewServer,
 )

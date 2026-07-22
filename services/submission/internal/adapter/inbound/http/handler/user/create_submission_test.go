@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"go-judge-system/pkg/auth"
+	"go-judge-system/pkg/rbac"
 	"go-judge-system/services/submission/internal/application/dto"
 	"go-judge-system/services/submission/internal/domain"
 
@@ -73,14 +74,16 @@ func performRequestWithUseCase(
 }
 
 func TestCreateSubmissionHandler_Success(t *testing.T) {
-	claims := auth.Claims{UserID: "trusted-user", Username: "trusted-name"}
+	claims := auth.Claims{UserID: "trusted-user", Username: "trusted-name", Role: rbac.RoleContributor}
 	recorder, useCase := performRequest(t, `{
 		"problem_id": 42,
 		"language": "GO",
 		"source_code": "package main",
 		"user_id": "attacker",
 		"username": "attacker",
-		"status": "ACCEPTED"
+		"status": "ACCEPTED",
+		"actor_user_id": "attacker",
+		"actor_role": "admin"
 	}`, &claims)
 
 	if recorder.Code != http.StatusCreated {
@@ -89,7 +92,7 @@ func TestCreateSubmissionHandler_Success(t *testing.T) {
 	if !useCase.called {
 		t.Fatal("use case was not called")
 	}
-	if useCase.claims.UserID != claims.UserID || useCase.claims.Username != claims.Username {
+	if useCase.claims.UserID != claims.UserID || useCase.claims.Username != claims.Username || useCase.claims.Role != claims.Role {
 		t.Fatalf("claims = %+v, want trusted claims %+v", useCase.claims, claims)
 	}
 	if useCase.req.ProblemID != 42 || useCase.req.Language != "GO" || useCase.req.SourceCode != "package main" {
@@ -121,7 +124,9 @@ func TestCreateSubmissionHandlerProblemErrors(t *testing.T) {
 		wantStatus int
 		wantCode   int
 	}{
-		{name: "problem not found", err: domain.ErrProblemNotFound, wantStatus: http.StatusNotFound, wantCode: 40400},
+		{name: "inaccessible hidden problem", err: domain.ErrProblemNotFound, wantStatus: http.StatusNotFound, wantCode: 40400},
+		{name: "missing actor authority", err: domain.ErrProblemActorUnauthenticated, wantStatus: http.StatusUnauthorized, wantCode: 40100},
+		{name: "unsupported actor authority", err: domain.ErrProblemActorForbidden, wantStatus: http.StatusForbidden, wantCode: 40300},
 		{name: "problem service unavailable", err: domain.ErrProblemServiceUnavailable, wantStatus: http.StatusServiceUnavailable, wantCode: 50300},
 	}
 
