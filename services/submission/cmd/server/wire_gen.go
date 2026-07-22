@@ -15,8 +15,12 @@ import (
 	"go-judge-system/pkg/logger"
 	"go-judge-system/pkg/middleware"
 	"go-judge-system/services/submission/internal/adapter/inbound/http"
+	"go-judge-system/services/submission/internal/adapter/inbound/http/handler"
+	user2 "go-judge-system/services/submission/internal/adapter/inbound/http/handler/user"
+	"go-judge-system/services/submission/internal/adapter/outbound/judge"
 	"go-judge-system/services/submission/internal/adapter/outbound/outbox"
 	"go-judge-system/services/submission/internal/adapter/outbound/persistence/postgres"
+	"go-judge-system/services/submission/internal/application/usecase/user"
 	"go-judge-system/services/submission/internal/container"
 )
 
@@ -28,6 +32,14 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	if err != nil {
 		return nil, err
 	}
+	submissionRepository := postgres.NewSubmissionRepository(db)
+	transactionManager := postgres.NewTransactionManager(db)
+	outboxRepository := postgres.NewOutboxRepository(db)
+	kafkaConfig := cfg.Kafka
+	judgePublisher := judge.NewOutboxJudgePublisher(outboxRepository, kafkaConfig)
+	createSubmissionUseCase := user.NewCreateSubmissionUseCase(submissionRepository, transactionManager, judgePublisher)
+	createSubmissionHandler := user2.NewCreateSubmissionHandler(createSubmissionUseCase)
+	userHandler := handler.NewUserHandler(createSubmissionHandler)
 	redisConfig := cfg.Redis
 	client, err := cache.ConnectRedis(redisConfig)
 	if err != nil {
@@ -40,9 +52,7 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	serverConfig := cfg.Server
 	string2 := provideServerMode(serverConfig)
 	zapLogger := logger.NewLogger(loggerConfig, string2)
-	router := http.NewRouter(handlerFunc, zapLogger)
-	outboxRepository := postgres.NewOutboxRepository(db)
-	kafkaConfig := cfg.Kafka
+	router := http.NewRouter(userHandler, handlerFunc, zapLogger)
 	syncProducer, err := kafka.NewSyncProducer(kafkaConfig, zapLogger)
 	if err != nil {
 		return nil, err

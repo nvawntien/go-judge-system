@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"go-judge-system/services/submission/internal/application/port/outbound"
@@ -43,7 +44,7 @@ func (r *submissionRepository) Create(ctx context.Context, submission *entity.Su
 	dao := toSubmissionDAO(submission)
 	db := getDB(ctx, r.db)
 	if err := db.Create(dao).Error; err != nil {
-		return err
+		return fmt.Errorf("create submission: %w", err)
 	}
 
 	submission.ID = dao.ID
@@ -57,7 +58,7 @@ func (r *submissionRepository) GetByID(ctx context.Context, id int64) (*entity.S
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, domain.ErrSubmissionNotFound
 		}
-		return nil, err
+		return nil, fmt.Errorf("get submission %d: %w", id, err)
 	}
 
 	return toSubmissionEntity(&dao), nil
@@ -75,7 +76,7 @@ func (r *submissionRepository) Update(ctx context.Context, submission *entity.Su
 	db := getDB(ctx, r.db)
 	result := db.Model(&SubmissionDAO{}).Where("id = ?", submission.ID).Updates(updates)
 	if result.Error != nil {
-		return result.Error
+		return fmt.Errorf("update submission %d: %w", submission.ID, result.Error)
 	}
 	if result.RowsAffected == 0 {
 		return domain.ErrSubmissionNotFound
@@ -90,7 +91,7 @@ func (r *submissionRepository) ListByUser(ctx context.Context, userID string, of
 
 	var daos []SubmissionDAO
 	if err := query.Order("created_at DESC").Offset(offset).Limit(limit).Find(&daos).Error; err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list submissions by user: %w", err)
 	}
 
 	return toSubmissionEntities(daos), nil
@@ -101,7 +102,10 @@ func (r *submissionRepository) CountByUser(ctx context.Context, userID string, s
 	query = applyListFilters(query, status, language)
 
 	var count int64
-	return count, query.Count(&count).Error
+	if err := query.Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("count submissions by user: %w", err)
+	}
+	return count, nil
 }
 
 func (r *submissionRepository) ListByProblem(ctx context.Context, problemID int64, offset, limit int, status, language string) ([]*entity.Submission, error) {
@@ -110,7 +114,7 @@ func (r *submissionRepository) ListByProblem(ctx context.Context, problemID int6
 
 	var daos []SubmissionDAO
 	if err := query.Order("created_at DESC").Offset(offset).Limit(limit).Find(&daos).Error; err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list submissions by problem: %w", err)
 	}
 
 	return toSubmissionEntities(daos), nil
@@ -121,7 +125,10 @@ func (r *submissionRepository) CountByProblem(ctx context.Context, problemID int
 	query = applyListFilters(query, status, language)
 
 	var count int64
-	return count, query.Count(&count).Error
+	if err := query.Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("count submissions by problem: %w", err)
+	}
+	return count, nil
 }
 
 func (r *submissionRepository) ListAll(ctx context.Context, offset, limit int, problemID *int64, userID, status, language string) ([]*entity.Submission, error) {
@@ -130,7 +137,7 @@ func (r *submissionRepository) ListAll(ctx context.Context, offset, limit int, p
 
 	var daos []SubmissionDAO
 	if err := query.Order("created_at DESC").Offset(offset).Limit(limit).Find(&daos).Error; err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list submissions: %w", err)
 	}
 
 	return toSubmissionEntities(daos), nil
@@ -141,7 +148,10 @@ func (r *submissionRepository) CountAll(ctx context.Context, problemID *int64, u
 	query = applyAdminFilters(query, problemID, userID, status, language)
 
 	var count int64
-	return count, query.Count(&count).Error
+	if err := query.Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("count submissions: %w", err)
+	}
+	return count, nil
 }
 
 func applyListFilters(query *gorm.DB, status, language string) *gorm.DB {

@@ -126,24 +126,22 @@ func (a *App) Close() error {
 
 	if a.KafkaProducer != nil {
 		if err := a.KafkaProducer.Close(); err != nil {
-			a.Logger.Error("failed to close kafka producer", zap.Error(err))
-			closeErr = errors.Join(closeErr, err)
+			closeErr = errors.Join(closeErr, fmt.Errorf("close kafka producer: %w", err))
 		}
 	}
 
 	if a.Database != nil {
 		sqlDB, err := a.Database.DB()
-		if err == nil {
-			if err = sqlDB.Close(); err != nil {
-				a.Logger.Error("failed to close database connection", zap.Error(err))
-				closeErr = errors.Join(closeErr, err)
-			}
+		if err != nil {
+			closeErr = errors.Join(closeErr, fmt.Errorf("obtain SQL database handle: %w", err))
+		} else if err = sqlDB.Close(); err != nil {
+			closeErr = errors.Join(closeErr, fmt.Errorf("close database: %w", err))
 		}
 	}
 
 	if a.Logger != nil {
 		if err := a.Logger.Sync(); err != nil {
-			closeErr = errors.Join(closeErr, err)
+			closeErr = errors.Join(closeErr, fmt.Errorf("sync logger: %w", err))
 		}
 	}
 

@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"fmt"
 
 	"go-judge-system/services/submission/internal/application/port/outbound"
 
@@ -19,10 +20,14 @@ func NewTransactionManager(db *gorm.DB) outbound.TransactionManager {
 }
 
 func (tm *transactionManager) ExecuteInTx(ctx context.Context, fn func(txCtx context.Context) error) error {
-	return tm.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := tm.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		txCtx := context.WithValue(ctx, txKey{}, tx)
 		return fn(txCtx)
 	})
+	if err != nil {
+		return fmt.Errorf("execute transaction: %w", err)
+	}
+	return nil
 }
 
 // getDB is a helper for repositories to retrieve a transaction from context if it exists,

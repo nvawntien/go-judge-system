@@ -10,8 +10,6 @@ import (
 	"go-judge-system/pkg/config"
 	pkgjudge "go-judge-system/pkg/judge"
 	"go-judge-system/services/submission/internal/domain/entity"
-
-	"go.uber.org/zap"
 )
 
 type mockOutboxRepository struct {
@@ -42,7 +40,7 @@ func (m *mockOutboxRepository) MarkFailed(ctx context.Context, id int64, errReas
 func TestNewOutboxJudgePublisher_DefaultTopic(t *testing.T) {
 	t.Parallel()
 
-	publisher := NewOutboxJudgePublisher(&mockOutboxRepository{}, config.KafkaConfig{}, zap.NewNop())
+	publisher := NewOutboxJudgePublisher(&mockOutboxRepository{}, config.KafkaConfig{})
 	impl, ok := publisher.(*outboxJudgePublisher)
 	if !ok {
 		t.Fatal("expected outboxJudgePublisher implementation")
@@ -79,6 +77,9 @@ func TestPublish_Success(t *testing.T) {
 		if payload.ProblemID != sub.ProblemID {
 			t.Fatalf("problem_id = %d, want %d", payload.ProblemID, sub.ProblemID)
 		}
+		if payload.ProblemSlug != sub.ProblemName {
+			t.Fatalf("problem_slug = %q, want %q", payload.ProblemSlug, sub.ProblemName)
+		}
 		if payload.UserID != sub.UserID {
 			t.Fatalf("user_id = %q, want %q", payload.UserID, sub.UserID)
 		}
@@ -102,7 +103,6 @@ func TestPublish_Success(t *testing.T) {
 	publisher := NewOutboxJudgePublisher(
 		repo,
 		config.KafkaConfig{JobTopic: "judge.submission.jobs"},
-		zap.NewNop(),
 	)
 
 	if err := publisher.Publish(context.Background(), sub); err != nil {
@@ -123,7 +123,7 @@ func TestPublish_OutboxCreateError(t *testing.T) {
 		},
 	}
 
-	publisher := NewOutboxJudgePublisher(repo, config.KafkaConfig{}, zap.NewNop())
+	publisher := NewOutboxJudgePublisher(repo, config.KafkaConfig{})
 
 	err := publisher.Publish(context.Background(), sub)
 	if err == nil {

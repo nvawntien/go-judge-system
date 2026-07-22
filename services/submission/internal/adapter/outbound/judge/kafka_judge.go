@@ -12,16 +12,14 @@ import (
 	"go-judge-system/services/submission/internal/domain/entity"
 
 	"github.com/google/uuid"
-	"go.uber.org/zap"
 )
 
 type outboxJudgePublisher struct {
 	outboxRepo outbound.OutboxRepository
 	topic      string
-	logger     *zap.Logger
 }
 
-func NewOutboxJudgePublisher(outboxRepo outbound.OutboxRepository, kafkaCfg config.KafkaConfig, logger *zap.Logger) outbound.JudgePublisher {
+func NewOutboxJudgePublisher(outboxRepo outbound.OutboxRepository, kafkaCfg config.KafkaConfig) outbound.JudgePublisher {
 	topic := kafkaCfg.JobTopic
 	if topic == "" {
 		topic = "judge.submission.jobs"
@@ -30,7 +28,6 @@ func NewOutboxJudgePublisher(outboxRepo outbound.OutboxRepository, kafkaCfg conf
 	return &outboxJudgePublisher{
 		outboxRepo: outboxRepo,
 		topic:      topic,
-		logger:     logger,
 	}
 }
 
@@ -59,15 +56,8 @@ func (p *outboxJudgePublisher) Publish(ctx context.Context, submission *entity.S
 	}
 
 	if err := p.outboxRepo.Create(ctx, outboxMsg); err != nil {
-		return fmt.Errorf("create outbox message: %w", err)
+		return err
 	}
 
-	p.logger.Info(
-		"inserted judge job into outbox",
-		zap.Int64("submission_id", submission.ID),
-		zap.String("attempt_id", payload.AttemptID),
-		zap.String("topic", p.topic),
-		zap.Int64("outbox_id", outboxMsg.ID),
-	)
 	return nil
 }

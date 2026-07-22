@@ -11,7 +11,17 @@ const (
 	LanguagePython     Language = "PYTHON"
 	LanguageGo         Language = "GO"
 	LanguageJavaScript Language = "JAVASCRIPT"
+	MaxSourceCodeBytes          = 256 * 1024
 )
+
+func (l Language) IsExecutable() bool {
+	switch l {
+	case LanguageCPP, LanguageGo, LanguagePython, LanguageJava:
+		return true
+	default:
+		return false
+	}
+}
 
 type Status string
 

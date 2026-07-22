@@ -11,6 +11,8 @@ import (
 	"go.uber.org/zap"
 )
 
+const maxPublishRetries = 5
+
 type OutboxRelay struct {
 	repo     outbound.OutboxRepository
 	producer sarama.SyncProducer
@@ -27,7 +29,7 @@ func NewOutboxRelay(repo outbound.OutboxRepository, producer sarama.SyncProducer
 
 func (r *OutboxRelay) Start(ctx context.Context, pollInterval time.Duration) error {
 	r.logger.Info("starting outbox relay", zap.Duration("interval", pollInterval))
-	
+
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 
@@ -58,8 +60,8 @@ func (r *OutboxRelay) processPendingMessages(ctx context.Context) {
 		default:
 		}
 
-		// Skip messages that have failed more than 5 times
-		if msg.RetryCount >= 5 {
+		// Messages at the retry limit are skipped without logging on every poll.
+		if msg.RetryCount >= maxPublishRetries {
 			continue // In a real system you'd move this to a DLQ or trigger alerts
 		}
 
@@ -71,18 +73,45 @@ func (r *OutboxRelay) processPendingMessages(ctx context.Context) {
 
 		partition, offset, err := r.producer.SendMessage(kafkaMsg)
 		if err != nil {
-			r.logger.Error("failed to publish outbox message to kafka",
-				zap.Int64("outbox_id", msg.ID),
+			r.logger.Error("failed to publish outbox message",
+				zap.Int64("outbox_message_id", msg.ID),
+				zap.Int64("aggregate_id", msg.AggregateID),
+				zap.String("topic", msg.Topic),
+				zap.Int("retry_count", msg.RetryCount),
 				zap.Error(err),
 			)
-			_ = r.repo.MarkFailed(ctx, msg.ID, err.Error())
+
+			if markErr := r.repo.MarkFailed(ctx, msg.ID, err.Error()); markErr != nil {
+				r.logger.Error("failed to persist outbox publish failure",
+					zap.Int64("outbox_message_id", msg.ID),
+					zap.Int64("aggregate_id", msg.AggregateID),
+					zap.String("topic", msg.Topic),
+					zap.Int("retry_count", msg.RetryCount),
+					zap.Error(markErr),
+				)
+				continue
+			}
+
+			resultingRetryCount := msg.RetryCount + 1
+			if resultingRetryCount == maxPublishRetries {
+				r.logger.Error("outbox message reached retry limit",
+					zap.Int64("outbox_message_id", msg.ID),
+					zap.Int64("aggregate_id", msg.AggregateID),
+					zap.String("topic", msg.Topic),
+					zap.Int("retry_count", resultingRetryCount),
+					zap.Error(err),
+				)
+			}
 			continue
 		}
 
 		// Mark as published on success
 		if err := r.repo.MarkPublished(ctx, msg.ID); err != nil {
 			r.logger.Error("failed to mark outbox message as published",
-				zap.Int64("outbox_id", msg.ID),
+				zap.Int64("outbox_message_id", msg.ID),
+				zap.Int64("aggregate_id", msg.AggregateID),
+				zap.String("topic", msg.Topic),
+				zap.Int("retry_count", msg.RetryCount),
 				zap.Error(err),
 			)
 			// At this point we might have published to Kafka but failed to update status in DB.
@@ -90,8 +119,10 @@ func (r *OutboxRelay) processPendingMessages(ctx context.Context) {
 			// The consumer MUST handle idempotency (which we implemented via AttemptID in Worker Phase 2).
 		} else {
 			r.logger.Debug("published outbox message",
-				zap.Int64("outbox_id", msg.ID),
+				zap.Int64("outbox_message_id", msg.ID),
+				zap.Int64("aggregate_id", msg.AggregateID),
 				zap.String("topic", msg.Topic),
+				zap.Int("retry_count", msg.RetryCount),
 				zap.Int32("partition", partition),
 				zap.Int64("offset", offset),
 			)

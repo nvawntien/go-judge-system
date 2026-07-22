@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	pkgmiddleware "go-judge-system/pkg/middleware"
+	"go-judge-system/services/submission/internal/adapter/inbound/http/handler"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -12,17 +13,19 @@ import (
 
 type Router struct {
 	engine         *gin.Engine
+	userHandler    *handler.UserHandler
 	authMiddleware gin.HandlerFunc
 	server         *http.Server
 }
 
-func NewRouter(authMiddleware gin.HandlerFunc, logger *zap.Logger) *Router {
+func NewRouter(userHandler *handler.UserHandler, authMiddleware gin.HandlerFunc, logger *zap.Logger) *Router {
 	engine := gin.New()
 	engine.Use(pkgmiddleware.Recovery(logger))
 	engine.Use(pkgmiddleware.UnifiedLogger(logger))
 
 	return &Router{
 		engine:         engine,
+		userHandler:    userHandler,
 		authMiddleware: authMiddleware,
 	}
 }
@@ -31,6 +34,9 @@ func (r *Router) SetupRoutes() {
 	r.engine.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
+
+	v1 := r.engine.Group("/api/v1")
+	v1.POST("/submissions", r.authMiddleware, r.userHandler.CreateSubmission.Handle)
 }
 
 func (r *Router) Start(port string) error {

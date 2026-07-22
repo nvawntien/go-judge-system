@@ -1,6 +1,6 @@
 module go-judge-system/workers/judge
 
-go 1.25
+go 1.25.8
 
 require (
 	github.com/IBM/sarama v1.46.2
