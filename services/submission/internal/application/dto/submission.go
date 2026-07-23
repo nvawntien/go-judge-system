@@ -20,7 +20,7 @@ type CreateSubmissionResponse struct {
 }
 
 type GetSubmissionRequest struct {
-	SubmissionID int64 `uri:"id" binding:"required,gt=0"`
+	SubmissionID int64 `uri:"submission_id" binding:"required,gt=0"`
 }
 
 type GetSubmissionResponse struct {

@@ -64,8 +64,20 @@ func TestRouterRegistersAuthenticatedSubmissionRoutes(t *testing.T) {
 	if routeCounts[http.MethodPost+" /api/v1/submissions"] != 1 {
 		t.Fatalf("POST route count = %d, want 1", routeCounts[http.MethodPost+" /api/v1/submissions"])
 	}
-	if routeCounts[http.MethodGet+" /api/v1/submissions/:id"] != 1 {
-		t.Fatalf("GET route count = %d, want 1", routeCounts[http.MethodGet+" /api/v1/submissions/:id"])
+	if routeCounts[http.MethodGet+" /api/v1/submissions/:submission_id"] != 1 {
+		t.Fatalf(
+			"GET route count = %d, want 1",
+			routeCounts[http.MethodGet+" /api/v1/submissions/:submission_id"],
+		)
+	}
+	for _, staleRoute := range []string{
+		http.MethodGet + " /api/v1/submissions/:id",
+		http.MethodGet + " /api/v1/my/submissions/:id",
+		http.MethodGet + " /api/v1/admin/submissions/:id",
+	} {
+		if routeCounts[staleRoute] != 0 {
+			t.Fatalf("stale route %q count = %d, want 0", staleRoute, routeCounts[staleRoute])
+		}
 	}
 
 	recorder := httptest.NewRecorder()

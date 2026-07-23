@@ -39,7 +39,7 @@ func (f *fakeGetSubmissionUseCase) Execute(
 
 func getSubmissionResponseFixture() dto.GetSubmissionResponse {
 	return dto.GetSubmissionResponse{
-		ID:           77,
+		ID:           123,
 		ProblemID:    42,
 		ProblemTitle: "Two Sum",
 		UserID:       "owner",
@@ -63,7 +63,7 @@ func performGetSubmissionRequest(
 
 	handler := NewGetSubmissionHandler(useCase)
 	router := gin.New()
-	router.GET("/api/v1/submissions/:id", func(c *gin.Context) {
+	router.GET("/api/v1/submissions/:submission_id", func(c *gin.Context) {
 		if claims != nil {
 			auth.SetClaims(c, *claims)
 		}
@@ -90,7 +90,7 @@ func TestGetSubmissionHandlerSuccess(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			claims := auth.Claims{UserID: "actor", Username: "actor-name", Role: tt.role}
 			useCase := &fakeGetSubmissionUseCase{response: getSubmissionResponseFixture()}
-			recorder := performGetSubmissionRequest(t, "/api/v1/submissions/77", &claims, useCase)
+			recorder := performGetSubmissionRequest(t, "/api/v1/submissions/123", &claims, useCase)
 
 			if recorder.Code != http.StatusOK {
 				t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
@@ -98,7 +98,7 @@ func TestGetSubmissionHandlerSuccess(t *testing.T) {
 			if useCase.calls != 1 {
 				t.Fatalf("use case calls = %d, want 1", useCase.calls)
 			}
-			wantRequest := dto.GetSubmissionRequest{SubmissionID: 77}
+			wantRequest := dto.GetSubmissionRequest{SubmissionID: 123}
 			if useCase.req != wantRequest {
 				t.Fatalf("request = %+v, want %+v", useCase.req, wantRequest)
 			}
@@ -125,9 +125,13 @@ func TestGetSubmissionHandlerSuccess(t *testing.T) {
 	}
 }
 
-func TestGetSubmissionHandlerRejectsInvalidPathID(t *testing.T) {
+func TestGetSubmissionHandlerRejectsInvalidSubmissionID(t *testing.T) {
 	claims := auth.Claims{UserID: "actor", Role: rbac.RoleUser}
-	for _, path := range []string{"/api/v1/submissions/not-a-number", "/api/v1/submissions/0"} {
+	for _, path := range []string{
+		"/api/v1/submissions/not-a-number",
+		"/api/v1/submissions/0",
+		"/api/v1/submissions/-1",
+	} {
 		t.Run(path, func(t *testing.T) {
 			useCase := &fakeGetSubmissionUseCase{}
 			recorder := performGetSubmissionRequest(t, path, &claims, useCase)
@@ -140,9 +144,27 @@ func TestGetSubmissionHandlerRejectsInvalidPathID(t *testing.T) {
 	}
 }
 
+func TestGetSubmissionHandlerRejectsMissingSubmissionID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	useCase := &fakeGetSubmissionUseCase{}
+	handler := NewGetSubmissionHandler(useCase)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/submissions", nil)
+	auth.SetClaims(c, auth.Claims{UserID: "actor", Role: rbac.RoleUser})
+
+	handler.Handle(c)
+
+	assertGetSubmissionError(t, recorder, http.StatusBadRequest, response.CodeParamInvalid)
+	if useCase.calls != 0 {
+		t.Fatalf("use case calls = %d, want 0", useCase.calls)
+	}
+}
+
 func TestGetSubmissionHandlerMissingClaims(t *testing.T) {
 	useCase := &fakeGetSubmissionUseCase{}
-	recorder := performGetSubmissionRequest(t, "/api/v1/submissions/77", nil, useCase)
+	recorder := performGetSubmissionRequest(t, "/api/v1/submissions/123", nil, useCase)
 
 	assertGetSubmissionError(t, recorder, http.StatusUnauthorized, response.CodeUnauthorized)
 	if useCase.calls != 0 {
@@ -173,7 +195,7 @@ func TestGetSubmissionHandlerMapsUseCaseErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			useCase := &fakeGetSubmissionUseCase{err: tt.err}
-			recorder := performGetSubmissionRequest(t, "/api/v1/submissions/77", &claims, useCase)
+			recorder := performGetSubmissionRequest(t, "/api/v1/submissions/123", &claims, useCase)
 
 			assertGetSubmissionError(t, recorder, tt.wantStatus, tt.wantCode)
 			if useCase.calls != 1 {
