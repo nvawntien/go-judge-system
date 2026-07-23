@@ -37,6 +37,7 @@ func (r *Router) SetupRoutes() {
 
 	v1 := r.engine.Group("/api/v1")
 	v1.POST("/submissions", r.authMiddleware, r.userHandler.CreateSubmission.Handle)
+	v1.GET("/submissions/:id", r.authMiddleware, r.userHandler.GetSubmission.Handle)
 }
 
 func (r *Router) Start(port string) error {

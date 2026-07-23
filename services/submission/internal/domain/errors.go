@@ -5,6 +5,8 @@ import "go-judge-system/pkg/response"
 var (
 	ErrSubmissionNotFound          = response.NewAppError(response.CodeNotFound, "submission not found", nil)
 	ErrSubmissionForbidden         = response.NewAppError(response.CodeForbidden, "you are not allowed to access this submission", nil)
+	ErrInvalidSubmissionID         = response.NewAppError(response.CodeBadRequest, "invalid submission ID", nil)
+	ErrSubmissionUnauthenticated   = response.NewAppError(response.CodeUnauthorized, "submission authentication required", nil)
 	ErrInvalidProblemID            = response.NewAppError(response.CodeBadRequest, "invalid problem ID", nil)
 	ErrProblemActorUnauthenticated = response.NewAppError(response.CodeUnauthorized, "problem actor authentication required", nil)
 	ErrProblemActorForbidden       = response.NewAppError(response.CodeForbidden, "problem access forbidden", nil)

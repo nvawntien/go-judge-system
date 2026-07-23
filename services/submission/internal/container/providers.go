@@ -86,10 +86,12 @@ var OutboundProviderSet = wire.NewSet(
 
 var UseCaseProviderSet = wire.NewSet(
 	userusecase.NewCreateSubmissionUseCase,
+	userusecase.NewGetSubmissionUseCase,
 )
 
 var InboundProviderSet = wire.NewSet(
 	userhandler.NewCreateSubmissionHandler,
+	userhandler.NewGetSubmissionHandler,
 	handler.NewUserHandler,
 	http.NewRouter,
 )

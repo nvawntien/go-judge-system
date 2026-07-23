@@ -51,7 +51,9 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	problemReader := problem.NewGRPCProblemReader(problemServiceClient, duration)
 	createSubmissionUseCase := user.NewCreateSubmissionUseCase(submissionRepository, transactionManager, judgePublisher, problemReader)
 	createSubmissionHandler := user2.NewCreateSubmissionHandler(createSubmissionUseCase)
-	userHandler := handler.NewUserHandler(createSubmissionHandler)
+	getSubmissionUseCase := user.NewGetSubmissionUseCase(submissionRepository)
+	getSubmissionHandler := user2.NewGetSubmissionHandler(getSubmissionUseCase)
+	userHandler := handler.NewUserHandler(createSubmissionHandler, getSubmissionHandler)
 	redisConfig := cfg.Redis
 	client, err := cache.ConnectRedis(redisConfig)
 	if err != nil {
