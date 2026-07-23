@@ -166,7 +166,7 @@ func TestCreateSubmission_ExecutableLanguages(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Execute() error = %v", err)
 			}
-			if got.ID != 77 || got.ProblemID != 42 || got.Language != language || got.Status != "PENDING" || got.CreatedAt.IsZero() {
+			if got.ID != 77 || got.ProblemID != 42 || got.ProblemTitle != "Two Sum" || got.Language != language || got.Status != "PENDING" || got.CreatedAt.IsZero() {
 				t.Fatalf("unexpected response: %+v", got)
 			}
 			if !tx.committedOutbox || tx.committedSubmission == nil {
@@ -257,8 +257,17 @@ func TestCreateSubmissionValidatesProblemBeforeTransaction(t *testing.T) {
 	if got.ProblemID != 84 || repo.created.ProblemID != 84 {
 		t.Fatalf("canonical problem ID response/stored = %d/%d, want 84", got.ProblemID, repo.created.ProblemID)
 	}
+	if got.ProblemTitle != "Two Sum" {
+		t.Fatalf("ProblemTitle = %q, want canonical title", got.ProblemTitle)
+	}
+	if got.ProblemTitle == problemReader.problem.Slug {
+		t.Fatalf("ProblemTitle = %q, must not use canonical slug", got.ProblemTitle)
+	}
 	if repo.created.ProblemName != "Two Sum" {
 		t.Fatalf("ProblemName = %q, want canonical title", repo.created.ProblemName)
+	}
+	if publisher.metadata.ProblemSlug != "two-sum" {
+		t.Fatalf("ProblemSlug = %q, want canonical slug", publisher.metadata.ProblemSlug)
 	}
 	if repo.created.UserID != "trusted-user" || repo.created.Username != "trusted-name" {
 		t.Fatalf("ownership = %q/%q", repo.created.UserID, repo.created.Username)

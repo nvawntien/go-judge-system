@@ -36,11 +36,12 @@ func (f *fakeCreateSubmissionUseCase) Execute(
 		return dto.CreateSubmissionResponse{}, f.err
 	}
 	return dto.CreateSubmissionResponse{
-		ID:        77,
-		ProblemID: req.ProblemID,
-		Language:  req.Language,
-		Status:    "PENDING",
-		CreatedAt: time.Date(2026, 7, 22, 1, 2, 3, 0, time.UTC),
+		ID:           77,
+		ProblemID:    req.ProblemID,
+		ProblemTitle: "Two Sum",
+		Language:     req.Language,
+		Status:       "PENDING",
+		CreatedAt:    time.Date(2026, 7, 22, 1, 2, 3, 0, time.UTC),
 	}, nil
 }
 
@@ -77,6 +78,7 @@ func TestCreateSubmissionHandler_Success(t *testing.T) {
 	claims := auth.Claims{UserID: "trusted-user", Username: "trusted-name", Role: rbac.RoleContributor}
 	recorder, useCase := performRequest(t, `{
 		"problem_id": 42,
+		"problem_title": "Attacker Title",
 		"language": "GO",
 		"source_code": "package main",
 		"user_id": "attacker",
@@ -111,7 +113,12 @@ func TestCreateSubmissionHandler_Success(t *testing.T) {
 	if responseBody.Status != "success" || responseBody.Code != 20100 || responseBody.Msg != "" {
 		t.Fatalf("unexpected envelope: %+v", responseBody)
 	}
-	if responseBody.Data.ID != 77 || responseBody.Data.Status != "PENDING" {
+	if responseBody.Data.ID != 77 ||
+		responseBody.Data.ProblemID != 42 ||
+		responseBody.Data.ProblemTitle != "Two Sum" ||
+		responseBody.Data.Language != "GO" ||
+		responseBody.Data.Status != "PENDING" ||
+		!responseBody.Data.CreatedAt.Equal(time.Date(2026, 7, 22, 1, 2, 3, 0, time.UTC)) {
 		t.Fatalf("unexpected response data: %+v", responseBody.Data)
 	}
 }

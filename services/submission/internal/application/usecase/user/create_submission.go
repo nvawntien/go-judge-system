@@ -92,10 +92,11 @@ func (uc *createSubmissionUseCase) Execute(
 	}
 
 	return dto.CreateSubmissionResponse{
-		ID:        submission.ID,
-		ProblemID: submission.ProblemID,
-		Language:  string(submission.Language),
-		Status:    string(submission.Status),
-		CreatedAt: submission.CreatedAt,
+		ID:           submission.ID,
+		ProblemID:    submission.ProblemID,
+		ProblemTitle: submission.ProblemName,
+		Language:     string(submission.Language),
+		Status:       string(submission.Status),
+		CreatedAt:    submission.CreatedAt,
 	}, nil
 }

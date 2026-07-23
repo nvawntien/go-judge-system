@@ -9,9 +9,10 @@ type CreateSubmissionRequest struct {
 }
 
 type CreateSubmissionResponse struct {
-	ID        int64     `json:"id"`
-	ProblemID int64     `json:"problem_id"`
-	Language  string    `json:"language"`
-	Status    string    `json:"status"`
-	CreatedAt time.Time `json:"created_at"`
+	ID           int64     `json:"id"`
+	ProblemID    int64     `json:"problem_id"`
+	ProblemTitle string    `json:"problem_title"`
+	Language     string    `json:"language"`
+	Status       string    `json:"status"`
+	CreatedAt    time.Time `json:"created_at"`
 }
