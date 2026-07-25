@@ -10,17 +10,13 @@ type SubmissionRepository interface {
 	Create(ctx context.Context, submission *entity.Submission) error
 	GetByID(ctx context.Context, id int64) (*entity.Submission, error)
 	Update(ctx context.Context, submission *entity.Submission) error
-	ListByUser(ctx context.Context, filter ListSubmissionsFilter) (ListSubmissionsResult, error)
-	ListByProblem(ctx context.Context, problemID int64, offset, limit int, status, language string) ([]*entity.Submission, error)
-	CountByProblem(ctx context.Context, problemID int64, status, language string) (int64, error)
-	ListAll(ctx context.Context, offset, limit int, problemID *int64, userID, status, language string) ([]*entity.Submission, error)
-	CountAll(ctx context.Context, problemID *int64, userID, status, language string) (int64, error)
+	List(ctx context.Context, filter ListSubmissionsFilter) (ListSubmissionsResult, error)
 }
 
 type ListSubmissionsFilter struct {
-	UserID    string
-	Status    string
-	Language  string
+	UserID    *string
+	Status    *string
+	Language  *string
 	ProblemID *int64
 	Limit     int
 	Offset    int

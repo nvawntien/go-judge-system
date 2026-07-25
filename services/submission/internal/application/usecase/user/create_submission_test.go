@@ -67,23 +67,11 @@ func (r *fakeSubmissionRepository) GetByID(context.Context, int64) (*entity.Subm
 	return nil, nil
 }
 func (r *fakeSubmissionRepository) Update(context.Context, *entity.Submission) error { return nil }
-func (r *fakeSubmissionRepository) ListByUser(
+func (r *fakeSubmissionRepository) List(
 	context.Context,
 	outbound.ListSubmissionsFilter,
 ) (outbound.ListSubmissionsResult, error) {
 	return outbound.ListSubmissionsResult{}, nil
-}
-func (r *fakeSubmissionRepository) ListByProblem(context.Context, int64, int, int, string, string) ([]*entity.Submission, error) {
-	return nil, nil
-}
-func (r *fakeSubmissionRepository) CountByProblem(context.Context, int64, string, string) (int64, error) {
-	return 0, nil
-}
-func (r *fakeSubmissionRepository) ListAll(context.Context, int, int, *int64, string, string, string) ([]*entity.Submission, error) {
-	return nil, nil
-}
-func (r *fakeSubmissionRepository) CountAll(context.Context, *int64, string, string, string) (int64, error) {
-	return 0, nil
 }
 
 type fakeJudgePublisher struct {

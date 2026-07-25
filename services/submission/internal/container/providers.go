@@ -16,11 +16,13 @@ import (
 	problemv1 "go-judge-system/pkg/pb/problem/v1"
 	"go-judge-system/services/submission/internal/adapter/inbound/http"
 	"go-judge-system/services/submission/internal/adapter/inbound/http/handler"
+	adminhandler "go-judge-system/services/submission/internal/adapter/inbound/http/handler/admin"
 	userhandler "go-judge-system/services/submission/internal/adapter/inbound/http/handler/user"
 	judgepublisher "go-judge-system/services/submission/internal/adapter/outbound/judge"
 	"go-judge-system/services/submission/internal/adapter/outbound/outbox"
 	"go-judge-system/services/submission/internal/adapter/outbound/persistence/postgres"
 	problemreader "go-judge-system/services/submission/internal/adapter/outbound/problem"
+	adminusecase "go-judge-system/services/submission/internal/application/usecase/admin"
 	userusecase "go-judge-system/services/submission/internal/application/usecase/user"
 
 	"github.com/google/wire"
@@ -85,15 +87,18 @@ var OutboundProviderSet = wire.NewSet(
 )
 
 var UseCaseProviderSet = wire.NewSet(
+	adminusecase.NewListAdminSubmissionsUseCase,
 	userusecase.NewCreateSubmissionUseCase,
 	userusecase.NewGetSubmissionUseCase,
 	userusecase.NewListMySubmissionsUseCase,
 )
 
 var InboundProviderSet = wire.NewSet(
+	adminhandler.NewListSubmissionsHandler,
 	userhandler.NewCreateSubmissionHandler,
 	userhandler.NewGetSubmissionHandler,
 	userhandler.NewListMySubmissionsHandler,
+	handler.NewAdminHandler,
 	handler.NewUserHandler,
 	http.NewRouter,
 )

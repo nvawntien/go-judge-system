@@ -57,28 +57,33 @@ func (uc *listMySubmissionsUseCase) Execute(ctx context.Context, claims auth.Cla
 	}
 
 	status := strings.TrimSpace(req.Status)
+	var statusFilter *string
 	if status != "" {
 		if _, ok := entity.ParseStatus(status); !ok {
 			return dto.ListMySubmissionsResponse{}, domain.ErrInvalidSubmissionStatus
 		}
+		statusFilter = &status
 	}
 
 	language := strings.TrimSpace(req.Language)
+	var languageFilter *string
 	if language != "" {
 		parsedLanguage, ok := entity.ParseLanguage(language)
 		if !ok || !parsedLanguage.IsExecutable() {
 			return dto.ListMySubmissionsResponse{}, domain.ErrInvalidLanguage
 		}
+		languageFilter = &language
 	}
 
 	if req.ProblemID != nil && *req.ProblemID <= 0 {
 		return dto.ListMySubmissionsResponse{}, domain.ErrInvalidProblemID
 	}
 
-	result, err := uc.submissionRepo.ListByUser(ctx, outbound.ListSubmissionsFilter{
-		UserID:    claims.UserID,
-		Status:    status,
-		Language:  language,
+	actorUserID := claims.UserID
+	result, err := uc.submissionRepo.List(ctx, outbound.ListSubmissionsFilter{
+		UserID:    &actorUserID,
+		Status:    statusFilter,
+		Language:  languageFilter,
 		ProblemID: req.ProblemID,
 		Limit:     limit,
 		Offset:    (page - 1) * limit,

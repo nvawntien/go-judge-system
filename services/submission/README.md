@@ -10,6 +10,7 @@ along with the infrastructure required to deliver judge jobs reliably.
 - authenticated `POST /api/v1/submissions`
 - authenticated `GET /api/v1/submissions/{submission_id}`
 - authenticated `GET /api/v1/me/submissions`
+- authenticated `GET /api/v1/admin/submissions`
 - PostgreSQL connection
 - shared Zap logger and HTTP logging/recovery middleware
 - shared authentication middleware wiring, including Redis-backed logout-all
@@ -53,6 +54,35 @@ contains `id`, `problem_id`, `problem_title`, `language`, `status`, and
 `created_at`; source code is not included. `problem_title` is the historical
 Problem title snapshot stored with the Submission. Full source code remains
 available through `GET /api/v1/submissions/{submission_id}`.
+
+## Admin submissions
+
+`GET /api/v1/admin/submissions` lists Submissions across the whole system.
+Authentication is required, and only moderators and administrators are allowed.
+Users and contributors receive `403 Forbidden`.
+
+Supported query parameters:
+
+- `page`, default `1`;
+- `limit`, default `20`, maximum `100`;
+- `status`;
+- `language`;
+- `problem_id`;
+- `user_id`.
+
+Results are ordered by `created_at DESC, id DESC`. Each item contains `id`,
+`problem_id`, `problem_title`, `user_id`, `username`, `language`, `status`, and
+`created_at`; source code is not included. `user_id` is the canonical stable
+identity for backend operations. `username` is the Submission-time snapshot for
+display and may differ from the user's current username after an account
+rename.
+
+The list endpoint reads stored snapshots only: `problem_title` comes from
+`Submission.ProblemName`, and `username` comes from `Submission.Username`.
+It does not call Problem Service or Auth Service. Full source code remains
+available through `GET /api/v1/submissions/{submission_id}`. Username filtering
+is intentionally deferred; this first admin list filters users by canonical
+`user_id` only.
 
 ## Configuration
 

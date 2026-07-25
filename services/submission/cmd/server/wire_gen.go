@@ -16,11 +16,13 @@ import (
 	"go-judge-system/pkg/middleware"
 	"go-judge-system/services/submission/internal/adapter/inbound/http"
 	"go-judge-system/services/submission/internal/adapter/inbound/http/handler"
+	admin2 "go-judge-system/services/submission/internal/adapter/inbound/http/handler/admin"
 	user2 "go-judge-system/services/submission/internal/adapter/inbound/http/handler/user"
 	"go-judge-system/services/submission/internal/adapter/outbound/judge"
 	"go-judge-system/services/submission/internal/adapter/outbound/outbox"
 	"go-judge-system/services/submission/internal/adapter/outbound/persistence/postgres"
 	"go-judge-system/services/submission/internal/adapter/outbound/problem"
+	"go-judge-system/services/submission/internal/application/usecase/admin"
 	"go-judge-system/services/submission/internal/application/usecase/user"
 	"go-judge-system/services/submission/internal/container"
 )
@@ -56,6 +58,9 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	listMySubmissionsUseCase := user.NewListMySubmissionsUseCase(submissionRepository)
 	listMySubmissionsHandler := user2.NewListMySubmissionsHandler(listMySubmissionsUseCase)
 	userHandler := handler.NewUserHandler(createSubmissionHandler, getSubmissionHandler, listMySubmissionsHandler)
+	listAdminSubmissionsUseCase := admin.NewListAdminSubmissionsUseCase(submissionRepository)
+	listSubmissionsHandler := admin2.NewListSubmissionsHandler(listAdminSubmissionsUseCase)
+	adminHandler := handler.NewAdminHandler(listSubmissionsHandler)
 	redisConfig := cfg.Redis
 	client, err := cache.ConnectRedis(redisConfig)
 	if err != nil {
@@ -68,7 +73,7 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	serverConfig := cfg.Server
 	string2 := provideServerMode(serverConfig)
 	zapLogger := logger.NewLogger(loggerConfig, string2)
-	router := http.NewRouter(userHandler, handlerFunc, zapLogger)
+	router := http.NewRouter(userHandler, adminHandler, handlerFunc, zapLogger)
 	syncProducer, err := kafka.NewSyncProducer(kafkaConfig, zapLogger)
 	if err != nil {
 		return nil, err

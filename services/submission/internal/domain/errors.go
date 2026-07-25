@@ -8,6 +8,7 @@ var (
 	ErrInvalidSubmissionID         = response.NewAppError(response.CodeBadRequest, "invalid submission ID", nil)
 	ErrSubmissionUnauthenticated   = response.NewAppError(response.CodeUnauthorized, "submission authentication required", nil)
 	ErrInvalidProblemID            = response.NewAppError(response.CodeBadRequest, "invalid problem ID", nil)
+	ErrInvalidUserID               = response.NewAppError(response.CodeBadRequest, "invalid user ID", nil)
 	ErrProblemActorUnauthenticated = response.NewAppError(response.CodeUnauthorized, "problem actor authentication required", nil)
 	ErrProblemActorForbidden       = response.NewAppError(response.CodeForbidden, "problem access forbidden", nil)
 	ErrProblemNotFound             = response.NewAppError(response.CodeNotFound, "problem not found", nil)

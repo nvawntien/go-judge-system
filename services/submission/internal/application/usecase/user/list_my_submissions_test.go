@@ -28,7 +28,7 @@ func newFakeListMySubmissionsRepository() *fakeListMySubmissionsRepository {
 	}
 }
 
-func (r *fakeListMySubmissionsRepository) ListByUser(
+func (r *fakeListMySubmissionsRepository) List(
 	ctx context.Context,
 	filter outbound.ListSubmissionsFilter,
 ) (outbound.ListSubmissionsResult, error) {
@@ -40,8 +40,9 @@ func (r *fakeListMySubmissionsRepository) ListByUser(
 	return r.result, r.err
 }
 
-func intPointer(value int) *int       { return &value }
-func int64Pointer(value int64) *int64 { return &value }
+func intPointer(value int) *int          { return &value }
+func int64Pointer(value int64) *int64    { return &value }
+func stringPointer(value string) *string { return &value }
 
 func listSubmissionFixture() *entity.Submission {
 	return &entity.Submission{
@@ -82,8 +83,8 @@ func TestListMySubmissionsSupportedRolesRemainOwnerScoped(t *testing.T) {
 			if repo.calls != 1 {
 				t.Fatalf("repository calls = %d, want 1", repo.calls)
 			}
-			if repo.filter.UserID != "actor" {
-				t.Fatalf("repository UserID = %q, want authenticated actor", repo.filter.UserID)
+			if repo.filter.UserID == nil || *repo.filter.UserID != "actor" {
+				t.Fatalf("repository UserID = %v, want authenticated actor", repo.filter.UserID)
 			}
 			if repo.filter.Offset != 0 || repo.filter.Limit != defaultSubmissionsLimit {
 				t.Fatalf("repository pagination = %+v, want default page/limit", repo.filter)
@@ -120,7 +121,7 @@ func TestListMySubmissionsFiltersAndPagination(t *testing.T) {
 			claims: auth.Claims{UserID: "actor", Role: rbac.RoleUser},
 			req:    dto.ListMySubmissionsRequest{Status: "ACCEPTED"},
 			want: outbound.ListSubmissionsFilter{
-				UserID: "actor", Status: "ACCEPTED", Limit: 20,
+				UserID: stringPointer("actor"), Status: stringPointer("ACCEPTED"), Limit: 20,
 			},
 			total:    1,
 			wantPage: dto.PaginationResponse{Page: 1, Limit: 20, Total: 1, TotalPages: 1},
@@ -130,7 +131,7 @@ func TestListMySubmissionsFiltersAndPagination(t *testing.T) {
 			claims: auth.Claims{UserID: "actor", Role: rbac.RoleUser},
 			req:    dto.ListMySubmissionsRequest{Language: "GO"},
 			want: outbound.ListSubmissionsFilter{
-				UserID: "actor", Language: "GO", Limit: 20,
+				UserID: stringPointer("actor"), Language: stringPointer("GO"), Limit: 20,
 			},
 			total:    1,
 			wantPage: dto.PaginationResponse{Page: 1, Limit: 20, Total: 1, TotalPages: 1},
@@ -140,7 +141,7 @@ func TestListMySubmissionsFiltersAndPagination(t *testing.T) {
 			claims: auth.Claims{UserID: "actor", Role: rbac.RoleUser},
 			req:    dto.ListMySubmissionsRequest{ProblemID: int64Pointer(42)},
 			want: outbound.ListSubmissionsFilter{
-				UserID: "actor", ProblemID: int64Pointer(42), Limit: 20,
+				UserID: stringPointer("actor"), ProblemID: int64Pointer(42), Limit: 20,
 			},
 			total:    1,
 			wantPage: dto.PaginationResponse{Page: 1, Limit: 20, Total: 1, TotalPages: 1},
@@ -153,7 +154,7 @@ func TestListMySubmissionsFiltersAndPagination(t *testing.T) {
 				Status: "PENDING", Language: "CPP", ProblemID: int64Pointer(42),
 			},
 			want: outbound.ListSubmissionsFilter{
-				UserID: "actor", Status: "PENDING", Language: "CPP",
+				UserID: stringPointer("actor"), Status: stringPointer("PENDING"), Language: stringPointer("CPP"),
 				ProblemID: int64Pointer(42), Limit: 3, Offset: 3,
 			},
 			total:    7,
@@ -274,17 +275,27 @@ func assertListFilter(
 	want outbound.ListSubmissionsFilter,
 ) {
 	t.Helper()
-	if got.UserID != want.UserID ||
-		got.Status != want.Status ||
-		got.Language != want.Language ||
-		got.Limit != want.Limit ||
+	if got.Limit != want.Limit ||
 		got.Offset != want.Offset {
 		t.Fatalf("filter = %+v, want %+v", got, want)
 	}
+	assertStringPointer(t, "UserID", got.UserID, want.UserID)
+	assertStringPointer(t, "Status", got.Status, want.Status)
+	assertStringPointer(t, "Language", got.Language, want.Language)
 	if (got.ProblemID == nil) != (want.ProblemID == nil) {
 		t.Fatalf("ProblemID = %v, want %v", got.ProblemID, want.ProblemID)
 	}
 	if got.ProblemID != nil && *got.ProblemID != *want.ProblemID {
 		t.Fatalf("ProblemID = %d, want %d", *got.ProblemID, *want.ProblemID)
+	}
+}
+
+func assertStringPointer(t *testing.T, name string, got *string, want *string) {
+	t.Helper()
+	if (got == nil) != (want == nil) {
+		t.Fatalf("%s = %v, want %v", name, got, want)
+	}
+	if got != nil && *got != *want {
+		t.Fatalf("%s = %q, want %q", name, *got, *want)
 	}
 }

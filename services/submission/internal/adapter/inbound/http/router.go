@@ -14,11 +14,17 @@ import (
 type Router struct {
 	engine         *gin.Engine
 	userHandler    *handler.UserHandler
+	adminHandler   *handler.AdminHandler
 	authMiddleware gin.HandlerFunc
 	server         *http.Server
 }
 
-func NewRouter(userHandler *handler.UserHandler, authMiddleware gin.HandlerFunc, logger *zap.Logger) *Router {
+func NewRouter(
+	userHandler *handler.UserHandler,
+	adminHandler *handler.AdminHandler,
+	authMiddleware gin.HandlerFunc,
+	logger *zap.Logger,
+) *Router {
 	engine := gin.New()
 	engine.Use(pkgmiddleware.Recovery(logger))
 	engine.Use(pkgmiddleware.UnifiedLogger(logger))
@@ -26,6 +32,7 @@ func NewRouter(userHandler *handler.UserHandler, authMiddleware gin.HandlerFunc,
 	return &Router{
 		engine:         engine,
 		userHandler:    userHandler,
+		adminHandler:   adminHandler,
 		authMiddleware: authMiddleware,
 	}
 }
@@ -39,6 +46,7 @@ func (r *Router) SetupRoutes() {
 	v1.POST("/submissions", r.authMiddleware, r.userHandler.CreateSubmission.Handle)
 	v1.GET("/submissions/:submission_id", r.authMiddleware, r.userHandler.GetSubmission.Handle)
 	v1.GET("/me/submissions", r.authMiddleware, r.userHandler.ListMySubmissions.Handle)
+	v1.GET("/admin/submissions", r.authMiddleware, r.adminHandler.ListSubmissions.Handle)
 }
 
 func (r *Router) Start(port string) error {
