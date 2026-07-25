@@ -35,3 +35,32 @@ type GetSubmissionResponse struct {
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }
+
+type ListMySubmissionsRequest struct {
+	Page      *int   `form:"page"`
+	Limit     *int   `form:"limit"`
+	Status    string `form:"status"`
+	Language  string `form:"language"`
+	ProblemID *int64 `form:"problem_id"`
+}
+
+type SubmissionListItem struct {
+	ID           int64     `json:"id"`
+	ProblemID    int64     `json:"problem_id"`
+	ProblemTitle string    `json:"problem_title"`
+	Language     string    `json:"language"`
+	Status       string    `json:"status"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+type PaginationResponse struct {
+	Page       int   `json:"page"`
+	Limit      int   `json:"limit"`
+	Total      int64 `json:"total"`
+	TotalPages int   `json:"total_pages"`
+}
+
+type ListMySubmissionsResponse struct {
+	Items      []SubmissionListItem `json:"items"`
+	Pagination PaginationResponse   `json:"pagination"`
+}

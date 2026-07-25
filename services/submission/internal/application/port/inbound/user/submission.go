@@ -14,3 +14,7 @@ type CreateSubmissionUseCase interface {
 type GetSubmissionUseCase interface {
 	Execute(ctx context.Context, claims auth.Claims, req dto.GetSubmissionRequest) (dto.GetSubmissionResponse, error)
 }
+
+type ListMySubmissionsUseCase interface {
+	Execute(ctx context.Context, claims auth.Claims, req dto.ListMySubmissionsRequest) (dto.ListMySubmissionsResponse, error)
+}

@@ -53,7 +53,9 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	createSubmissionHandler := user2.NewCreateSubmissionHandler(createSubmissionUseCase)
 	getSubmissionUseCase := user.NewGetSubmissionUseCase(submissionRepository)
 	getSubmissionHandler := user2.NewGetSubmissionHandler(getSubmissionUseCase)
-	userHandler := handler.NewUserHandler(createSubmissionHandler, getSubmissionHandler)
+	listMySubmissionsUseCase := user.NewListMySubmissionsUseCase(submissionRepository)
+	listMySubmissionsHandler := user2.NewListMySubmissionsHandler(listMySubmissionsUseCase)
+	userHandler := handler.NewUserHandler(createSubmissionHandler, getSubmissionHandler, listMySubmissionsHandler)
 	redisConfig := cfg.Redis
 	client, err := cache.ConnectRedis(redisConfig)
 	if err != nil {

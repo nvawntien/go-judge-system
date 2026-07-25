@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"go-judge-system/services/submission/internal/application/port/outbound"
@@ -85,27 +86,41 @@ func (r *submissionRepository) Update(ctx context.Context, submission *entity.Su
 	return nil
 }
 
-func (r *submissionRepository) ListByUser(ctx context.Context, userID string, offset, limit int, status, language string) ([]*entity.Submission, error) {
-	query := r.db.WithContext(ctx).Where("user_id = ?", userID)
-	query = applyListFilters(query, status, language)
+func (r *submissionRepository) ListByUser(
+	ctx context.Context,
+	filter outbound.ListSubmissionsFilter,
+) (outbound.ListSubmissionsResult, error) {
+	if strings.TrimSpace(filter.UserID) == "" {
+		return outbound.ListSubmissionsResult{}, fmt.Errorf("list submissions by user: user ID is required")
+	}
+
+	var total int64
+	countQuery := applyListByUserFilters(
+		r.db.WithContext(ctx).Model(&SubmissionDAO{}),
+		filter,
+	)
+	if err := countQuery.Count(&total).Error; err != nil {
+		return outbound.ListSubmissionsResult{}, fmt.Errorf("count submissions by user: %w", err)
+	}
 
 	var daos []SubmissionDAO
-	if err := query.Order("created_at DESC").Offset(offset).Limit(limit).Find(&daos).Error; err != nil {
-		return nil, fmt.Errorf("list submissions by user: %w", err)
+	itemQuery := applyListByUserFilters(
+		r.db.WithContext(ctx).Model(&SubmissionDAO{}),
+		filter,
+	)
+	if err := itemQuery.
+		Select("id", "problem_id", "problem_name", "language", "status", "created_at").
+		Order("created_at DESC, id DESC").
+		Offset(filter.Offset).
+		Limit(filter.Limit).
+		Find(&daos).Error; err != nil {
+		return outbound.ListSubmissionsResult{}, fmt.Errorf("list submissions by user: %w", err)
 	}
 
-	return toSubmissionEntities(daos), nil
-}
-
-func (r *submissionRepository) CountByUser(ctx context.Context, userID string, status, language string) (int64, error) {
-	query := r.db.WithContext(ctx).Model(&SubmissionDAO{}).Where("user_id = ?", userID)
-	query = applyListFilters(query, status, language)
-
-	var count int64
-	if err := query.Count(&count).Error; err != nil {
-		return 0, fmt.Errorf("count submissions by user: %w", err)
-	}
-	return count, nil
+	return outbound.ListSubmissionsResult{
+		Items: toSubmissionEntities(daos),
+		Total: total,
+	}, nil
 }
 
 func (r *submissionRepository) ListByProblem(ctx context.Context, problemID int64, offset, limit int, status, language string) ([]*entity.Submission, error) {
@@ -160,6 +175,18 @@ func applyListFilters(query *gorm.DB, status, language string) *gorm.DB {
 	}
 	if language != "" {
 		query = query.Where("language = ?", language)
+	}
+	return query
+}
+
+func applyListByUserFilters(
+	query *gorm.DB,
+	filter outbound.ListSubmissionsFilter,
+) *gorm.DB {
+	query = query.Where("user_id = ?", filter.UserID)
+	query = applyListFilters(query, filter.Status, filter.Language)
+	if filter.ProblemID != nil {
+		query = query.Where("problem_id = ?", *filter.ProblemID)
 	}
 	return query
 }

@@ -88,14 +88,18 @@
       ]
     },
     {
-      "endpoint": "/api/v1/my/submissions",
+      "endpoint": "/api/v1/me/submissions",
       "method": "GET",
       "output_encoding": "no-op",
       "input_headers": [
         "*"
       ],
       "input_query_strings": [
-        "*"
+        "page",
+        "limit",
+        "status",
+        "language",
+        "problem_id"
       ],
       "extra_config": {
         "auth/validator": {
@@ -125,7 +129,7 @@
       },
       "backend": [
         {
-          "url_pattern": "/api/v1/my/submissions",
+          "url_pattern": "/api/v1/me/submissions",
           "encoding": "no-op",
           "host": [
             "http://submission-service:8083"

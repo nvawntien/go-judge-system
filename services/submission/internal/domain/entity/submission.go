@@ -37,6 +37,23 @@ const (
 	StatusSystemError       Status = "SYSTEM_ERROR"
 )
 
+func ParseStatus(value string) (Status, bool) {
+	switch Status(value) {
+	case StatusPending,
+		StatusJudging,
+		StatusAccepted,
+		StatusWrongAnswer,
+		StatusTimeLimitExceed,
+		StatusMemoryLimitExceed,
+		StatusRuntimeError,
+		StatusCompilationError,
+		StatusSystemError:
+		return Status(value), true
+	default:
+		return "", false
+	}
+}
+
 type Submission struct {
 	ID            int64
 	ProblemID     int64
