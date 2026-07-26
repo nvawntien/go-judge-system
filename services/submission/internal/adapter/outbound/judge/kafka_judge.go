@@ -4,14 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
+	"strings"
 
 	"go-judge-system/pkg/config"
 	pkgjudge "go-judge-system/pkg/judge"
 	"go-judge-system/services/submission/internal/application/port/outbound"
 	"go-judge-system/services/submission/internal/domain/entity"
-
-	"github.com/google/uuid"
 )
 
 type outboxJudgePublisher struct {
@@ -33,27 +31,19 @@ func NewOutboxJudgePublisher(outboxRepo outbound.OutboxRepository, kafkaCfg conf
 
 func (p *outboxJudgePublisher) Publish(
 	ctx context.Context,
-	submission *entity.Submission,
-	metadata outbound.JudgeJobMetadata,
+	job pkgjudge.JobMessage,
 ) error {
-	payload := pkgjudge.JobMessage{
-		SubmissionID: submission.ID,
-		ProblemID:    submission.ProblemID,
-		ProblemSlug:  metadata.ProblemSlug,
-		UserID:       submission.UserID,
-		Language:     string(submission.Language),
-		SourceCode:   submission.SourceCode,
-		AttemptID:    uuid.New().String(),
-		EnqueuedAt:   time.Now().UTC(),
+	if strings.TrimSpace(job.AttemptID) == "" {
+		return fmt.Errorf("publish judge job: attempt ID is required")
 	}
 
-	value, err := json.Marshal(payload)
+	value, err := json.Marshal(job)
 	if err != nil {
 		return fmt.Errorf("marshal judge job payload: %w", err)
 	}
 
 	outboxMsg := &entity.OutboxMessage{
-		AggregateID: submission.ID,
+		AggregateID: job.SubmissionID,
 		Topic:       p.topic,
 		Payload:     value,
 		Status:      entity.OutboxStatusPending,

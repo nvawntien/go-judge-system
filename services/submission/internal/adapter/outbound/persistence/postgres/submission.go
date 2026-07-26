@@ -11,22 +11,24 @@ import (
 	"go-judge-system/services/submission/internal/domain/entity"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type SubmissionDAO struct {
-	ID            int64     `gorm:"primaryKey;autoIncrement"`
-	ProblemID     int64     `gorm:"not null;index"`
-	ProblemName   string    `gorm:"not null;size:500"`
-	UserID        string    `gorm:"not null;size:100;index"`
-	Username      string    `gorm:"not null;size:255"`
-	Language      string    `gorm:"type:varchar(20);not null;index"`
-	SourceCode    string    `gorm:"type:text;not null"`
-	Status        string    `gorm:"type:varchar(30);not null;index"`
-	ExecutionTime *int      `gorm:"type:int"`
-	MemoryUsed    *int      `gorm:"type:int"`
-	CompileOutput *string   `gorm:"type:text"`
-	CreatedAt     time.Time `gorm:"autoCreateTime;index"`
-	UpdatedAt     time.Time `gorm:"autoUpdateTime"`
+	ID               int64     `gorm:"primaryKey;autoIncrement"`
+	ProblemID        int64     `gorm:"not null;index"`
+	ProblemName      string    `gorm:"not null;size:500"`
+	UserID           string    `gorm:"not null;size:100;index"`
+	Username         string    `gorm:"not null;size:255"`
+	Language         string    `gorm:"type:varchar(20);not null;index"`
+	SourceCode       string    `gorm:"type:text;not null"`
+	CurrentAttemptID string    `gorm:"column:current_attempt_id;type:varchar(64);index"`
+	Status           string    `gorm:"type:varchar(30);not null;index"`
+	ExecutionTime    *int      `gorm:"type:int"`
+	MemoryUsed       *int      `gorm:"type:int"`
+	CompileOutput    *string   `gorm:"type:text"`
+	CreatedAt        time.Time `gorm:"autoCreateTime;index"`
+	UpdatedAt        time.Time `gorm:"autoUpdateTime"`
 }
 
 func (SubmissionDAO) TableName() string { return "submissions" }
@@ -52,8 +54,19 @@ func (r *submissionRepository) Create(ctx context.Context, submission *entity.Su
 }
 
 func (r *submissionRepository) GetByID(ctx context.Context, id int64) (*entity.Submission, error) {
+	return r.getByID(ctx, id, false)
+}
+
+func (r *submissionRepository) GetByIDForUpdate(ctx context.Context, id int64) (*entity.Submission, error) {
+	return r.getByID(ctx, id, true)
+}
+
+func (r *submissionRepository) getByID(ctx context.Context, id int64, forUpdate bool) (*entity.Submission, error) {
 	var dao SubmissionDAO
 	db := getDB(ctx, r.db)
+	if forUpdate {
+		db = db.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
 	if err := db.First(&dao, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, domain.ErrSubmissionNotFound
@@ -66,11 +79,12 @@ func (r *submissionRepository) GetByID(ctx context.Context, id int64) (*entity.S
 
 func (r *submissionRepository) Update(ctx context.Context, submission *entity.Submission) error {
 	updates := map[string]interface{}{
-		"status":         string(submission.Status),
-		"execution_time": submission.ExecutionTime,
-		"memory_used":    submission.MemoryUsed,
-		"compile_output": submission.CompileOutput,
-		"updated_at":     submission.UpdatedAt,
+		"status":             string(submission.Status),
+		"current_attempt_id": submission.CurrentAttemptID,
+		"execution_time":     submission.ExecutionTime,
+		"memory_used":        submission.MemoryUsed,
+		"compile_output":     submission.CompileOutput,
+		"updated_at":         submission.UpdatedAt,
 	}
 
 	db := getDB(ctx, r.db)
@@ -139,37 +153,39 @@ func applyListFilters(
 
 func toSubmissionDAO(s *entity.Submission) *SubmissionDAO {
 	return &SubmissionDAO{
-		ID:            s.ID,
-		ProblemID:     s.ProblemID,
-		ProblemName:   s.ProblemName,
-		UserID:        s.UserID,
-		Username:      s.Username,
-		Language:      string(s.Language),
-		SourceCode:    s.SourceCode,
-		Status:        string(s.Status),
-		ExecutionTime: s.ExecutionTime,
-		MemoryUsed:    s.MemoryUsed,
-		CompileOutput: s.CompileOutput,
-		CreatedAt:     s.CreatedAt,
-		UpdatedAt:     s.UpdatedAt,
+		ID:               s.ID,
+		ProblemID:        s.ProblemID,
+		ProblemName:      s.ProblemName,
+		UserID:           s.UserID,
+		Username:         s.Username,
+		Language:         string(s.Language),
+		SourceCode:       s.SourceCode,
+		CurrentAttemptID: s.CurrentAttemptID,
+		Status:           string(s.Status),
+		ExecutionTime:    s.ExecutionTime,
+		MemoryUsed:       s.MemoryUsed,
+		CompileOutput:    s.CompileOutput,
+		CreatedAt:        s.CreatedAt,
+		UpdatedAt:        s.UpdatedAt,
 	}
 }
 
 func toSubmissionEntity(dao *SubmissionDAO) *entity.Submission {
 	return &entity.Submission{
-		ID:            dao.ID,
-		ProblemID:     dao.ProblemID,
-		ProblemName:   dao.ProblemName,
-		UserID:        dao.UserID,
-		Username:      dao.Username,
-		Language:      entity.Language(dao.Language),
-		SourceCode:    dao.SourceCode,
-		Status:        entity.Status(dao.Status),
-		ExecutionTime: dao.ExecutionTime,
-		MemoryUsed:    dao.MemoryUsed,
-		CompileOutput: dao.CompileOutput,
-		CreatedAt:     dao.CreatedAt,
-		UpdatedAt:     dao.UpdatedAt,
+		ID:               dao.ID,
+		ProblemID:        dao.ProblemID,
+		ProblemName:      dao.ProblemName,
+		UserID:           dao.UserID,
+		Username:         dao.Username,
+		Language:         entity.Language(dao.Language),
+		SourceCode:       dao.SourceCode,
+		CurrentAttemptID: dao.CurrentAttemptID,
+		Status:           entity.Status(dao.Status),
+		ExecutionTime:    dao.ExecutionTime,
+		MemoryUsed:       dao.MemoryUsed,
+		CompileOutput:    dao.CompileOutput,
+		CreatedAt:        dao.CreatedAt,
+		UpdatedAt:        dao.UpdatedAt,
 	}
 }
 

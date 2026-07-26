@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go-judge-system/pkg/auth"
+	pkgjudge "go-judge-system/pkg/judge"
 	"go-judge-system/pkg/rbac"
 	"go-judge-system/pkg/response"
 	"go-judge-system/services/submission/internal/application/dto"
@@ -66,6 +67,9 @@ func (r *fakeSubmissionRepository) Create(ctx context.Context, submission *entit
 func (r *fakeSubmissionRepository) GetByID(context.Context, int64) (*entity.Submission, error) {
 	return nil, nil
 }
+func (r *fakeSubmissionRepository) GetByIDForUpdate(context.Context, int64) (*entity.Submission, error) {
+	return nil, nil
+}
 func (r *fakeSubmissionRepository) Update(context.Context, *entity.Submission) error { return nil }
 func (r *fakeSubmissionRepository) List(
 	context.Context,
@@ -77,23 +81,31 @@ func (r *fakeSubmissionRepository) List(
 type fakeJudgePublisher struct {
 	publishErr error
 	called     bool
-	published  *entity.Submission
-	metadata   outbound.JudgeJobMetadata
+	published  pkgjudge.JobMessage
 }
 
 func (p *fakeJudgePublisher) Publish(
 	ctx context.Context,
-	submission *entity.Submission,
-	metadata outbound.JudgeJobMetadata,
+	job pkgjudge.JobMessage,
 ) error {
 	p.called = true
-	p.metadata = metadata
 	if p.publishErr != nil {
 		return p.publishErr
 	}
-	p.published = submission
+	p.published = job
 	ctx.Value(transactionStateKey{}).(*transactionState).outbox = true
 	return nil
+}
+
+type fakeAttemptIDGenerator struct {
+	next string
+}
+
+func (g fakeAttemptIDGenerator) NewAttemptID() string {
+	if g.next == "" {
+		return "attempt-test-1"
+	}
+	return g.next
 }
 
 type fakeProblemReader struct {
@@ -135,7 +147,7 @@ func executeSubmission(
 	publisher *fakeJudgePublisher,
 ) (dto.CreateSubmissionResponse, error) {
 	t.Helper()
-	uc := NewCreateSubmissionUseCase(repo, tx, publisher, validProblemReader(req.ProblemID))
+	uc := NewCreateSubmissionUseCase(repo, tx, publisher, fakeAttemptIDGenerator{}, validProblemReader(req.ProblemID))
 	return uc.Execute(context.Background(), auth.Claims{UserID: "user-1", Username: "alice", Role: rbac.RoleUser}, req)
 }
 
@@ -169,11 +181,20 @@ func TestCreateSubmission_ExecutableLanguages(t *testing.T) {
 			if repo.created.ProblemName != "Two Sum" {
 				t.Fatalf("problem name = %q, want canonical title", repo.created.ProblemName)
 			}
-			if publisher.published == nil || publisher.published.ID != 77 {
+			if publisher.published.SubmissionID != 77 {
 				t.Fatal("publisher must receive the database-generated submission ID")
 			}
-			if publisher.metadata.ProblemSlug != "two-sum" {
-				t.Fatalf("problem slug = %q, want canonical slug", publisher.metadata.ProblemSlug)
+			if repo.created.CurrentAttemptID == "" {
+				t.Fatal("submission current attempt ID must be persisted")
+			}
+			if publisher.published.AttemptID != repo.created.CurrentAttemptID {
+				t.Fatalf("published attempt ID = %q, want stored %q", publisher.published.AttemptID, repo.created.CurrentAttemptID)
+			}
+			if publisher.published.ProblemSlug != "two-sum" {
+				t.Fatalf("problem slug = %q, want canonical slug", publisher.published.ProblemSlug)
+			}
+			if publisher.published.EnqueuedAt.IsZero() {
+				t.Fatal("published job must include enqueued_at")
 			}
 		})
 	}
@@ -201,7 +222,7 @@ func TestCreateSubmission_Validation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tx := &fakeTransactionManager{}
 			problemReader := validProblemReader(tt.req.ProblemID)
-			uc := NewCreateSubmissionUseCase(&fakeSubmissionRepository{}, tx, &fakeJudgePublisher{}, problemReader)
+			uc := NewCreateSubmissionUseCase(&fakeSubmissionRepository{}, tx, &fakeJudgePublisher{}, fakeAttemptIDGenerator{}, problemReader)
 			_, err := uc.Execute(context.Background(), tt.claims, tt.req)
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("Execute() error = %v, want %v", err, tt.wantErr)
@@ -223,7 +244,7 @@ func TestCreateSubmissionValidatesProblemBeforeTransaction(t *testing.T) {
 	tx := &fakeTransactionManager{order: &order}
 	repo := &fakeSubmissionRepository{}
 	publisher := &fakeJudgePublisher{}
-	uc := NewCreateSubmissionUseCase(repo, tx, publisher, problemReader)
+	uc := NewCreateSubmissionUseCase(repo, tx, publisher, fakeAttemptIDGenerator{next: "attempt-before-tx"}, problemReader)
 
 	got, err := uc.Execute(
 		context.Background(),
@@ -254,14 +275,17 @@ func TestCreateSubmissionValidatesProblemBeforeTransaction(t *testing.T) {
 	if repo.created.ProblemName != "Two Sum" {
 		t.Fatalf("ProblemName = %q, want canonical title", repo.created.ProblemName)
 	}
-	if publisher.metadata.ProblemSlug != "two-sum" {
-		t.Fatalf("ProblemSlug = %q, want canonical slug", publisher.metadata.ProblemSlug)
+	if publisher.published.ProblemSlug != "two-sum" {
+		t.Fatalf("ProblemSlug = %q, want canonical slug", publisher.published.ProblemSlug)
 	}
 	if repo.created.UserID != "trusted-user" || repo.created.Username != "trusted-name" {
 		t.Fatalf("ownership = %q/%q", repo.created.UserID, repo.created.Username)
 	}
 	if repo.created.Status != entity.StatusPending {
 		t.Fatalf("status = %q, want %q", repo.created.Status, entity.StatusPending)
+	}
+	if repo.created.CurrentAttemptID != "attempt-before-tx" || publisher.published.AttemptID != "attempt-before-tx" {
+		t.Fatalf("attempt correlation stored/published = %q/%q", repo.created.CurrentAttemptID, publisher.published.AttemptID)
 	}
 }
 
@@ -272,7 +296,7 @@ func TestCreateSubmissionProblemValidationFailureStartsNoTransaction(t *testing.
 			tx := &fakeTransactionManager{}
 			repo := &fakeSubmissionRepository{}
 			publisher := &fakeJudgePublisher{}
-			uc := NewCreateSubmissionUseCase(repo, tx, publisher, problemReader)
+			uc := NewCreateSubmissionUseCase(repo, tx, publisher, fakeAttemptIDGenerator{}, problemReader)
 
 			_, err := uc.Execute(
 				context.Background(),
@@ -306,6 +330,7 @@ func TestCreateSubmissionPropagatesActorRoleForHiddenProblemAccess(t *testing.T)
 				&fakeSubmissionRepository{},
 				&fakeTransactionManager{},
 				&fakeJudgePublisher{},
+				fakeAttemptIDGenerator{},
 				problemReader,
 			)
 			_, err := uc.Execute(

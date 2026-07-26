@@ -55,33 +55,35 @@ func ParseStatus(value string) (Status, bool) {
 }
 
 type Submission struct {
-	ID            int64
-	ProblemID     int64
-	ProblemName   string
-	UserID        string
-	Username      string
-	Language      Language
-	SourceCode    string
-	Status        Status
-	ExecutionTime *int
-	MemoryUsed    *int
-	CompileOutput *string
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	ID               int64
+	ProblemID        int64
+	ProblemName      string
+	UserID           string
+	Username         string
+	Language         Language
+	SourceCode       string
+	CurrentAttemptID string
+	Status           Status
+	ExecutionTime    *int
+	MemoryUsed       *int
+	CompileOutput    *string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
-func NewSubmission(problemID int64, problemName, userID, username string, language Language, sourceCode string) *Submission {
+func NewSubmission(problemID int64, problemName, userID, username string, language Language, sourceCode, currentAttemptID string) *Submission {
 	now := time.Now()
 	return &Submission{
-		ProblemID:   problemID,
-		ProblemName: problemName,
-		UserID:      userID,
-		Username:    username,
-		Language:    language,
-		SourceCode:  sourceCode,
-		Status:      StatusPending,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		ProblemID:        problemID,
+		ProblemName:      problemName,
+		UserID:           userID,
+		Username:         username,
+		Language:         language,
+		SourceCode:       sourceCode,
+		CurrentAttemptID: currentAttemptID,
+		Status:           StatusPending,
+		CreatedAt:        now,
+		UpdatedAt:        now,
 	}
 }
 

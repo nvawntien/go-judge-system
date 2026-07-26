@@ -16,11 +16,35 @@ along with the infrastructure required to deliver judge jobs reliably.
 - shared authentication middleware wiring, including Redis-backed logout-all
   token invalidation, ready for future protected routes
 - transactional outbox repository and Kafka relay
+- Kafka judge-result consumer for `judge.submission.results`
 
-The judge-result consumer is intentionally disconnected until its application
-use case is rebuilt. Existing domain entities, PostgreSQL repositories,
-transaction manager, outbox publisher, and shared judge contracts remain
-available for future submission flows.
+## Judge attempt correlation
+
+Every newly created Submission stores an internal `current_attempt_id`. The same
+value is written into the judge job outbox payload before the create transaction
+commits. The outbox relay publishes that persisted payload unchanged, so outbox
+retries preserve the exact attempt ID instead of generating a new one.
+
+Judge results also carry an internal `attempt_id`. The Submission Service result
+consumer locks the Submission row, compares the incoming attempt against
+`current_attempt_id`, and only applies matching results. Matching results update
+the Submission terminal status and replace testcase result rows atomically in the
+same database transaction.
+
+Stale results whose attempt ID no longer matches are acknowledged and ignored:
+they are not retried, not sent to DLT, and do not write to the database. Legacy
+Submissions with an empty `current_attempt_id` are intentionally treated as
+unverifiable and also ignored; backfill or cleanup for those rows should be done
+separately before relying on historical result replay.
+
+Duplicate results for the current attempt are safe: processing repeats the same
+deterministic replacement for testcase rows and converges on the same Submission
+status/result snapshot. Invalid/malformed result messages are non-retryable and
+are forwarded to the DLT/drop policy by the Kafka adapter.
+
+Attempt IDs are internal transport/storage fields only. Public HTTP request and
+response DTOs do not expose them. Rejudge API routing and HTTP handlers are still
+deferred.
 
 ## Submission detail
 

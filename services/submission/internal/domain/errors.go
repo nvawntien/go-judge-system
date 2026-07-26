@@ -17,6 +17,7 @@ var (
 	ErrInvalidSourceCode           = response.NewAppError(response.CodeBadRequest, "invalid source code", nil)
 	ErrSourceCodeTooLarge          = response.NewAppError(response.CodeBadRequest, "source code is too large", nil)
 	ErrInvalidSubmissionStatus     = response.NewAppError(response.CodeBadRequest, "invalid submission status", nil)
+	ErrInvalidJudgeResult          = response.NewAppError(response.CodeBadRequest, "invalid judge result", nil)
 	ErrInvalidPage                 = response.NewAppError(response.CodeBadRequest, "invalid page", nil)
 	ErrInvalidLimit                = response.NewAppError(response.CodeBadRequest, "invalid limit", nil)
 	ErrInvalidStatusTransition     = response.NewAppError(response.CodeConflict, "invalid submission status transition", nil)

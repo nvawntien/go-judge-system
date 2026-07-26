@@ -18,11 +18,14 @@ import (
 	"go-judge-system/services/submission/internal/adapter/inbound/http/handler"
 	adminhandler "go-judge-system/services/submission/internal/adapter/inbound/http/handler/admin"
 	userhandler "go-judge-system/services/submission/internal/adapter/inbound/http/handler/user"
+	resultconsumer "go-judge-system/services/submission/internal/adapter/inbound/kafka"
+	attemptid "go-judge-system/services/submission/internal/adapter/outbound/id"
 	judgepublisher "go-judge-system/services/submission/internal/adapter/outbound/judge"
 	"go-judge-system/services/submission/internal/adapter/outbound/outbox"
 	"go-judge-system/services/submission/internal/adapter/outbound/persistence/postgres"
 	problemreader "go-judge-system/services/submission/internal/adapter/outbound/problem"
 	adminusecase "go-judge-system/services/submission/internal/application/usecase/admin"
+	resultusecase "go-judge-system/services/submission/internal/application/usecase/result"
 	userusecase "go-judge-system/services/submission/internal/application/usecase/user"
 
 	"github.com/google/wire"
@@ -66,6 +69,7 @@ var InfrastructureProviderSet = wire.NewSet(
 	cache.ConnectRedis,
 	logger.NewLogger,
 	kafka.NewSyncProducer,
+	kafka.NewConsumerGroup,
 	ProvideProblemGRPCConfig,
 	ProvideProblemClientConn,
 	ProvideProblemServiceClient,
@@ -78,16 +82,20 @@ var MiddlewareProviderSet = wire.NewSet(
 
 var OutboundProviderSet = wire.NewSet(
 	postgres.NewSubmissionRepository,
+	postgres.NewSubmissionResultRepository,
 	postgres.NewTransactionManager,
 	postgres.NewOutboxRepository,
+	attemptid.NewUUIDAttemptIDGenerator,
 	judgepublisher.NewOutboxJudgePublisher,
 	auth.NewRedisLogoutAllIATStore,
 	outbox.NewOutboxRelay,
+	resultconsumer.NewDLTPublisher,
 	problemreader.NewGRPCProblemReader,
 )
 
 var UseCaseProviderSet = wire.NewSet(
 	adminusecase.NewListAdminSubmissionsUseCase,
+	resultusecase.NewApplyJudgeResultUseCase,
 	userusecase.NewCreateSubmissionUseCase,
 	userusecase.NewGetSubmissionUseCase,
 	userusecase.NewListMySubmissionsUseCase,
@@ -101,4 +109,5 @@ var InboundProviderSet = wire.NewSet(
 	handler.NewAdminHandler,
 	handler.NewUserHandler,
 	http.NewRouter,
+	resultconsumer.NewJudgeResultConsumer,
 )

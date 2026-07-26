@@ -3,12 +3,14 @@ package outbound
 import (
 	"context"
 
+	pkgjudge "go-judge-system/pkg/judge"
 	"go-judge-system/services/submission/internal/domain/entity"
 )
 
 type SubmissionRepository interface {
 	Create(ctx context.Context, submission *entity.Submission) error
 	GetByID(ctx context.Context, id int64) (*entity.Submission, error)
+	GetByIDForUpdate(ctx context.Context, id int64) (*entity.Submission, error)
 	Update(ctx context.Context, submission *entity.Submission) error
 	List(ctx context.Context, filter ListSubmissionsFilter) (ListSubmissionsResult, error)
 }
@@ -30,7 +32,7 @@ type ListSubmissionsResult struct {
 type SubmissionResultRepository interface {
 	GetBySubmissionID(ctx context.Context, submissionID int64) ([]*entity.SubmissionResult, error)
 	DeleteBySubmissionID(ctx context.Context, submissionID int64) error
-	ReplaceBySubmissionID(ctx context.Context, submissionID int64, results []*entity.SubmissionResult) error
+	ReplaceBySubmissionIDAndAttemptID(ctx context.Context, submissionID int64, attemptID string, results []*entity.SubmissionResult) error
 }
 
 type TransactionManager interface {
@@ -45,9 +47,9 @@ type OutboxRepository interface {
 }
 
 type JudgePublisher interface {
-	Publish(ctx context.Context, submission *entity.Submission, metadata JudgeJobMetadata) error
+	Publish(ctx context.Context, job pkgjudge.JobMessage) error
 }
 
-type JudgeJobMetadata struct {
-	ProblemSlug string
+type AttemptIDGenerator interface {
+	NewAttemptID() string
 }

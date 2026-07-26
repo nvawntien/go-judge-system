@@ -3,8 +3,10 @@ package user
 import (
 	"context"
 	"strings"
+	"time"
 
 	"go-judge-system/pkg/auth"
+	pkgjudge "go-judge-system/pkg/judge"
 	"go-judge-system/pkg/response"
 	"go-judge-system/services/submission/internal/application/dto"
 	inbound "go-judge-system/services/submission/internal/application/port/inbound/user"
@@ -17,6 +19,7 @@ type createSubmissionUseCase struct {
 	submissionRepo outbound.SubmissionRepository
 	txManager      outbound.TransactionManager
 	judgePublisher outbound.JudgePublisher
+	attemptIDs     outbound.AttemptIDGenerator
 	problemReader  outbound.ProblemReader
 }
 
@@ -24,12 +27,14 @@ func NewCreateSubmissionUseCase(
 	submissionRepo outbound.SubmissionRepository,
 	txManager outbound.TransactionManager,
 	judgePublisher outbound.JudgePublisher,
+	attemptIDs outbound.AttemptIDGenerator,
 	problemReader outbound.ProblemReader,
 ) inbound.CreateSubmissionUseCase {
 	return &createSubmissionUseCase{
 		submissionRepo: submissionRepo,
 		txManager:      txManager,
 		judgePublisher: judgePublisher,
+		attemptIDs:     attemptIDs,
 		problemReader:  problemReader,
 	}
 }
@@ -67,6 +72,11 @@ func (uc *createSubmissionUseCase) Execute(
 		return dto.CreateSubmissionResponse{}, err
 	}
 
+	attemptID := strings.TrimSpace(uc.attemptIDs.NewAttemptID())
+	if attemptID == "" {
+		return dto.CreateSubmissionResponse{}, domain.ErrInternalServer.Wrap(domain.ErrInvalidJudgeResult)
+	}
+
 	submission := entity.NewSubmission(
 		problem.ID,
 		problem.Title,
@@ -74,6 +84,7 @@ func (uc *createSubmissionUseCase) Execute(
 		claims.Username,
 		language,
 		req.SourceCode,
+		attemptID,
 	)
 
 	err = uc.txManager.ExecuteInTx(ctx, func(txCtx context.Context) error {
@@ -81,7 +92,18 @@ func (uc *createSubmissionUseCase) Execute(
 			return err
 		}
 
-		if err := uc.judgePublisher.Publish(txCtx, submission, outbound.JudgeJobMetadata{ProblemSlug: problem.Slug}); err != nil {
+		job := pkgjudge.JobMessage{
+			SubmissionID: submission.ID,
+			ProblemID:    submission.ProblemID,
+			ProblemSlug:  problem.Slug,
+			UserID:       submission.UserID,
+			Language:     string(submission.Language),
+			SourceCode:   submission.SourceCode,
+			AttemptID:    submission.CurrentAttemptID,
+			EnqueuedAt:   time.Now().UTC(),
+		}
+
+		if err := uc.judgePublisher.Publish(txCtx, job); err != nil {
 			return err
 		}
 

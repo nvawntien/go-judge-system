@@ -9,7 +9,6 @@ import (
 
 	"go-judge-system/pkg/config"
 	pkgjudge "go-judge-system/pkg/judge"
-	"go-judge-system/services/submission/internal/application/port/outbound"
 	"go-judge-system/services/submission/internal/domain/entity"
 )
 
@@ -54,8 +53,16 @@ func TestNewOutboxJudgePublisher_DefaultTopic(t *testing.T) {
 func TestPublish_Success(t *testing.T) {
 	t.Parallel()
 
-	sub := entity.NewSubmission(1001, "Two Sum", "u-1", "alice", entity.LanguageGo, "package main")
-	sub.ID = 77
+	job := pkgjudge.JobMessage{
+		SubmissionID: 77,
+		ProblemID:    1001,
+		ProblemSlug:  "two-sum",
+		UserID:       "u-1",
+		Language:     "GO",
+		SourceCode:   "package main",
+		AttemptID:    "attempt-77",
+		EnqueuedAt:   time.Now().UTC(),
+	}
 
 	repo := &mockOutboxRepository{}
 	repo.createFn = func(ctx context.Context, msg *entity.OutboxMessage) error {
@@ -63,8 +70,8 @@ func TestPublish_Success(t *testing.T) {
 			t.Fatalf("topic = %q, want %q", msg.Topic, "judge.submission.jobs")
 		}
 
-		if msg.AggregateID != sub.ID {
-			t.Fatalf("aggregate_id = %d, want %d", msg.AggregateID, sub.ID)
+		if msg.AggregateID != job.SubmissionID {
+			t.Fatalf("aggregate_id = %d, want %d", msg.AggregateID, job.SubmissionID)
 		}
 
 		var payload pkgjudge.JobMessage
@@ -72,29 +79,26 @@ func TestPublish_Success(t *testing.T) {
 			t.Fatalf("unmarshal payload: %v", err)
 		}
 
-		if payload.SubmissionID != sub.ID {
-			t.Fatalf("submission_id = %d, want %d", payload.SubmissionID, sub.ID)
+		if payload.SubmissionID != job.SubmissionID {
+			t.Fatalf("submission_id = %d, want %d", payload.SubmissionID, job.SubmissionID)
 		}
-		if payload.ProblemID != sub.ProblemID {
-			t.Fatalf("problem_id = %d, want %d", payload.ProblemID, sub.ProblemID)
+		if payload.ProblemID != job.ProblemID {
+			t.Fatalf("problem_id = %d, want %d", payload.ProblemID, job.ProblemID)
 		}
 		if payload.ProblemSlug != "two-sum" {
 			t.Fatalf("problem_slug = %q, want canonical slug", payload.ProblemSlug)
 		}
-		if payload.ProblemSlug == sub.ProblemName {
-			t.Fatal("problem title must never be serialized as problem_slug")
+		if payload.UserID != job.UserID {
+			t.Fatalf("user_id = %q, want %q", payload.UserID, job.UserID)
 		}
-		if payload.UserID != sub.UserID {
-			t.Fatalf("user_id = %q, want %q", payload.UserID, sub.UserID)
+		if payload.Language != job.Language {
+			t.Fatalf("language = %q, want %q", payload.Language, job.Language)
 		}
-		if payload.Language != string(sub.Language) {
-			t.Fatalf("language = %q, want %q", payload.Language, sub.Language)
+		if payload.SourceCode != job.SourceCode {
+			t.Fatalf("source_code = %q, want %q", payload.SourceCode, job.SourceCode)
 		}
-		if payload.SourceCode != sub.SourceCode {
-			t.Fatalf("source_code = %q, want %q", payload.SourceCode, sub.SourceCode)
-		}
-		if payload.AttemptID == "" {
-			t.Fatal("attempt_id should not be empty")
+		if payload.AttemptID != "attempt-77" {
+			t.Fatalf("attempt_id = %q, want persisted attempt", payload.AttemptID)
 		}
 		if payload.EnqueuedAt.IsZero() {
 			t.Fatal("enqueued_at should not be zero")
@@ -109,16 +113,13 @@ func TestPublish_Success(t *testing.T) {
 		config.KafkaConfig{JobTopic: "judge.submission.jobs"},
 	)
 
-	if err := publisher.Publish(context.Background(), sub, outbound.JudgeJobMetadata{ProblemSlug: "two-sum"}); err != nil {
+	if err := publisher.Publish(context.Background(), job); err != nil {
 		t.Fatalf("Publish returned error: %v", err)
 	}
 }
 
 func TestPublish_OutboxCreateError(t *testing.T) {
 	t.Parallel()
-
-	sub := entity.NewSubmission(1001, "Two Sum", "u-1", "alice", entity.LanguageGo, "package main")
-	sub.ID = 77
 
 	wantErr := errors.New("db unavailable")
 	repo := &mockOutboxRepository{
@@ -129,7 +130,7 @@ func TestPublish_OutboxCreateError(t *testing.T) {
 
 	publisher := NewOutboxJudgePublisher(repo, config.KafkaConfig{})
 
-	err := publisher.Publish(context.Background(), sub, outbound.JudgeJobMetadata{})
+	err := publisher.Publish(context.Background(), pkgjudge.JobMessage{SubmissionID: 77, AttemptID: "attempt-77"})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -141,8 +142,6 @@ func TestPublish_OutboxCreateError(t *testing.T) {
 func TestPublish_OmitsEmptyProblemSlug(t *testing.T) {
 	t.Parallel()
 
-	sub := entity.NewSubmission(1001, "Two Sum", "u-1", "alice", entity.LanguageGo, "package main")
-	sub.ID = 77
 	repo := &mockOutboxRepository{createFn: func(_ context.Context, msg *entity.OutboxMessage) error {
 		var raw map[string]any
 		if err := json.Unmarshal(msg.Payload, &raw); err != nil {
@@ -155,7 +154,21 @@ func TestPublish_OmitsEmptyProblemSlug(t *testing.T) {
 	}}
 
 	publisher := NewOutboxJudgePublisher(repo, config.KafkaConfig{})
-	if err := publisher.Publish(context.Background(), sub, outbound.JudgeJobMetadata{}); err != nil {
+	if err := publisher.Publish(context.Background(), pkgjudge.JobMessage{SubmissionID: 77, AttemptID: "attempt-77"}); err != nil {
 		t.Fatalf("Publish() error = %v", err)
+	}
+}
+
+func TestPublishRejectsEmptyAttemptID(t *testing.T) {
+	t.Parallel()
+
+	repo := &mockOutboxRepository{createFn: func(_ context.Context, _ *entity.OutboxMessage) error {
+		t.Fatal("outbox repository must not be called for empty attempt")
+		return nil
+	}}
+	publisher := NewOutboxJudgePublisher(repo, config.KafkaConfig{})
+
+	if err := publisher.Publish(context.Background(), pkgjudge.JobMessage{SubmissionID: 77}); err == nil {
+		t.Fatal("expected error for empty attempt ID")
 	}
 }

@@ -29,6 +29,10 @@ func (r *fakeListAdminSubmissionsRepository) GetByID(context.Context, int64) (*e
 	return nil, nil
 }
 
+func (r *fakeListAdminSubmissionsRepository) GetByIDForUpdate(context.Context, int64) (*entity.Submission, error) {
+	return nil, nil
+}
+
 func (r *fakeListAdminSubmissionsRepository) Update(context.Context, *entity.Submission) error {
 	return nil
 }

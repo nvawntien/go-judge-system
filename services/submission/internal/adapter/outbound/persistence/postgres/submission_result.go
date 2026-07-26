@@ -2,6 +2,8 @@ package postgres
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
 	"go-judge-system/services/submission/internal/application/port/outbound"
@@ -13,6 +15,7 @@ import (
 type SubmissionResultDAO struct {
 	ID             int64     `gorm:"primaryKey;autoIncrement"`
 	SubmissionID   int64     `gorm:"not null;index"`
+	AttemptID      string    `gorm:"column:attempt_id;type:varchar(64);index"`
 	TestIndex      int       `gorm:"not null"`
 	Status         string    `gorm:"type:varchar(30);not null"`
 	ActualOutput   *string   `gorm:"type:text"`
@@ -56,39 +59,44 @@ func (r *submissionResultRepository) DeleteBySubmissionID(ctx context.Context, s
 	return db.Where("submission_id = ?", submissionID).Delete(&SubmissionResultDAO{}).Error
 }
 
-func (r *submissionResultRepository) ReplaceBySubmissionID(ctx context.Context, submissionID int64, results []*entity.SubmissionResult) error {
+func (r *submissionResultRepository) ReplaceBySubmissionIDAndAttemptID(ctx context.Context, submissionID int64, attemptID string, results []*entity.SubmissionResult) error {
+	attemptID = strings.TrimSpace(attemptID)
+	if attemptID == "" {
+		return fmt.Errorf("replace submission results: attempt ID is required")
+	}
+
 	db := getDB(ctx, r.db)
-	return db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("submission_id = ?", submissionID).Delete(&SubmissionResultDAO{}).Error; err != nil {
-			return err
-		}
+	if err := db.Where("submission_id = ?", submissionID).Delete(&SubmissionResultDAO{}).Error; err != nil {
+		return err
+	}
 
-		if len(results) == 0 {
-			return nil
-		}
+	if len(results) == 0 {
+		return nil
+	}
 
-		daos := make([]SubmissionResultDAO, 0, len(results))
-		for _, item := range results {
-			daos = append(daos, SubmissionResultDAO{
-				SubmissionID:   submissionID,
-				TestIndex:      item.TestIndex,
-				Status:         string(item.Status),
-				ActualOutput:   item.ActualOutput,
-				Input:          item.Input,
-				ExpectedOutput: item.ExpectedOutput,
-				ExecutionTime:  item.ExecutionTime,
-				MemoryUsed:     item.MemoryUsed,
-			})
-		}
+	daos := make([]SubmissionResultDAO, 0, len(results))
+	for _, item := range results {
+		daos = append(daos, SubmissionResultDAO{
+			SubmissionID:   submissionID,
+			AttemptID:      attemptID,
+			TestIndex:      item.TestIndex,
+			Status:         string(item.Status),
+			ActualOutput:   item.ActualOutput,
+			Input:          item.Input,
+			ExpectedOutput: item.ExpectedOutput,
+			ExecutionTime:  item.ExecutionTime,
+			MemoryUsed:     item.MemoryUsed,
+		})
+	}
 
-		return tx.Create(&daos).Error
-	})
+	return db.Create(&daos).Error
 }
 
 func toSubmissionResultEntity(dao *SubmissionResultDAO) *entity.SubmissionResult {
 	return &entity.SubmissionResult{
 		ID:             dao.ID,
 		SubmissionID:   dao.SubmissionID,
+		AttemptID:      dao.AttemptID,
 		TestIndex:      dao.TestIndex,
 		Status:         entity.ResultStatus(dao.Status),
 		ActualOutput:   dao.ActualOutput,

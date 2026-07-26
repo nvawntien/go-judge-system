@@ -115,6 +115,7 @@ func submissionRows(values ...[]driver.Value) driver.Rows {
 			"username",
 			"language",
 			"source_code",
+			"current_attempt_id",
 			"status",
 			"execution_time",
 			"memory_used",
@@ -151,6 +152,7 @@ func TestSubmissionRepositoryGetByID(t *testing.T) {
 			"owner-name",
 			"GO",
 			"package main\n",
+			"attempt-77",
 			"PENDING",
 			nil,
 			nil,
@@ -165,16 +167,17 @@ func TestSubmissionRepositoryGetByID(t *testing.T) {
 		t.Fatalf("GetByID() error = %v", err)
 	}
 	want := &entity.Submission{
-		ID:          77,
-		ProblemID:   42,
-		ProblemName: "Two Sum",
-		UserID:      "owner",
-		Username:    "owner-name",
-		Language:    entity.LanguageGo,
-		SourceCode:  "package main\n",
-		Status:      entity.StatusPending,
-		CreatedAt:   createdAt,
-		UpdatedAt:   updatedAt,
+		ID:               77,
+		ProblemID:        42,
+		ProblemName:      "Two Sum",
+		UserID:           "owner",
+		Username:         "owner-name",
+		Language:         entity.LanguageGo,
+		SourceCode:       "package main\n",
+		CurrentAttemptID: "attempt-77",
+		Status:           entity.StatusPending,
+		CreatedAt:        createdAt,
+		UpdatedAt:        updatedAt,
 	}
 	if *got != *want {
 		t.Fatalf("submission = %+v, want %+v", got, want)

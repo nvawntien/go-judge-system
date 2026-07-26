@@ -99,7 +99,7 @@ func TestActiveRepositories_WrapErrors(t *testing.T) {
 		db := newTestGormDB(t)
 		db.AddError(wantErr)
 		repo := &submissionRepository{db: db}
-		err := repo.Create(context.Background(), entity.NewSubmission(1, "", "u", "alice", entity.LanguageGo, "source"))
+		err := repo.Create(context.Background(), entity.NewSubmission(1, "", "u", "alice", entity.LanguageGo, "source", "attempt-1"))
 		assertWrappedOperation(t, err, wantErr, "create submission")
 	})
 
