@@ -54,8 +54,10 @@ func (h *GetProblemHandler) Handle(
 	}
 
 	return &problemv1.GetProblemResponse{
-		ProblemId: result.ID,
-		Title:     result.Title,
-		Slug:      result.Slug,
+		ProblemId:   result.ID,
+		Title:       result.Title,
+		Slug:        result.Slug,
+		TimeLimit:   result.TimeLimit,
+		MemoryLimit: int32(result.MemoryLimit),
 	}, nil
 }

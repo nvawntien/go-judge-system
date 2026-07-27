@@ -19,15 +19,17 @@ import { LANGUAGES, isPendingStatus, languageMeta, verdictMeta } from '@/lib/for
 import { useDismissable, useOnline, useViewportWidth } from '@/lib/hooks';
 import { fetchProgress, invalidateProgress } from '@/lib/progress';
 import { CODE_TEMPLATES, draftKey } from '@/lib/templates';
-import type { LanguageCode, Problem, RunResponse, Submission } from '@/lib/types';
+import type { LanguageCode, Problem, RunResponse, RunTestCaseResult, Submission } from '@/lib/types';
 
 type BottomTab = 'tests' | 'console' | 'result';
 type LoadState = 'loading' | 'ready' | 'notfound' | 'error';
 
 interface TestCase {
+  id: string;
+  kind: 'sample' | 'custom';
   name: string;
   input: string;
-  expected: string;
+  expected: string | null;
   /** Examples come from the problem and cannot be removed. */
   fromExample: boolean;
 }
@@ -186,15 +188,17 @@ export default function WorkspacePage() {
   useEffect(() => {
     if (!problem) return;
     const fromExamples = (problem.examples ?? []).map((example, index) => ({
+      id: `sample-${index + 1}`,
+      kind: 'sample' as const,
       name: `Case ${index + 1}`,
       input: example.input,
-      expected: example.output,
+      expected: example.expected_output,
       fromExample: true,
     }));
     setTests(
       fromExamples.length > 0
         ? fromExamples
-        : [{ name: 'Case 1', input: '', expected: '', fromExample: false }],
+        : [{ id: 'custom-1', kind: 'custom', name: 'Custom 1', input: '', expected: null, fromExample: false }],
     );
     setSelectedTest(0);
   }, [problem]);
@@ -204,13 +208,21 @@ export default function WorkspacePage() {
   };
 
   const addTest = () => {
-    if (tests.length >= 8) {
-      showToast('Maximum of 8 test cases', 'error');
+    if (tests.length >= 10) {
+      showToast('Maximum of 10 test cases', 'error');
       return;
     }
+    const customCount = tests.filter((test) => test.kind === 'custom').length + 1;
     setTests((current) => [
       ...current,
-      { name: `Case ${current.length + 1}`, input: '', expected: '', fromExample: false },
+      {
+        id: `custom-${Date.now()}`,
+        kind: 'custom',
+        name: `Custom ${customCount}`,
+        input: '',
+        expected: null,
+        fromExample: false,
+      },
     ]);
     setSelectedTest(tests.length);
   };
@@ -254,26 +266,26 @@ export default function WorkspacePage() {
       return;
     }
 
-    const test = tests[selectedTest];
     setRunning(true);
     setBottomTab('result');
-    setRunResult(null);
 
     try {
       const result = await submissionApi.run({
         problem_id: problem.id,
         language,
         source_code: code,
-        stdin: test?.input ?? '',
+        testcases: tests.map((test) => ({
+          id: test.id,
+          kind: test.kind,
+          stdin: test.input,
+          expected_output: test.expected,
+        })),
       });
       setRunResult(result);
-      setConsoleLines([
-        ...(result.compile_output
-          ? [{ text: result.compile_output, color: 'var(--warn)' }]
-          : []),
-        ...(result.stdout ? [{ text: result.stdout, color: 'var(--code-fg)' }] : []),
-        ...(result.stderr ? [{ text: result.stderr, color: 'var(--error)' }] : []),
-      ]);
+      const firstFailed = result.tests.findIndex((test) => isRunFailure(test));
+      if (firstFailed >= 0) setSelectedTest(firstFailed);
+      else if (selectedTest >= tests.length) setSelectedTest(0);
+      setConsoleLines(buildRunConsoleLines(result));
     } catch (err) {
       if (err instanceof ApiError && err.isUnimplemented) {
         showToast('The judge has no custom-run endpoint yet — use Submit', 'error');
@@ -462,6 +474,10 @@ export default function WorkspacePage() {
   const langMeta = languageMeta(language);
   const busy = running || submitting;
   const verdict = submission && !isPendingStatus(submission.status) ? verdictMeta(submission.status) : null;
+  const runResultsByID = useMemo(() => {
+    const entries = runResult?.tests.map((test) => [test.id, test] as const) ?? [];
+    return new Map(entries);
+  }, [runResult]);
 
   const bottomTabs: { key: BottomTab; label: string }[] = useMemo(
     () => [
@@ -592,7 +608,9 @@ export default function WorkspacePage() {
                     const next = [
                       ...current,
                       {
-                        name: `Case ${current.length + 1}`,
+                        id: `custom-${Date.now()}`,
+                        kind: 'custom' as const,
+                        name: `Custom ${current.filter((test) => test.kind === 'custom').length + 1}`,
                         input,
                         expected,
                         fromExample: false,
@@ -966,7 +984,7 @@ export default function WorkspacePage() {
                         type="button"
                         onClick={run}
                         disabled={busy || !online}
-                        title="Run against the selected test case (Ctrl+Enter)"
+                        title="Run all visible test cases (Ctrl+Enter)"
                         className="ac-hover-surface2"
                         style={{
                           height: 32,
@@ -1040,6 +1058,8 @@ export default function WorkspacePage() {
                       <TestsPanel
                         tests={tests}
                         selected={selectedTest}
+                        results={runResultsByID}
+                        running={running}
                         onSelect={setSelectedTest}
                         onAdd={addTest}
                         onRemove={removeTest}
@@ -1233,6 +1253,8 @@ export default function WorkspacePage() {
 function TestsPanel({
   tests,
   selected,
+  results,
+  running,
   onSelect,
   onAdd,
   onRemove,
@@ -1240,12 +1262,15 @@ function TestsPanel({
 }: {
   tests: TestCase[];
   selected: number;
+  results: Map<string, RunTestCaseResult>;
+  running: boolean;
   onSelect: (index: number) => void;
   onAdd: () => void;
   onRemove: (index: number) => void;
   onUpdate: (index: number, patch: Partial<TestCase>) => void;
 }) {
   const current = tests[selected];
+  const currentResult = current ? results.get(current.id) : undefined;
 
   return (
     <>
@@ -1334,6 +1359,7 @@ function TestsPanel({
             <textarea
               value={current.input}
               onChange={(event) => onUpdate(selected, { input: event.target.value })}
+              readOnly={current.fromExample}
               rows={4}
               spellCheck={false}
               aria-label={`Test input for ${current.name}`}
@@ -1344,8 +1370,14 @@ function TestsPanel({
           <label style={{ ...testLabel, marginTop: 10 }}>
             Expected output
             <textarea
-              value={current.expected}
-              onChange={(event) => onUpdate(selected, { expected: event.target.value })}
+              value={current.expected ?? ''}
+              onChange={(event) =>
+                onUpdate(selected, {
+                  expected:
+                    event.target.value === '' && current.kind === 'custom' ? null : event.target.value,
+                })
+              }
+              readOnly={current.fromExample}
               rows={2}
               spellCheck={false}
               aria-label={`Expected output for ${current.name}`}
@@ -1353,9 +1385,54 @@ function TestsPanel({
               style={testField}
             />
           </label>
+          <RunCaseDetails result={currentResult} running={running} />
         </>
       )}
     </>
+  );
+}
+
+function RunCaseDetails({
+  result,
+  running,
+}: {
+  result?: RunTestCaseResult;
+  running: boolean;
+}) {
+  if (running) {
+    return (
+      <div role="status" style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <Spinner size={12} />
+        <span style={{ fontSize: 12, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>
+          Running all visible test cases…
+        </span>
+      </div>
+    );
+  }
+
+  if (!result) return null;
+
+  const ok = result.status === 'accepted' || result.status === 'executed';
+  return (
+    <div
+      style={{
+        marginTop: 12,
+        border: '1px solid var(--border)',
+        borderRadius: 8,
+        background: 'var(--code-bg)',
+        padding: 10,
+        display: 'grid',
+        gap: 8,
+      }}
+    >
+      <ResultTile value={formatRunStatus(result.status)} label="Status" />
+      <ResultTile value={`${result.execution_time_ms} ms`} label="Runtime" />
+      <ResultTile value={`${result.memory_used_kb} KB`} label="Memory" />
+      <div>
+        <div style={testLabel}>Actual Output</div>
+        <pre style={runOutputBlock}>{result.stdout || result.stderr || (ok ? '' : 'No output')}</pre>
+      </div>
+    </div>
   );
 }
 
@@ -1554,8 +1631,19 @@ function ResultPanel({
   }
 
   if (runResult) {
-    const passed = runResult.tests.filter((test) => test.passed).length;
-    const allPassed = passed === runResult.tests.length;
+    if (runResult.status === 'compile_error') {
+      return (
+        <div style={{ animation: 'acFadeUp .25s ease' }}>
+          <div style={{ marginBottom: 10, fontSize: 13, fontWeight: 650, color: 'var(--warn)' }}>
+            Compile Error
+          </div>
+          <pre style={runOutputBlock}>{runResult.compile_output || 'Compilation failed'}</pre>
+        </div>
+      );
+    }
+
+    const passed = runResult.tests.filter((test) => !isRunFailure(test)).length;
+    const allPassed = runResult.tests.length > 0 && passed === runResult.tests.length;
     return (
       <div style={{ animation: 'acFadeUp .25s ease' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
@@ -1575,7 +1663,7 @@ function ResultPanel({
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {runResult.tests.map((test, index) => (
             <div
-              key={index}
+              key={test.id}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -1588,13 +1676,13 @@ function ResultPanel({
             >
               <span
                 role="img"
-                aria-label={test.passed ? 'Passed' : 'Failed'}
+                aria-label={isRunFailure(test) ? 'Failed' : 'Passed'}
                 style={{
                   width: 18,
                   height: 18,
-                  borderRadius: test.passed ? '50%' : 4,
-                  background: test.passed ? 'var(--success-bg)' : 'var(--error-bg)',
-                  color: test.passed ? 'var(--success)' : 'var(--error)',
+                  borderRadius: isRunFailure(test) ? 4 : '50%',
+                  background: isRunFailure(test) ? 'var(--error-bg)' : 'var(--success-bg)',
+                  color: isRunFailure(test) ? 'var(--error)' : 'var(--success)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -1603,7 +1691,7 @@ function ResultPanel({
                   flexShrink: 0,
                 }}
               >
-                {test.passed ? '✓' : '✕'}
+                {isRunFailure(test) ? '✕' : '✓'}
               </span>
               <span
                 style={{
@@ -1613,7 +1701,7 @@ function ResultPanel({
                   flexShrink: 0,
                 }}
               >
-                {test.name}
+                {test.id}
               </span>
               <span
                 style={{
@@ -1627,15 +1715,11 @@ function ResultPanel({
                   textOverflow: 'ellipsis',
                 }}
               >
-                → {test.output}
+                → {formatRunStatus(test.status)}
               </span>
-              {test.time_ms !== undefined && (
-                <span
-                  style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--text3)' }}
-                >
-                  {test.time_ms} ms
-                </span>
-              )}
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--text3)' }}>
+                {test.execution_time_ms} ms
+              </span>
             </div>
           ))}
         </div>
@@ -1680,6 +1764,30 @@ function ResultTile({ value, label }: { value: string; label: string }) {
       </span>
     </div>
   );
+}
+
+function isRunFailure(test: RunTestCaseResult): boolean {
+  return !['accepted', 'executed'].includes(test.status);
+}
+
+function formatRunStatus(status: string): string {
+  return status
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function buildRunConsoleLines(result: RunResponse): { text: string; color: string }[] {
+  if (result.status === 'compile_error') {
+    return [{ text: result.compile_output || 'Compilation failed', color: 'var(--warn)' }];
+  }
+
+  const lines: { text: string; color: string }[] = [];
+  for (const test of result.tests) {
+    if (test.stdout) lines.push({ text: `[${test.id}] stdout\n${test.stdout}`, color: 'var(--code-fg)' });
+    if (test.stderr) lines.push({ text: `[${test.id}] stderr\n${test.stderr}`, color: 'var(--error)' });
+  }
+  return lines;
 }
 
 const iconButton: React.CSSProperties = {
@@ -1728,4 +1836,16 @@ const testField: React.CSSProperties = {
   padding: '9px 11px',
   lineHeight: 1.6,
   marginTop: 6,
+};
+
+const runOutputBlock: React.CSSProperties = {
+  margin: '5px 0 0',
+  minHeight: 34,
+  maxHeight: 120,
+  overflow: 'auto',
+  whiteSpace: 'pre-wrap',
+  fontFamily: 'var(--font-mono)',
+  fontSize: 12,
+  lineHeight: 1.6,
+  color: 'var(--code-fg)',
 };

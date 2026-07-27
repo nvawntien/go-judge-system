@@ -13,9 +13,11 @@ type GetProblemRequest struct {
 }
 
 type ProblemMetadata struct {
-	ID    int64
-	Title string
-	Slug  string
+	ID          int64
+	Title       string
+	Slug        string
+	TimeLimit   float64
+	MemoryLimit int
 }
 
 type GetProblemUseCase interface {

@@ -4,6 +4,8 @@ import (
 	"go-judge-system/pkg/config"
 	"go-judge-system/pkg/kafka"
 	"go-judge-system/pkg/logger"
+	grpcin "go-judge-system/workers/judge/internal/adapter/inbound/grpc"
+	grpchandler "go-judge-system/workers/judge/internal/adapter/inbound/grpc/handler"
 	kafkain "go-judge-system/workers/judge/internal/adapter/inbound/kafka"
 	"go-judge-system/workers/judge/internal/adapter/outbound/execute"
 	"go-judge-system/workers/judge/internal/adapter/outbound/judge"
@@ -36,13 +38,19 @@ var OutboundProviderSet = wire.NewSet(
 	ProvideSandboxServiceURL,
 )
 
-var UseCaseProviderSet = wire.NewSet()
+var UseCaseProviderSet = wire.NewSet(
+	judgeuc.NewRunCodeUseCase,
+	wire.Bind(new(inbound.RunCodeUseCase), new(*judgeuc.RunCodeUseCase)),
+)
 
 var InboundProviderSet = wire.NewSet(
 	judgeuc.NewProcessJudgeJobUseCase,
 	wire.Bind(new(inbound.ProcessJudgeJobUseCase), new(*judgeuc.ProcessJudgeJobUseCase)),
 	kafkain.NewDLTPublisher,
 	kafkain.NewJudgeJobConsumer,
+	grpchandler.NewRunCodeHandler,
+	grpcin.NewJudgeServer,
+	grpcin.NewServer,
 )
 
 // Config extract functions for Wire

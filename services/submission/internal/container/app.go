@@ -32,6 +32,7 @@ type App struct {
 	KafkaProducer  sarama.SyncProducer
 	KafkaConsumer  sarama.ConsumerGroup
 	ProblemConn    *googlegrpc.ClientConn
+	JudgeConn      JudgeClientConn
 }
 
 func NewApp(
@@ -44,6 +45,7 @@ func NewApp(
 	producer sarama.SyncProducer,
 	consumer sarama.ConsumerGroup,
 	problemConn *googlegrpc.ClientConn,
+	judgeConn JudgeClientConn,
 ) *App {
 	return &App{
 		Config:         cfg,
@@ -55,6 +57,7 @@ func NewApp(
 		KafkaProducer:  producer,
 		KafkaConsumer:  consumer,
 		ProblemConn:    problemConn,
+		JudgeConn:      judgeConn,
 	}
 }
 
@@ -152,6 +155,12 @@ func (a *App) Close() error {
 	if a.ProblemConn != nil {
 		if err := a.ProblemConn.Close(); err != nil {
 			closeErr = errors.Join(closeErr, fmt.Errorf("close Problem Service gRPC connection: %w", err))
+		}
+	}
+
+	if a.JudgeConn.ClientConn != nil {
+		if err := a.JudgeConn.Close(); err != nil {
+			closeErr = errors.Join(closeErr, fmt.Errorf("close Judge Worker gRPC connection: %w", err))
 		}
 	}
 

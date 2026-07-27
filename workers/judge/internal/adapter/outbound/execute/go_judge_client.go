@@ -10,6 +10,7 @@ import (
 
 	"go-judge-system/pkg/gojudge"
 	"go-judge-system/workers/judge/internal/application/port/outbound"
+	workerdomain "go-judge-system/workers/judge/internal/domain"
 
 	resty "github.com/go-resty/resty/v2"
 	"go.uber.org/zap"
@@ -205,6 +206,196 @@ func (c *GoJudgeClient) Execute(ctx context.Context, language, sourceCode string
 	return c.parseJudgeResult(allResponses, bundle), nil
 }
 
+func (c *GoJudgeClient) RunCode(ctx context.Context, req outbound.RunRequest) (*outbound.RunResult, error) {
+	if req.Language == "" {
+		return nil, fmt.Errorf("language not specified")
+	}
+	if req.SourceCode == "" {
+		return nil, fmt.Errorf("source code is empty")
+	}
+	if len(req.TestCases) == 0 {
+		return nil, fmt.Errorf("no test cases provided")
+	}
+
+	langCfg, ok := gojudge.GetLanguageConfig(req.Language, gojudge.GetSourceFileName(req.Language), gojudge.GetExeFileName(req.Language))
+	if !ok {
+		return nil, fmt.Errorf("unsupported language: %s", req.Language)
+	}
+
+	limits := normalizeRunLimits(req.Limits)
+	hasCompile := langCfg.Compile != nil
+	var exeFileID string
+
+	if hasCompile {
+		compileResult, fileID, err := c.compile(ctx, req.Language, req.SourceCode, langCfg, limits)
+		if err != nil {
+			return nil, err
+		}
+		if compileResult != nil {
+			return compileResult, nil
+		}
+		exeFileID = fileID
+	}
+
+	runReq := gojudge.Request{
+		Cmd: make([]*gojudge.Cmd, 0, len(req.TestCases)),
+	}
+	for _, testCase := range req.TestCases {
+		stdin := testCase.Stdin
+		runCmd := &gojudge.Cmd{
+			Args: langCfg.Run.Command,
+			Env:  langCfg.Run.Env,
+			Files: []*gojudge.File{
+				{Content: &stdin},
+				{Name: stringPtr("stdout"), Max: int64Ptr(limits.OutputLimitBytes)},
+				{Name: stringPtr("stderr"), Max: int64Ptr(limits.OutputLimitBytes)},
+			},
+			CopyOut:     []string{"stdout", "stderr"},
+			MemoryLimit: uint64(limits.MemoryLimitKB * 1024),
+			CPULimit:    uint64(limits.TimeLimitMS * int64(time.Millisecond)),
+			ClockLimit:  uint64(limits.TimeLimitMS * int64(time.Millisecond) * 2),
+			ProcLimit:   50,
+		}
+
+		if hasCompile {
+			runCmd.CopyIn = map[string]*gojudge.File{
+				gojudge.GetExeFileName(req.Language): {FileID: stringPtr(exeFileID)},
+			}
+		} else {
+			runCmd.CopyIn = map[string]*gojudge.File{
+				gojudge.GetSourceFileName(req.Language): {Content: &req.SourceCode},
+			}
+		}
+
+		runReq.Cmd = append(runReq.Cmd, runCmd)
+	}
+
+	var runResp gojudge.Response
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetBody(runReq).
+		SetResult(&runResp).
+		Post("/run")
+	if err != nil {
+		c.logger.Error("failed to call go-judge API for run code", zap.Error(err))
+		return nil, fmt.Errorf("call go-judge run API: %w", err)
+	}
+	if resp.IsError() || len(runResp) != len(req.TestCases) {
+		return nil, fmt.Errorf("go-judge run status %d, expected %d results got %d",
+			resp.StatusCode(), len(req.TestCases), len(runResp))
+	}
+
+	result := &outbound.RunResult{
+		Status:        "completed",
+		CompileOutput: "",
+		TestCases:     make([]outbound.RunTestCaseResult, 0, len(req.TestCases)),
+	}
+	for i, testCase := range req.TestCases {
+		res := runResp[i]
+		stdout := res.Files["stdout"]
+		stderr := res.Files["stderr"]
+		status := mapRunStatus(res.Status, res.ExitStatus)
+
+		if status == "accepted" {
+			switch {
+			case testCase.ExpectedOutput != nil && workerdomain.OutputEqual(stdout, *testCase.ExpectedOutput):
+				status = "accepted"
+			case testCase.ExpectedOutput != nil:
+				status = "wrong_answer"
+			default:
+				status = "executed"
+			}
+		}
+
+		result.TestCases = append(result.TestCases, outbound.RunTestCaseResult{
+			ID:              testCase.ID,
+			Kind:            testCase.Kind,
+			Status:          status,
+			Stdout:          stdout,
+			Stderr:          stderr,
+			ExpectedOutput:  testCase.ExpectedOutput,
+			ExecutionTimeMS: int64(res.Time / uint64(time.Millisecond)),
+			MemoryUsedKB:    int64(res.Memory / 1024),
+		})
+	}
+
+	return result, nil
+}
+
+func (c *GoJudgeClient) compile(ctx context.Context, language string, sourceCode string, langCfg *gojudge.LanguageConfig, limits outbound.ExecutionLimits) (*outbound.RunResult, string, error) {
+	compileReq := gojudge.Request{
+		Cmd: []*gojudge.Cmd{
+			{
+				Args: langCfg.Compile.Command,
+				Env:  langCfg.Compile.Env,
+				Files: []*gojudge.File{
+					{Content: stringPtr("")},
+					{Name: stringPtr("stdout"), Max: int64Ptr(limits.OutputLimitBytes)},
+					{Name: stringPtr("stderr"), Max: int64Ptr(limits.OutputLimitBytes)},
+				},
+				CopyIn: map[string]*gojudge.File{
+					gojudge.GetSourceFileName(language): {Content: &sourceCode},
+				},
+				CopyOut:       []string{"stdout", "stderr"},
+				CopyOutCached: []string{gojudge.GetExeFileName(language)},
+				MemoryLimit:   uint64(maxInt64(defaultIfZero(limits.MemoryLimitKB, 256*1024), 512*1024) * 1024),
+				CPULimit:      uint64(maxInt64(defaultIfZero(limits.TimeLimitMS, 2_000), 15_000) * int64(time.Millisecond)),
+				ClockLimit:    uint64(maxInt64(defaultIfZero(limits.TimeLimitMS, 2_000), 15_000) * int64(time.Millisecond) * 2),
+				ProcLimit:     500,
+			},
+		},
+	}
+
+	var compileResp gojudge.Response
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetBody(compileReq).
+		SetResult(&compileResp).
+		Post("/run")
+	if err != nil {
+		c.logger.Error("failed to call go-judge API for compilation", zap.Error(err))
+		return nil, "", fmt.Errorf("call go-judge compile API: %w", err)
+	}
+	if resp.IsError() || len(compileResp) == 0 {
+		return nil, "", fmt.Errorf("go-judge compile returned status: %d", resp.StatusCode())
+	}
+
+	res := compileResp[0]
+	if res.Status != "Accepted" {
+		compileOutput := res.Error
+		if f, ok := res.Files["stderr"]; ok && f != "" {
+			compileOutput = f
+		} else if f, ok := res.Files["stdout"]; ok && f != "" {
+			compileOutput = f
+		}
+		return &outbound.RunResult{
+			Status:        "compile_error",
+			CompileOutput: sanitizeOutput(compileOutput),
+			TestCases:     []outbound.RunTestCaseResult{},
+		}, "", nil
+	}
+
+	fileID, ok := res.FileIDs[gojudge.GetExeFileName(language)]
+	if !ok {
+		return nil, "", fmt.Errorf("compile succeeded but exe fileId not found in response")
+	}
+
+	return nil, fileID, nil
+}
+
+func normalizeRunLimits(limits outbound.ExecutionLimits) outbound.ExecutionLimits {
+	if limits.TimeLimitMS <= 0 {
+		limits.TimeLimitMS = 2_000
+	}
+	if limits.MemoryLimitKB <= 0 {
+		limits.MemoryLimitKB = 256 * 1024
+	}
+	if limits.OutputLimitBytes <= 0 {
+		limits.OutputLimitBytes = 1024 * 1024
+	}
+	return limits
+}
+
 // parseJudgeResult processes go-judge responses and compares output with expected.
 // For failed tests, reads input and expected output from disk to include in the result.
 func (c *GoJudgeClient) parseJudgeResult(responses gojudge.Response, bundle *outbound.TestCaseBundle) *outbound.ExecutionResult {
@@ -350,7 +541,6 @@ func (c *GoJudgeClient) attachTestData(tc *outbound.TestCaseResult, bundle *outb
 	)
 }
 
-
 func mapJudgeStatus(status string, exitStatus int) string {
 	switch status {
 	case "Accepted":
@@ -371,6 +561,45 @@ func mapJudgeStatus(status string, exitStatus int) string {
 	default:
 		return "SYSTEM_ERROR"
 	}
+}
+
+func mapRunStatus(status string, exitStatus int) string {
+	switch mapJudgeStatus(status, exitStatus) {
+	case "ACCEPTED":
+		return "accepted"
+	case "WRONG_ANSWER":
+		return "wrong_answer"
+	case "TIME_LIMIT_EXCEEDED":
+		return "time_limit_exceeded"
+	case "MEMORY_LIMIT_EXCEEDED":
+		return "memory_limit_exceeded"
+	case "OUTPUT_LIMIT_EXCEEDED":
+		return "output_limit_exceeded"
+	case "RUNTIME_ERROR":
+		return "runtime_error"
+	default:
+		return "system_error"
+	}
+}
+
+func sanitizeOutput(output string) string {
+	output = strings.ReplaceAll(output, "/w/", "")
+	output = strings.ReplaceAll(output, "/tmp/", "")
+	return output
+}
+
+func defaultIfZero(value, fallback int64) int64 {
+	if value <= 0 {
+		return fallback
+	}
+	return value
+}
+
+func maxInt64(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func stringPtr(s string) *string {

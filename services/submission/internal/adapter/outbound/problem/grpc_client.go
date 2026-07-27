@@ -68,8 +68,10 @@ func (r *grpcProblemReader) GetProblem(
 	}
 
 	return dto.ProblemMetadata{
-		ID:    response.GetProblemId(),
-		Title: response.GetTitle(),
-		Slug:  response.GetSlug(),
+		ID:          response.GetProblemId(),
+		Title:       response.GetTitle(),
+		Slug:        response.GetSlug(),
+		TimeLimit:   response.GetTimeLimit(),
+		MemoryLimit: int(response.GetMemoryLimit()),
 	}, nil
 }

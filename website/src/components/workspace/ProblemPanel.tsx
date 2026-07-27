@@ -309,7 +309,7 @@ export function ProblemPanel({
                         </button>
                         <button
                           type="button"
-                          onClick={() => onUseExample(example.input, example.output)}
+                          onClick={() => onUseExample(example.input, example.expected_output)}
                           className="ac-hover-surface2-text"
                           style={smallButton}
                         >
@@ -338,7 +338,7 @@ export function ProblemPanel({
                       <div style={{ display: 'flex', gap: 10 }}>
                         <span style={{ color: 'var(--text3)', flexShrink: 0, width: 52 }}>Output</span>
                         <span style={{ color: 'var(--syn-str)', whiteSpace: 'pre-wrap' }}>
-                          {example.output}
+                          {example.expected_output}
                         </span>
                       </div>
                       {example.explanation && (

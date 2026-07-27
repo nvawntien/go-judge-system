@@ -13,6 +13,7 @@ import type {
   Problem,
   PublicProfile,
   RegisterRequest,
+  RunCodeRequest,
   RunResponse,
   Submission,
   UpdateProfileRequest,
@@ -262,11 +263,7 @@ export const submissionApi = {
       signal,
     }),
 
-  /**
-   * Custom-test execution. The gateway does not route this yet — callers should
-   * catch `ApiError.isUnimplemented` and tell the user the judge-run API is not
-   * available. Wiring it up later needs no change here.
-   */
-  run: (body: { problem_id: number; language: string; source_code: string; stdin: string }) =>
+  /** Custom-test execution through the submission-service synchronous run API. */
+  run: (body: RunCodeRequest) =>
     apiRequest<RunResponse>(RUN_ENDPOINT, { method: 'POST', body }),
 };

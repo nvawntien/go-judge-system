@@ -10,6 +10,8 @@ import (
 	"go-judge-system/pkg/config"
 	"go-judge-system/pkg/kafka"
 	"go-judge-system/pkg/logger"
+	"go-judge-system/workers/judge/internal/adapter/inbound/grpc"
+	"go-judge-system/workers/judge/internal/adapter/inbound/grpc/handler"
 	kafka2 "go-judge-system/workers/judge/internal/adapter/inbound/kafka"
 	"go-judge-system/workers/judge/internal/adapter/outbound/judge"
 	judge2 "go-judge-system/workers/judge/internal/application/usecase/judge"
@@ -39,7 +41,12 @@ func InitializeApp(cfg *config.Config) (*container.App, func(), error) {
 	processJudgeJobUseCase := judge2.NewProcessJudgeJobUseCase(goJudgeClient, kafkaResultPublisher, problemServiceClient, zapLogger)
 	dltPublisher := kafka2.NewDLTPublisher(syncProducer, kafkaConfig, zapLogger)
 	judgeJobConsumer := kafka2.NewJudgeJobConsumer(consumerGroup, kafkaConfig, processJudgeJobUseCase, dltPublisher, zapLogger)
-	app := container.NewApp(cfg, judgeJobConsumer, zapLogger, syncProducer)
+	serverConfig := cfg.Server
+	runCodeUseCase := judge2.NewRunCodeUseCase(goJudgeClient)
+	runCodeHandler := handler.NewRunCodeHandler(runCodeUseCase)
+	judgeServer := grpc.NewJudgeServer(runCodeHandler)
+	server := grpc.NewServer(serverConfig, judgeServer)
+	app := container.NewApp(cfg, judgeJobConsumer, server, zapLogger, syncProducer)
 	return app, func() {
 	}, nil
 }

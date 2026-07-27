@@ -10,6 +10,37 @@ type CreateSubmissionRequest struct {
 	SourceCode string `json:"source_code" binding:"required"`
 }
 
+type RunCodeRequest struct {
+	ProblemID  int64              `json:"problem_id" binding:"required,gt=0"`
+	Language   string             `json:"language" binding:"required"`
+	SourceCode string             `json:"source_code" binding:"required"`
+	TestCases  []RunTestCaseInput `json:"testcases" binding:"required"`
+}
+
+type RunTestCaseInput struct {
+	ID             string  `json:"id" binding:"required"`
+	Kind           string  `json:"kind" binding:"required"`
+	Stdin          string  `json:"stdin"`
+	ExpectedOutput *string `json:"expected_output"`
+}
+
+type RunCodeResponse struct {
+	Status        string              `json:"status"`
+	CompileOutput string              `json:"compile_output"`
+	Tests         []RunTestCaseResult `json:"tests"`
+}
+
+type RunTestCaseResult struct {
+	ID              string  `json:"id"`
+	Kind            string  `json:"kind"`
+	Status          string  `json:"status"`
+	Stdout          string  `json:"stdout"`
+	Stderr          string  `json:"stderr"`
+	ExpectedOutput  *string `json:"expected_output"`
+	ExecutionTimeMS int64   `json:"execution_time_ms"`
+	MemoryUsedKB    int64   `json:"memory_used_kb"`
+}
+
 type CreateSubmissionResponse struct {
 	ID           int64     `json:"id"`
 	ProblemID    int64     `json:"problem_id"`

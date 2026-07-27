@@ -13,6 +13,7 @@ import (
 	"go-judge-system/pkg/kafka"
 	"go-judge-system/pkg/logger"
 	"go-judge-system/pkg/middleware"
+	judgev1 "go-judge-system/pkg/pb/judge/v1"
 	problemv1 "go-judge-system/pkg/pb/problem/v1"
 	"go-judge-system/services/submission/internal/adapter/inbound/http"
 	"go-judge-system/services/submission/internal/adapter/inbound/http/handler"
@@ -24,6 +25,7 @@ import (
 	"go-judge-system/services/submission/internal/adapter/outbound/outbox"
 	"go-judge-system/services/submission/internal/adapter/outbound/persistence/postgres"
 	problemreader "go-judge-system/services/submission/internal/adapter/outbound/problem"
+	"go-judge-system/services/submission/internal/application/dto"
 	adminusecase "go-judge-system/services/submission/internal/application/usecase/admin"
 	resultusecase "go-judge-system/services/submission/internal/application/usecase/result"
 	userusecase "go-judge-system/services/submission/internal/application/usecase/user"
@@ -64,6 +66,52 @@ func ProvideProblemGRPCTimeout(cfg config.ProblemGRPCConfig) time.Duration {
 	return cfg.Timeout
 }
 
+type JudgeClientConn struct {
+	*googlegrpc.ClientConn
+}
+
+func ProvideJudgeGRPCConfig(cfg *config.Config) (config.JudgeGRPCConfig, error) {
+	judgeCfg := cfg.JudgeGRPC
+	judgeCfg.Address = strings.TrimSpace(judgeCfg.Address)
+	if judgeCfg.Address == "" {
+		judgeCfg.Address = "judge-worker:9093"
+	}
+	if judgeCfg.Timeout == 0 {
+		judgeCfg.Timeout = 30 * time.Second
+	}
+	if judgeCfg.Timeout < 0 {
+		return config.JudgeGRPCConfig{}, fmt.Errorf("judge gRPC timeout must be greater than zero")
+	}
+	return judgeCfg, nil
+}
+
+func ProvideJudgeClientConn(cfg config.JudgeGRPCConfig) (JudgeClientConn, error) {
+	conn, err := sharedgrpc.NewClientConn(cfg.Address, sharedgrpc.WithInsecureTransport())
+	if err != nil {
+		return JudgeClientConn{}, fmt.Errorf("create Judge Worker gRPC connection: %w", err)
+	}
+	return JudgeClientConn{ClientConn: conn}, nil
+}
+
+func ProvideJudgeServiceClient(conn JudgeClientConn) judgev1.JudgeServiceClient {
+	return judgev1.NewJudgeServiceClient(conn.ClientConn)
+}
+
+func ProvideRunCodeLimits(cfg *config.Config) dto.RunCodeLimits {
+	runCfg := cfg.RunCode
+	return dto.RunCodeLimits{
+		MaxTestCases:           runCfg.MaxTestCases,
+		MaxSourceCodeBytes:     runCfg.MaxSourceCodeBytes,
+		MaxStdinBytes:          runCfg.MaxStdinBytes,
+		MaxExpectedOutputBytes: runCfg.MaxExpectedOutputBytes,
+		MaxCapturedOutputBytes: runCfg.MaxCapturedOutputBytes,
+		RequestTimeout:         runCfg.RequestTimeout,
+		DefaultTimeLimit:       runCfg.DefaultTimeLimit,
+		DefaultMemoryLimitKB:   runCfg.DefaultMemoryLimitKB,
+		DefaultOutputLimit:     runCfg.DefaultOutputLimitBytes,
+	}
+}
+
 var InfrastructureProviderSet = wire.NewSet(
 	database.ConnectDatabase,
 	cache.ConnectRedis,
@@ -74,6 +122,10 @@ var InfrastructureProviderSet = wire.NewSet(
 	ProvideProblemClientConn,
 	ProvideProblemServiceClient,
 	ProvideProblemGRPCTimeout,
+	ProvideJudgeGRPCConfig,
+	ProvideJudgeClientConn,
+	ProvideJudgeServiceClient,
+	ProvideRunCodeLimits,
 )
 
 var MiddlewareProviderSet = wire.NewSet(
@@ -91,12 +143,14 @@ var OutboundProviderSet = wire.NewSet(
 	outbox.NewOutboxRelay,
 	resultconsumer.NewDLTPublisher,
 	problemreader.NewGRPCProblemReader,
+	judgepublisher.NewGRPCRunner,
 )
 
 var UseCaseProviderSet = wire.NewSet(
 	adminusecase.NewListAdminSubmissionsUseCase,
 	resultusecase.NewApplyJudgeResultUseCase,
 	userusecase.NewCreateSubmissionUseCase,
+	userusecase.NewRunCodeUseCase,
 	userusecase.NewGetSubmissionUseCase,
 	userusecase.NewListMySubmissionsUseCase,
 )
@@ -104,6 +158,7 @@ var UseCaseProviderSet = wire.NewSet(
 var InboundProviderSet = wire.NewSet(
 	adminhandler.NewListSubmissionsHandler,
 	userhandler.NewCreateSubmissionHandler,
+	userhandler.NewRunCodeHandler,
 	userhandler.NewGetSubmissionHandler,
 	userhandler.NewListMySubmissionsHandler,
 	handler.NewAdminHandler,

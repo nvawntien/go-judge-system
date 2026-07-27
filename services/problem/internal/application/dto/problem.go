@@ -1,5 +1,7 @@
 package dto
 
+import "encoding/json"
+
 type ProblemSlugRequest struct {
 	Slug string `uri:"slug" binding:"required"`
 }
@@ -9,9 +11,25 @@ type ProblemIDRequest struct {
 }
 
 type ProblemExampleDTO struct {
-	Input       string `json:"input" binding:"required"`
-	Output      string `json:"output" binding:"required"`
-	Explanation string `json:"explanation,omitempty"`
+	Input          string `json:"input" binding:"required"`
+	ExpectedOutput string `json:"expected_output" binding:"required"`
+	Explanation    string `json:"explanation,omitempty"`
+}
+
+func (d *ProblemExampleDTO) UnmarshalJSON(data []byte) error {
+	type problemExampleAlias ProblemExampleDTO
+	var raw struct {
+		problemExampleAlias
+		LegacyOutput string `json:"output"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*d = ProblemExampleDTO(raw.problemExampleAlias)
+	if d.ExpectedOutput == "" {
+		d.ExpectedOutput = raw.LegacyOutput
+	}
+	return nil
 }
 
 type CreateProblemRequest struct {

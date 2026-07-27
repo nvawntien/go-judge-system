@@ -64,6 +64,8 @@ func GetHTTPStatus(code int) int {
 		return http.StatusCreated
 	case CodeParamInvalid, CodeBadRequest, CodeInvalidID, CodeInternalError:
 		return http.StatusBadRequest
+	case CodePayloadTooLarge:
+		return http.StatusRequestEntityTooLarge
 	case CodeUnauthorized, CodeInvalidToken, CodeTokenExpired, CodeInvalidPassword:
 		return http.StatusUnauthorized
 	case CodeForbidden:
@@ -80,6 +82,8 @@ func GetHTTPStatus(code int) int {
 		return http.StatusInternalServerError
 	case CodeServiceUnavailable:
 		return http.StatusServiceUnavailable
+	case CodeGatewayTimeout:
+		return http.StatusGatewayTimeout
 	}
 
 	// Fallback range mapping

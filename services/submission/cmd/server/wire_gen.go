@@ -57,11 +57,24 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	problemReader := problem.NewGRPCProblemReader(problemServiceClient, duration)
 	createSubmissionUseCase := user.NewCreateSubmissionUseCase(submissionRepository, transactionManager, judgePublisher, attemptIDGenerator, problemReader)
 	createSubmissionHandler := user2.NewCreateSubmissionHandler(createSubmissionUseCase)
+	judgeGRPCConfig, err := container.ProvideJudgeGRPCConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
+	judgeClientConn, err := container.ProvideJudgeClientConn(judgeGRPCConfig)
+	if err != nil {
+		return nil, err
+	}
+	judgeServiceClient := container.ProvideJudgeServiceClient(judgeClientConn)
+	judgeRunner := judge.NewGRPCRunner(judgeServiceClient)
+	runCodeLimits := container.ProvideRunCodeLimits(cfg)
+	runCodeUseCase := user.NewRunCodeUseCase(problemReader, judgeRunner, runCodeLimits)
+	runCodeHandler := user2.NewRunCodeHandler(runCodeUseCase)
 	getSubmissionUseCase := user.NewGetSubmissionUseCase(submissionRepository)
 	getSubmissionHandler := user2.NewGetSubmissionHandler(getSubmissionUseCase)
 	listMySubmissionsUseCase := user.NewListMySubmissionsUseCase(submissionRepository)
 	listMySubmissionsHandler := user2.NewListMySubmissionsHandler(listMySubmissionsUseCase)
-	userHandler := handler.NewUserHandler(createSubmissionHandler, getSubmissionHandler, listMySubmissionsHandler)
+	userHandler := handler.NewUserHandler(createSubmissionHandler, runCodeHandler, getSubmissionHandler, listMySubmissionsHandler)
 	listAdminSubmissionsUseCase := admin.NewListAdminSubmissionsUseCase(submissionRepository)
 	listSubmissionsHandler := admin2.NewListSubmissionsHandler(listAdminSubmissionsUseCase)
 	adminHandler := handler.NewAdminHandler(listSubmissionsHandler)
@@ -91,7 +104,7 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	applyJudgeResultUseCase := result.NewApplyJudgeResultUseCase(submissionRepository, submissionResultRepository, transactionManager)
 	dltPublisher := kafka2.NewDLTPublisher(syncProducer, kafkaConfig, zapLogger)
 	judgeResultConsumer := kafka2.NewJudgeResultConsumer(consumerGroup, kafkaConfig, applyJudgeResultUseCase, dltPublisher, zapLogger)
-	app := container.NewApp(cfg, db, router, outboxRelay, judgeResultConsumer, zapLogger, syncProducer, consumerGroup, clientConn)
+	app := container.NewApp(cfg, db, router, outboxRelay, judgeResultConsumer, zapLogger, syncProducer, consumerGroup, clientConn, judgeClientConn)
 	return app, nil
 }
 

@@ -11,6 +11,10 @@ type CreateSubmissionUseCase interface {
 	Execute(ctx context.Context, claims auth.Claims, req dto.CreateSubmissionRequest) (dto.CreateSubmissionResponse, error)
 }
 
+type RunCodeUseCase interface {
+	Execute(ctx context.Context, claims auth.Claims, req dto.RunCodeRequest) (dto.RunCodeResponse, error)
+}
+
 type GetSubmissionUseCase interface {
 	Execute(ctx context.Context, claims auth.Claims, req dto.GetSubmissionRequest) (dto.GetSubmissionResponse, error)
 }

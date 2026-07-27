@@ -55,9 +55,11 @@ func (uc *getProblemUseCase) Execute(
 	}
 
 	return inbound.ProblemMetadata{
-		ID:    problem.ID,
-		Title: problem.Title,
-		Slug:  problem.TitleSlug,
+		ID:          problem.ID,
+		Title:       problem.Title,
+		Slug:        problem.TitleSlug,
+		TimeLimit:   problem.TimeLimit,
+		MemoryLimit: problem.MemoryLimit,
 	}, nil
 }
 

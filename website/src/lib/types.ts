@@ -98,8 +98,8 @@ export interface Tag {
 
 export interface ProblemExample {
   input: string;
-  output: string;
-  explanation?: string;
+  expected_output: string;
+  explanation?: string | null;
 }
 
 export interface Problem {
@@ -214,22 +214,49 @@ export interface ListSubmissionsParams {
 
 /* ------------------------------------------------------------------- run */
 
-/**
- * Shape the workspace expects from the (not yet implemented) custom-test run
- * endpoint. Kept here so wiring it up later is a one-file change.
- */
-export interface RunTestResult {
-  name: string;
-  input: string;
-  output: string;
-  expected?: string;
-  passed: boolean;
-  time_ms?: number;
+export type RunTestCaseKind = 'sample' | 'custom';
+
+export interface RunTestCaseInput {
+  id: string;
+  kind: RunTestCaseKind;
+  stdin: string;
+  expected_output: string | null;
 }
 
-export interface RunResponse {
-  tests: RunTestResult[];
-  stdout?: string;
-  stderr?: string;
-  compile_output?: string;
+export interface RunCodeRequest {
+  problem_id: number;
+  language: LanguageCode;
+  source_code: string;
+  testcases: RunTestCaseInput[];
 }
+
+export type RunCodeStatus = 'completed' | 'compile_error' | 'system_error';
+
+export type RunTestCaseStatus =
+  | 'accepted'
+  | 'wrong_answer'
+  | 'executed'
+  | 'runtime_error'
+  | 'time_limit_exceeded'
+  | 'memory_limit_exceeded'
+  | 'output_limit_exceeded'
+  | 'system_error';
+
+export interface RunTestCaseResult {
+  id: string;
+  kind: RunTestCaseKind;
+  status: RunTestCaseStatus;
+  stdout: string;
+  stderr: string;
+  expected_output: string | null;
+  execution_time_ms: number;
+  memory_used_kb: number;
+}
+
+export interface RunCodeResponse {
+  status: RunCodeStatus;
+  compile_output: string;
+  tests: RunTestCaseResult[];
+}
+
+export type RunResponse = RunCodeResponse;

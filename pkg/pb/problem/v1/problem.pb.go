@@ -190,6 +190,8 @@ type GetProblemResponse struct {
 	ProblemId     int64                  `protobuf:"varint,1,opt,name=problem_id,json=problemId,proto3" json:"problem_id,omitempty"`
 	Title         string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
 	Slug          string                 `protobuf:"bytes,3,opt,name=slug,proto3" json:"slug,omitempty"`
+	TimeLimit     float64                `protobuf:"fixed64,4,opt,name=time_limit,json=timeLimit,proto3" json:"time_limit,omitempty"`
+	MemoryLimit   int32                  `protobuf:"varint,5,opt,name=memory_limit,json=memoryLimit,proto3" json:"memory_limit,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -245,6 +247,20 @@ func (x *GetProblemResponse) GetSlug() string {
 	return ""
 }
 
+func (x *GetProblemResponse) GetTimeLimit() float64 {
+	if x != nil {
+		return x.TimeLimit
+	}
+	return 0
+}
+
+func (x *GetProblemResponse) GetMemoryLimit() int32 {
+	if x != nil {
+		return x.MemoryLimit
+	}
+	return 0
+}
+
 var File_proto_problem_v1_problem_proto protoreflect.FileDescriptor
 
 const file_proto_problem_v1_problem_proto_rawDesc = "" +
@@ -264,12 +280,15 @@ const file_proto_problem_v1_problem_proto_rawDesc = "" +
 	"problem_id\x18\x01 \x01(\x03R\tproblemId\x12\"\n" +
 	"\ractor_user_id\x18\x02 \x01(\tR\vactorUserId\x12\x1d\n" +
 	"\n" +
-	"actor_role\x18\x03 \x01(\tR\tactorRole\"]\n" +
+	"actor_role\x18\x03 \x01(\tR\tactorRole\"\x9f\x01\n" +
 	"\x12GetProblemResponse\x12\x1d\n" +
 	"\n" +
 	"problem_id\x18\x01 \x01(\x03R\tproblemId\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12\x12\n" +
-	"\x04slug\x18\x03 \x01(\tR\x04slug2\xad\x01\n" +
+	"\x04slug\x18\x03 \x01(\tR\x04slug\x12\x1d\n" +
+	"\n" +
+	"time_limit\x18\x04 \x01(\x01R\ttimeLimit\x12!\n" +
+	"\fmemory_limit\x18\x05 \x01(\x05R\vmemoryLimit2\xad\x01\n" +
 	"\x0eProblemService\x12N\n" +
 	"\vGetTestCase\x12\x1e.problem.v1.GetTestCaseRequest\x1a\x1f.problem.v1.GetTestCaseResponse\x12K\n" +
 	"\n" +

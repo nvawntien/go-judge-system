@@ -32,4 +32,6 @@ message GetProblemResponse {
   int64 problem_id = 1;
   string title = 2;
   string slug = 3;
+  double time_limit = 4;
+  int32 memory_limit = 5;
 }

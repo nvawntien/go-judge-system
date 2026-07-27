@@ -18,6 +18,8 @@ type Config struct {
 	Kafka       KafkaConfig       `mapstructure:"kafka"`
 	MinIO       MinIOConfig       `mapstructure:"minio"`
 	ProblemGRPC ProblemGRPCConfig `mapstructure:"problem_grpc"`
+	JudgeGRPC   JudgeGRPCConfig   `mapstructure:"judge_grpc"`
+	RunCode     RunCodeConfig     `mapstructure:"run_code"`
 }
 
 type AppConfig struct {
@@ -84,6 +86,26 @@ type MinIOConfig struct {
 type ProblemGRPCConfig struct {
 	Address string        `mapstructure:"address"`
 	Timeout time.Duration `mapstructure:"timeout"`
+}
+
+type JudgeGRPCConfig struct {
+	Address string        `mapstructure:"address"`
+	Timeout time.Duration `mapstructure:"timeout"`
+}
+
+type RunCodeConfig struct {
+	MaxTestCases            int           `mapstructure:"max_testcases"`
+	MaxSourceCodeBytes      int           `mapstructure:"max_source_code_bytes"`
+	MaxStdinBytes           int           `mapstructure:"max_stdin_bytes"`
+	MaxExpectedOutputBytes  int           `mapstructure:"max_expected_output_bytes"`
+	MaxCapturedOutputBytes  int           `mapstructure:"max_captured_output_bytes"`
+	MaxConcurrentRequests   int           `mapstructure:"max_concurrent_requests"`
+	DefaultTimeLimit        time.Duration `mapstructure:"default_time_limit"`
+	DefaultMemoryLimitKB    int64         `mapstructure:"default_memory_limit_kb"`
+	DefaultOutputLimitBytes int64         `mapstructure:"default_output_limit_bytes"`
+	CompileTimeLimit        time.Duration `mapstructure:"compile_time_limit"`
+	CompileMemoryLimitKB    int64         `mapstructure:"compile_memory_limit_kb"`
+	RequestTimeout          time.Duration `mapstructure:"request_timeout"`
 }
 
 type SMTPConfig struct {

@@ -28,6 +28,16 @@ func (*fakeRouterCreateSubmissionUseCase) Execute(
 	return dto.CreateSubmissionResponse{}, nil
 }
 
+type fakeRouterRunCodeUseCase struct{}
+
+func (*fakeRouterRunCodeUseCase) Execute(
+	context.Context,
+	auth.Claims,
+	dto.RunCodeRequest,
+) (dto.RunCodeResponse, error) {
+	return dto.RunCodeResponse{}, nil
+}
+
 type fakeRouterGetSubmissionUseCase struct {
 	calls int
 }
@@ -85,6 +95,7 @@ func TestRouterRegistersAuthenticatedSubmissionRoutes(t *testing.T) {
 	adminListUseCase := &fakeRouterListAdminSubmissionsUseCase{}
 	userHandler := handler.NewUserHandler(
 		userhandler.NewCreateSubmissionHandler(&fakeRouterCreateSubmissionUseCase{}),
+		userhandler.NewRunCodeHandler(&fakeRouterRunCodeUseCase{}),
 		userhandler.NewGetSubmissionHandler(getUseCase),
 		userhandler.NewListMySubmissionsHandler(listUseCase),
 	)
@@ -171,6 +182,7 @@ func TestRouterListMySubmissionsUsesGenericHandler(t *testing.T) {
 	}
 	userHandler := handler.NewUserHandler(
 		userhandler.NewCreateSubmissionHandler(&fakeRouterCreateSubmissionUseCase{}),
+		userhandler.NewRunCodeHandler(&fakeRouterRunCodeUseCase{}),
 		userhandler.NewGetSubmissionHandler(&fakeRouterGetSubmissionUseCase{}),
 		userhandler.NewListMySubmissionsHandler(listUseCase),
 	)
@@ -246,6 +258,7 @@ func TestRouterListAdminSubmissionsUsesGenericHandler(t *testing.T) {
 	}
 	userHandler := handler.NewUserHandler(
 		userhandler.NewCreateSubmissionHandler(&fakeRouterCreateSubmissionUseCase{}),
+		userhandler.NewRunCodeHandler(&fakeRouterRunCodeUseCase{}),
 		userhandler.NewGetSubmissionHandler(&fakeRouterGetSubmissionUseCase{}),
 		userhandler.NewListMySubmissionsHandler(&fakeRouterListMySubmissionsUseCase{}),
 	)
