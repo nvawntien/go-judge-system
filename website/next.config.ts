@@ -1,7 +1,14 @@
-import type { NextConfig } from "next";
+import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  reactStrictMode: true,
+  images: {
+    // Avatars are served by MinIO through the gateway host.
+    remotePatterns: [
+      { protocol: 'http', hostname: 'localhost' },
+      { protocol: 'https', hostname: '**' },
+    ],
+  },
 };
 
 export default nextConfig;
