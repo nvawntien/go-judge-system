@@ -17,6 +17,10 @@ kafka:
   result_topic: "judge.submission.results"
   dlt_topic: "judge.submission.jobs.dlt"
 
+problem_grpc:
+  address: "problem-service:9092"
+  timeout: 5s
+
 judging:
   timeout_seconds: 30
   memory_limit_mb: 256

@@ -41,23 +41,24 @@ func TestRunCodeCompilesOnceAndRunsAllCases(t *testing.T) {
 	defer server.Close()
 
 	client := NewGoJudgeClient(server.URL, zap.NewNop())
-	res, err := client.RunCode(context.Background(), outbound.RunRequest{
-		Language:   "GO",
-		SourceCode: "package main\nfunc main() {}\n",
-		TestCases: []outbound.RunTestCase{
-			{ID: "sample-1", Kind: "sample", Stdin: "1\n", ExpectedOutput: stringPtr("1\n")},
-			{ID: "sample-2", Kind: "sample", Stdin: "2\n", ExpectedOutput: stringPtr("2\n")},
-			{ID: "custom-1", Kind: "custom", Stdin: "3\n"},
+	res, err := client.Execute(context.Background(), outbound.ExecutionRequest{
+		Language:           "GO",
+		SourceCode:         "package main\nfunc main() {}\n",
+		StopOnFirstFailure: false,
+		TestCases: []outbound.ExecutionTestCase{
+			{Index: 1, ID: "sample-1", Kind: "sample", Stdin: "1\n", ExpectedOutput: stringPtr("1\n")},
+			{Index: 2, ID: "sample-2", Kind: "sample", Stdin: "2\n", ExpectedOutput: stringPtr("2\n")},
+			{Index: 3, ID: "custom-1", Kind: "custom", Stdin: "3\n"},
 		},
 	})
 	if err != nil {
-		t.Fatalf("RunCode() error = %v", err)
+		t.Fatalf("Execute() error = %v", err)
 	}
 	if compileCalls != 1 || runCalls != 1 {
 		t.Fatalf("compile/run calls = %d/%d, want 1/1", compileCalls, runCalls)
 	}
-	if got := []string{res.TestCases[0].Status, res.TestCases[1].Status, res.TestCases[2].Status}; got[0] != "accepted" || got[1] != "runtime_error" || got[2] != "executed" {
-		t.Fatalf("statuses = %v, want [accepted runtime_error executed]", got)
+	if got := []string{res.TestCases[0].Status, res.TestCases[1].Status, res.TestCases[2].Status}; got[0] != "ACCEPTED" || got[1] != "RUNTIME_ERROR" || got[2] != "ACCEPTED" {
+		t.Fatalf("statuses = %v, want [ACCEPTED RUNTIME_ERROR ACCEPTED]", got)
 	}
 }
 
@@ -69,15 +70,15 @@ func TestRunCodeCompileErrorReturnsNoTests(t *testing.T) {
 	defer server.Close()
 
 	client := NewGoJudgeClient(server.URL, zap.NewNop())
-	res, err := client.RunCode(context.Background(), outbound.RunRequest{
+	res, err := client.Execute(context.Background(), outbound.ExecutionRequest{
 		Language:   "GO",
 		SourceCode: "bad",
-		TestCases:  []outbound.RunTestCase{{ID: "sample-1", Kind: "sample", ExpectedOutput: stringPtr("")}},
+		TestCases:  []outbound.ExecutionTestCase{{Index: 1, ID: "sample-1", Kind: "sample", ExpectedOutput: stringPtr("")}},
 	})
 	if err != nil {
-		t.Fatalf("RunCode() error = %v", err)
+		t.Fatalf("Execute() error = %v", err)
 	}
-	if res.Status != "compile_error" || len(res.TestCases) != 0 {
-		t.Fatalf("result = %#v, want compile_error with no tests", res)
+	if res.Status != "COMPILATION_ERROR" || len(res.TestCases) != 0 {
+		t.Fatalf("result = %#v, want COMPILATION_ERROR with no tests", res)
 	}
 }

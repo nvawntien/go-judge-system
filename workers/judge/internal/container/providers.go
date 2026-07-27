@@ -1,21 +1,29 @@
 package container
 
 import (
+	"fmt"
+	"strings"
+	"time"
+
 	"go-judge-system/pkg/config"
+	sharedgrpc "go-judge-system/pkg/grpc"
 	"go-judge-system/pkg/kafka"
 	"go-judge-system/pkg/logger"
+	problemv1 "go-judge-system/pkg/pb/problem/v1"
 	grpcin "go-judge-system/workers/judge/internal/adapter/inbound/grpc"
 	grpchandler "go-judge-system/workers/judge/internal/adapter/inbound/grpc/handler"
 	kafkain "go-judge-system/workers/judge/internal/adapter/inbound/kafka"
 	"go-judge-system/workers/judge/internal/adapter/outbound/execute"
 	"go-judge-system/workers/judge/internal/adapter/outbound/judge"
 	"go-judge-system/workers/judge/internal/adapter/outbound/problem"
+	"go-judge-system/workers/judge/internal/adapter/outbound/testcase"
 	"go-judge-system/workers/judge/internal/application/port/inbound"
 	"go-judge-system/workers/judge/internal/application/port/outbound"
 	judgeuc "go-judge-system/workers/judge/internal/application/usecase/judge"
 
 	"github.com/google/wire"
 	"go.uber.org/zap"
+	googlegrpc "google.golang.org/grpc"
 )
 
 var InfrastructureProviderSet = wire.NewSet(
@@ -32,9 +40,14 @@ var OutboundProviderSet = wire.NewSet(
 	wire.Bind(new(outbound.CodeExecutor), new(*execute.GoJudgeClient)),
 	judge.NewKafkaResultPublisher,
 	wire.Bind(new(outbound.ResultPublisher), new(*judge.KafkaResultPublisher)),
-	ProvideProblemClient,
-	wire.Bind(new(outbound.TestCaseFetcher), new(*problem.ProblemServiceClient)),
-	ProvideProblemServiceURL,
+	ProvideProblemGRPCConfig,
+	ProvideProblemClientConn,
+	ProvideProblemServiceClient,
+	ProvideProblemGRPCTimeout,
+	problem.NewGRPCMetadataReader,
+	wire.Bind(new(outbound.ProblemTestCaseMetadataReader), new(*problem.GRPCMetadataReader)),
+	testcase.NewOfficialLoader,
+	wire.Bind(new(outbound.OfficialTestCaseLoader), new(*testcase.OfficialLoader)),
 	ProvideSandboxServiceURL,
 )
 
@@ -66,17 +79,35 @@ func ProvideServiceName() string {
 	return "judge-worker"
 }
 
-// ProblemServiceURL is a custom type to prevent Wire injection conflicts with other strings
-type ProblemServiceURL string
-
-// ProvideProblemServiceURL provides the base URL for the problem service.
-// This assumes the problem service is reachable at this internal Docker DNS.
-func ProvideProblemServiceURL() ProblemServiceURL {
-	return "http://judge_problem:8082" // Note: the docker-compose defined problem service correctly
+func ProvideProblemGRPCConfig(cfg *config.Config) (config.ProblemGRPCConfig, error) {
+	problemCfg := cfg.ProblemGRPC
+	problemCfg.Address = strings.TrimSpace(problemCfg.Address)
+	if problemCfg.Address == "" {
+		problemCfg.Address = "problem-service:9092"
+	}
+	if problemCfg.Timeout == 0 {
+		problemCfg.Timeout = 5 * time.Second
+	}
+	if problemCfg.Timeout < 0 {
+		return config.ProblemGRPCConfig{}, fmt.Errorf("problem gRPC timeout must be greater than zero")
+	}
+	return problemCfg, nil
 }
 
-func ProvideProblemClient(url ProblemServiceURL, logger *zap.Logger) *problem.ProblemServiceClient {
-	return problem.NewProblemServiceClient(string(url), logger)
+func ProvideProblemClientConn(cfg config.ProblemGRPCConfig) (*googlegrpc.ClientConn, error) {
+	conn, err := sharedgrpc.NewClientConn(cfg.Address, sharedgrpc.WithInsecureTransport())
+	if err != nil {
+		return nil, fmt.Errorf("create Problem Service gRPC connection: %w", err)
+	}
+	return conn, nil
+}
+
+func ProvideProblemServiceClient(conn *googlegrpc.ClientConn) problemv1.ProblemServiceClient {
+	return problemv1.NewProblemServiceClient(conn)
+}
+
+func ProvideProblemGRPCTimeout(cfg config.ProblemGRPCConfig) time.Duration {
+	return cfg.Timeout
 }
 
 type SandboxServiceURL string
