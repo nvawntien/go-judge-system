@@ -8,9 +8,10 @@ const (
 	CodeDeleted   = 20002
 	CodeRetrieved = 20003
 
-	CodeBadRequest   = 40000
-	CodeParamInvalid = 40001
-	CodeInvalidID    = 40002
+	CodeBadRequest      = 40000
+	CodeParamInvalid    = 40001
+	CodeInvalidID       = 40002
+	CodePayloadTooLarge = 41300
 
 	CodeUnauthorized    = 40100
 	CodeInvalidToken    = 40101
@@ -31,4 +32,7 @@ const (
 	CodeDatabaseError  = 50002
 	CodeMongoDBError   = 50003
 	CodeRedisError     = 50004
+
+	CodeServiceUnavailable = 50300
+	CodeGatewayTimeout     = 50400
 )

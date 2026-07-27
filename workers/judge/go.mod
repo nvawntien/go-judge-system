@@ -1,6 +1,6 @@
 module go-judge-system/workers/judge
 
-go 1.25
+go 1.25.8
 
 require (
 	github.com/IBM/sarama v1.46.2
@@ -8,6 +8,7 @@ require (
 	github.com/google/wire v0.6.0
 	go-judge-system/pkg v0.0.0
 	go.uber.org/zap v1.27.1
+	google.golang.org/grpc v1.82.0
 )
 
 require (
@@ -36,10 +37,12 @@ require (
 	github.com/subosito/gotenv v1.6.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/crypto v0.46.0 // indirect
-	golang.org/x/net v0.48.0 // indirect
-	golang.org/x/sys v0.39.0 // indirect
-	golang.org/x/text v0.32.0 // indirect
+	golang.org/x/crypto v0.53.0 // indirect
+	golang.org/x/net v0.56.0 // indirect
+	golang.org/x/sys v0.46.0 // indirect
+	golang.org/x/text v0.38.0 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260706201446-f0a921348800 // indirect
+	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 )
 

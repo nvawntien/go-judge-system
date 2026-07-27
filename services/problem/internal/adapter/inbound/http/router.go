@@ -1,6 +1,9 @@
 package http
 
 import (
+	"context"
+	"net/http"
+
 	pkgmiddleware "go-judge-system/pkg/middleware"
 	"go-judge-system/pkg/rbac"
 	"go-judge-system/services/problem/internal/adapter/inbound/http/handler"
@@ -14,6 +17,7 @@ type Router struct {
 	userHandler    *handler.UserHandler
 	adminHandler   *handler.AdminHandler
 	authMiddleware gin.HandlerFunc
+	server         *http.Server
 }
 
 func NewRouter(
@@ -78,5 +82,18 @@ func (r *Router) SetupRoutes() {
 }
 
 func (r *Router) Start(port string) error {
-	return r.engine.Run(":" + port)
+	r.server = &http.Server{
+		Addr:    ":" + port,
+		Handler: r.engine,
+	}
+
+	return r.server.ListenAndServe()
+}
+
+func (r *Router) Shutdown(ctx context.Context) error {
+	if r.server == nil {
+		return nil
+	}
+
+	return r.server.Shutdown(ctx)
 }

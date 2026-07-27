@@ -16,6 +16,7 @@ const (
 type SubmissionResult struct {
 	ID             int64
 	SubmissionID   int64
+	AttemptID      string
 	TestIndex      int
 	Status         ResultStatus
 	ActualOutput   *string

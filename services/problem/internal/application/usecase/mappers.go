@@ -9,9 +9,9 @@ func MapProblemToResponse(p *entity.Problem, includePrivate bool) dto.ProblemRes
 	examples := make([]dto.ProblemExampleDTO, 0, len(p.Examples))
 	for _, ex := range p.Examples {
 		examples = append(examples, dto.ProblemExampleDTO{
-			Input:       ex.Input,
-			Output:      ex.Output,
-			Explanation: ex.Explanation,
+			Input:          ex.Input,
+			ExpectedOutput: ex.Output,
+			Explanation:    ex.Explanation,
 		})
 	}
 
@@ -45,9 +45,9 @@ func MapProblemToAdminDetailResponse(p *entity.Problem, tc *entity.TestCase) dto
 	examples := make([]dto.ProblemExampleDTO, 0, len(p.Examples))
 	for _, ex := range p.Examples {
 		examples = append(examples, dto.ProblemExampleDTO{
-			Input:       ex.Input,
-			Output:      ex.Output,
-			Explanation: ex.Explanation,
+			Input:          ex.Input,
+			ExpectedOutput: ex.Output,
+			Explanation:    ex.Explanation,
 		})
 	}
 
@@ -126,7 +126,7 @@ func MapExampleDTOsToEntity(dtos []dto.ProblemExampleDTO) []entity.ProblemExampl
 	for _, d := range dtos {
 		examples = append(examples, entity.ProblemExample{
 			Input:       d.Input,
-			Output:      d.Output,
+			Output:      d.ExpectedOutput,
 			Explanation: d.Explanation,
 		})
 	}

@@ -20,6 +20,7 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	ProblemService_GetTestCase_FullMethodName = "/problem.v1.ProblemService/GetTestCase"
+	ProblemService_GetProblem_FullMethodName  = "/problem.v1.ProblemService/GetProblem"
 )
 
 // ProblemServiceClient is the client API for ProblemService service.
@@ -27,6 +28,9 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ProblemServiceClient interface {
 	GetTestCase(ctx context.Context, in *GetTestCaseRequest, opts ...grpc.CallOption) (*GetTestCaseResponse, error)
+	// GetProblem returns canonical metadata when the actor may access the Problem.
+	// Access depends on publication state, role, and ownership; inaccessible hidden Problems return NotFound.
+	GetProblem(ctx context.Context, in *GetProblemRequest, opts ...grpc.CallOption) (*GetProblemResponse, error)
 }
 
 type problemServiceClient struct {
@@ -47,11 +51,24 @@ func (c *problemServiceClient) GetTestCase(ctx context.Context, in *GetTestCaseR
 	return out, nil
 }
 
+func (c *problemServiceClient) GetProblem(ctx context.Context, in *GetProblemRequest, opts ...grpc.CallOption) (*GetProblemResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetProblemResponse)
+	err := c.cc.Invoke(ctx, ProblemService_GetProblem_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ProblemServiceServer is the server API for ProblemService service.
 // All implementations must embed UnimplementedProblemServiceServer
 // for forward compatibility.
 type ProblemServiceServer interface {
 	GetTestCase(context.Context, *GetTestCaseRequest) (*GetTestCaseResponse, error)
+	// GetProblem returns canonical metadata when the actor may access the Problem.
+	// Access depends on publication state, role, and ownership; inaccessible hidden Problems return NotFound.
+	GetProblem(context.Context, *GetProblemRequest) (*GetProblemResponse, error)
 	mustEmbedUnimplementedProblemServiceServer()
 }
 
@@ -64,6 +81,9 @@ type UnimplementedProblemServiceServer struct{}
 
 func (UnimplementedProblemServiceServer) GetTestCase(context.Context, *GetTestCaseRequest) (*GetTestCaseResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetTestCase not implemented")
+}
+func (UnimplementedProblemServiceServer) GetProblem(context.Context, *GetProblemRequest) (*GetProblemResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetProblem not implemented")
 }
 func (UnimplementedProblemServiceServer) mustEmbedUnimplementedProblemServiceServer() {}
 func (UnimplementedProblemServiceServer) testEmbeddedByValue()                        {}
@@ -104,6 +124,24 @@ func _ProblemService_GetTestCase_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ProblemService_GetProblem_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetProblemRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProblemServiceServer).GetProblem(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ProblemService_GetProblem_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProblemServiceServer).GetProblem(ctx, req.(*GetProblemRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ProblemService_ServiceDesc is the grpc.ServiceDesc for ProblemService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -114,6 +152,10 @@ var ProblemService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetTestCase",
 			Handler:    _ProblemService_GetTestCase_Handler,
+		},
+		{
+			MethodName: "GetProblem",
+			Handler:    _ProblemService_GetProblem_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

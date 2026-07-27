@@ -12,11 +12,12 @@ import (
 
 func InitializeApp(cfg *config.Config) (*container.App, func(), error) {
 	wire.Build(
+		wire.FieldsOf(new(*config.Config), "Server"),
 		container.InfrastructureProviderSet,
 		container.OutboundProviderSet,
+		container.UseCaseProviderSet,
 		container.InboundProviderSet,
 		container.NewApp,
 	)
 	return nil, nil, nil
 }
-

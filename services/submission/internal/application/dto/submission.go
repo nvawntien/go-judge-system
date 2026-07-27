@@ -1,92 +1,122 @@
 package dto
 
+import (
+	"time"
+)
+
 type CreateSubmissionRequest struct {
-	ProblemID   int64  `json:"problem_id" binding:"required,min=1"`
-	ProblemName string `json:"problem_name" binding:"required,min=1"`
-	Language    string `json:"language" binding:"required,oneof=C CPP JAVA PYTHON GO JAVASCRIPT"`
-	SourceCode  string `json:"source_code" binding:"required,min=1"`
+	ProblemID  int64  `json:"problem_id" binding:"required,gt=0"`
+	Language   string `json:"language" binding:"required"`
+	SourceCode string `json:"source_code" binding:"required"`
+}
+
+type RunCodeRequest struct {
+	ProblemID  int64              `json:"problem_id" binding:"required,gt=0"`
+	Language   string             `json:"language" binding:"required"`
+	SourceCode string             `json:"source_code" binding:"required"`
+	TestCases  []RunTestCaseInput `json:"testcases" binding:"required"`
+}
+
+type RunTestCaseInput struct {
+	ID             string  `json:"id" binding:"required"`
+	Kind           string  `json:"kind" binding:"required"`
+	Stdin          string  `json:"stdin"`
+	ExpectedOutput *string `json:"expected_output"`
+}
+
+type RunCodeResponse struct {
+	Status        string              `json:"status"`
+	CompileOutput string              `json:"compile_output"`
+	Tests         []RunTestCaseResult `json:"tests"`
+}
+
+type RunTestCaseResult struct {
+	ID              string  `json:"id"`
+	Kind            string  `json:"kind"`
+	Status          string  `json:"status"`
+	Stdout          string  `json:"stdout"`
+	Stderr          string  `json:"stderr"`
+	ExpectedOutput  *string `json:"expected_output"`
+	ExecutionTimeMS int64   `json:"execution_time_ms"`
+	MemoryUsedKB    int64   `json:"memory_used_kb"`
+}
+
+type CreateSubmissionResponse struct {
+	ID           int64     `json:"id"`
+	ProblemID    int64     `json:"problem_id"`
+	ProblemTitle string    `json:"problem_title"`
+	Language     string    `json:"language"`
+	Status       string    `json:"status"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+type GetSubmissionRequest struct {
+	SubmissionID int64 `uri:"submission_id" binding:"required,gt=0"`
+}
+
+type GetSubmissionResponse struct {
+	ID           int64     `json:"id"`
+	ProblemID    int64     `json:"problem_id"`
+	ProblemTitle string    `json:"problem_title"`
+	UserID       string    `json:"user_id"`
+	Username     string    `json:"username"`
+	Language     string    `json:"language"`
+	SourceCode   string    `json:"source_code"`
+	Status       string    `json:"status"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 type ListMySubmissionsRequest struct {
-	Page     int    `form:"page,default=1" binding:"min=1"`
-	Limit    int    `form:"limit,default=20" binding:"min=1,max=100"`
-	Status   string `form:"status" binding:"omitempty"`
-	Language string `form:"language" binding:"omitempty"`
+	Page      *int   `form:"page"`
+	Limit     *int   `form:"limit"`
+	Status    string `form:"status"`
+	Language  string `form:"language"`
+	ProblemID *int64 `form:"problem_id"`
 }
 
-type SubmissionResponse struct {
-	ID          int64  `json:"id"`
-	ProblemID   int64  `json:"problem_id"`
-	ProblemName string `json:"problem_name"`
-	UserID      string `json:"user_id"`
-	Username    string `json:"username"`
-	Language    string `json:"language"`
-	Status      string `json:"status"`
-	CreatedAt   string `json:"created_at"`
+type ListAdminSubmissionsRequest struct {
+	Page      *int    `form:"page"`
+	Limit     *int    `form:"limit"`
+	Status    *string `form:"status"`
+	Language  *string `form:"language"`
+	ProblemID *int64  `form:"problem_id"`
+	UserID    *string `form:"user_id"`
+}
+
+type SubmissionListItem struct {
+	ID           int64     `json:"id"`
+	ProblemID    int64     `json:"problem_id"`
+	ProblemTitle string    `json:"problem_title"`
+	Language     string    `json:"language"`
+	Status       string    `json:"status"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+type PaginationResponse struct {
+	Page       int   `json:"page"`
+	Limit      int   `json:"limit"`
+	Total      int64 `json:"total"`
+	TotalPages int   `json:"total_pages"`
 }
 
 type ListMySubmissionsResponse struct {
-	Items []SubmissionResponse `json:"items"`
-	Total int64                `json:"total"`
-	Page  int                  `json:"page"`
-	Limit int                  `json:"limit"`
+	Items      []SubmissionListItem `json:"items"`
+	Pagination PaginationResponse   `json:"pagination"`
 }
 
-type SubmissionIDRequest struct {
-	ID int64 `uri:"id" binding:"required,min=1"`
+type AdminSubmissionListItem struct {
+	ID           int64     `json:"id"`
+	ProblemID    int64     `json:"problem_id"`
+	ProblemTitle string    `json:"problem_title"`
+	UserID       string    `json:"user_id"`
+	Username     string    `json:"username"`
+	Language     string    `json:"language"`
+	Status       string    `json:"status"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
-type ProblemIDRequest struct {
-	ID int64 `uri:"id" binding:"required,min=1"`
-}
-
-type ListProblemSubmissionsQueryRequest struct {
-	Page     int    `form:"page,default=1" binding:"min=1"`
-	Limit    int    `form:"limit,default=20" binding:"min=1,max=100"`
-	Status   string `form:"status" binding:"omitempty"`
-	Language string `form:"language" binding:"omitempty"`
-}
-
-type ListProblemSubmissionsResponse struct {
-	Items []SubmissionResponse `json:"items"`
-	Total int64                `json:"total"`
-	Page  int                  `json:"page"`
-	Limit int                  `json:"limit"`
-}
-
-type ListSubmissionsRequest struct {
-	Page      int    `form:"page,default=1" binding:"min=1"`
-	Limit     int    `form:"limit,default=20" binding:"min=1,max=100"`
-	ProblemID *int64 `form:"problem_id" binding:"omitempty,min=1"`
-	UserID    string `form:"user_id" binding:"omitempty"`
-	Status    string `form:"status" binding:"omitempty"`
-	Language  string `form:"language" binding:"omitempty"`
-}
-
-type ListSubmissionsResponse struct {
-	Items []SubmissionResponse `json:"items"`
-	Total int64                `json:"total"`
-	Page  int                  `json:"page"`
-	Limit int                  `json:"limit"`
-}
-
-type SubmissionResultResponse struct {
-	TestIndex      int     `json:"test_index"`
-	Status         string  `json:"status"`
-	Input          *string `json:"input,omitempty"`
-	ExpectedOutput *string `json:"expected_output,omitempty"`
-	ActualOutput   *string `json:"actual_output,omitempty"`
-	ExecutionTime  *int    `json:"execution_time_ms,omitempty"`
-	MemoryUsed     *int    `json:"memory_used_kb,omitempty"`
-}
-
-type SubmissionDetailResponse struct {
-	SubmissionResponse
-	SourceCode      string                    `json:"source_code"`
-	ExecutionTimeMs *int                      `json:"execution_time_ms,omitempty"`
-	MemoryUsedKB    *int                      `json:"memory_used_kb,omitempty"`
-	CompileOutput   *string                   `json:"compile_output,omitempty"`
-	TotalTests      int                       `json:"total_tests"`
-	FailedTestIndex *int                      `json:"failed_test_index,omitempty"`
-	FailedTest      *SubmissionResultResponse `json:"failed_test,omitempty"`
+type ListAdminSubmissionsResponse struct {
+	Items      []AdminSubmissionListItem `json:"items"`
+	Pagination PaginationResponse        `json:"pagination"`
 }

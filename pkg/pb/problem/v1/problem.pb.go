@@ -125,6 +125,142 @@ func (x *GetTestCaseResponse) GetVersion() int32 {
 	return 0
 }
 
+type GetProblemRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ProblemId     int64                  `protobuf:"varint,1,opt,name=problem_id,json=problemId,proto3" json:"problem_id,omitempty"`
+	ActorUserId   string                 `protobuf:"bytes,2,opt,name=actor_user_id,json=actorUserId,proto3" json:"actor_user_id,omitempty"`
+	ActorRole     string                 `protobuf:"bytes,3,opt,name=actor_role,json=actorRole,proto3" json:"actor_role,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetProblemRequest) Reset() {
+	*x = GetProblemRequest{}
+	mi := &file_proto_problem_v1_problem_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetProblemRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetProblemRequest) ProtoMessage() {}
+
+func (x *GetProblemRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_problem_v1_problem_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetProblemRequest.ProtoReflect.Descriptor instead.
+func (*GetProblemRequest) Descriptor() ([]byte, []int) {
+	return file_proto_problem_v1_problem_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *GetProblemRequest) GetProblemId() int64 {
+	if x != nil {
+		return x.ProblemId
+	}
+	return 0
+}
+
+func (x *GetProblemRequest) GetActorUserId() string {
+	if x != nil {
+		return x.ActorUserId
+	}
+	return ""
+}
+
+func (x *GetProblemRequest) GetActorRole() string {
+	if x != nil {
+		return x.ActorRole
+	}
+	return ""
+}
+
+type GetProblemResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ProblemId     int64                  `protobuf:"varint,1,opt,name=problem_id,json=problemId,proto3" json:"problem_id,omitempty"`
+	Title         string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
+	Slug          string                 `protobuf:"bytes,3,opt,name=slug,proto3" json:"slug,omitempty"`
+	TimeLimit     float64                `protobuf:"fixed64,4,opt,name=time_limit,json=timeLimit,proto3" json:"time_limit,omitempty"`
+	MemoryLimit   int32                  `protobuf:"varint,5,opt,name=memory_limit,json=memoryLimit,proto3" json:"memory_limit,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetProblemResponse) Reset() {
+	*x = GetProblemResponse{}
+	mi := &file_proto_problem_v1_problem_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetProblemResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetProblemResponse) ProtoMessage() {}
+
+func (x *GetProblemResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_problem_v1_problem_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetProblemResponse.ProtoReflect.Descriptor instead.
+func (*GetProblemResponse) Descriptor() ([]byte, []int) {
+	return file_proto_problem_v1_problem_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *GetProblemResponse) GetProblemId() int64 {
+	if x != nil {
+		return x.ProblemId
+	}
+	return 0
+}
+
+func (x *GetProblemResponse) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *GetProblemResponse) GetSlug() string {
+	if x != nil {
+		return x.Slug
+	}
+	return ""
+}
+
+func (x *GetProblemResponse) GetTimeLimit() float64 {
+	if x != nil {
+		return x.TimeLimit
+	}
+	return 0
+}
+
+func (x *GetProblemResponse) GetMemoryLimit() int32 {
+	if x != nil {
+		return x.MemoryLimit
+	}
+	return 0
+}
+
 var File_proto_problem_v1_problem_proto protoreflect.FileDescriptor
 
 const file_proto_problem_v1_problem_proto_rawDesc = "" +
@@ -138,9 +274,25 @@ const file_proto_problem_v1_problem_proto_rawDesc = "" +
 	"\x10zip_download_url\x18\x01 \x01(\tR\x0ezipDownloadUrl\x12\x1d\n" +
 	"\n" +
 	"test_count\x18\x02 \x01(\x05R\ttestCount\x12\x18\n" +
-	"\aversion\x18\x03 \x01(\x05R\aversion2`\n" +
+	"\aversion\x18\x03 \x01(\x05R\aversion\"u\n" +
+	"\x11GetProblemRequest\x12\x1d\n" +
+	"\n" +
+	"problem_id\x18\x01 \x01(\x03R\tproblemId\x12\"\n" +
+	"\ractor_user_id\x18\x02 \x01(\tR\vactorUserId\x12\x1d\n" +
+	"\n" +
+	"actor_role\x18\x03 \x01(\tR\tactorRole\"\x9f\x01\n" +
+	"\x12GetProblemResponse\x12\x1d\n" +
+	"\n" +
+	"problem_id\x18\x01 \x01(\x03R\tproblemId\x12\x14\n" +
+	"\x05title\x18\x02 \x01(\tR\x05title\x12\x12\n" +
+	"\x04slug\x18\x03 \x01(\tR\x04slug\x12\x1d\n" +
+	"\n" +
+	"time_limit\x18\x04 \x01(\x01R\ttimeLimit\x12!\n" +
+	"\fmemory_limit\x18\x05 \x01(\x05R\vmemoryLimit2\xad\x01\n" +
 	"\x0eProblemService\x12N\n" +
-	"\vGetTestCase\x12\x1e.problem.v1.GetTestCaseRequest\x1a\x1f.problem.v1.GetTestCaseResponseB-Z+go-judge-system/pkg/pb/problem/v1;problemv1b\x06proto3"
+	"\vGetTestCase\x12\x1e.problem.v1.GetTestCaseRequest\x1a\x1f.problem.v1.GetTestCaseResponse\x12K\n" +
+	"\n" +
+	"GetProblem\x12\x1d.problem.v1.GetProblemRequest\x1a\x1e.problem.v1.GetProblemResponseB-Z+go-judge-system/pkg/pb/problem/v1;problemv1b\x06proto3"
 
 var (
 	file_proto_problem_v1_problem_proto_rawDescOnce sync.Once
@@ -154,16 +306,20 @@ func file_proto_problem_v1_problem_proto_rawDescGZIP() []byte {
 	return file_proto_problem_v1_problem_proto_rawDescData
 }
 
-var file_proto_problem_v1_problem_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_proto_problem_v1_problem_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_proto_problem_v1_problem_proto_goTypes = []any{
 	(*GetTestCaseRequest)(nil),  // 0: problem.v1.GetTestCaseRequest
 	(*GetTestCaseResponse)(nil), // 1: problem.v1.GetTestCaseResponse
+	(*GetProblemRequest)(nil),   // 2: problem.v1.GetProblemRequest
+	(*GetProblemResponse)(nil),  // 3: problem.v1.GetProblemResponse
 }
 var file_proto_problem_v1_problem_proto_depIdxs = []int32{
 	0, // 0: problem.v1.ProblemService.GetTestCase:input_type -> problem.v1.GetTestCaseRequest
-	1, // 1: problem.v1.ProblemService.GetTestCase:output_type -> problem.v1.GetTestCaseResponse
-	1, // [1:2] is the sub-list for method output_type
-	0, // [0:1] is the sub-list for method input_type
+	2, // 1: problem.v1.ProblemService.GetProblem:input_type -> problem.v1.GetProblemRequest
+	1, // 2: problem.v1.ProblemService.GetTestCase:output_type -> problem.v1.GetTestCaseResponse
+	3, // 3: problem.v1.ProblemService.GetProblem:output_type -> problem.v1.GetProblemResponse
+	2, // [2:4] is the sub-list for method output_type
+	0, // [0:2] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
@@ -180,7 +336,7 @@ func file_proto_problem_v1_problem_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_problem_v1_problem_proto_rawDesc), len(file_proto_problem_v1_problem_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

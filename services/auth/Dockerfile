@@ -1,10 +1,10 @@
-FROM golang:1.25-alpine AS builder
+FROM golang:1.25.8-alpine AS builder
 
 RUN apk add --no-cache git
 
 WORKDIR /workspace
 
-RUN printf 'go 1.25\n\nuse (\n\t./pkg\n\t./services/auth\n)\n' > go.work
+RUN printf 'go 1.25.8\n\nuse (\n\t./pkg\n\t./services/auth\n)\n' > go.work
 
 COPY pkg/go.mod pkg/go.sum ./pkg/
 COPY services/auth/go.mod services/auth/go.sum ./services/auth/

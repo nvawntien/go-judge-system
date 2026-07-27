@@ -9,6 +9,7 @@ import (
 	"go-judge-system/pkg/minio"
 	"go-judge-system/services/problem/internal/adapter/inbound/grpc"
 	grpchandler "go-judge-system/services/problem/internal/adapter/inbound/grpc/handler"
+	grpcproblemhandler "go-judge-system/services/problem/internal/adapter/inbound/grpc/handler/problem"
 	grpctestcasehandler "go-judge-system/services/problem/internal/adapter/inbound/grpc/handler/worker/testcase"
 	"go-judge-system/services/problem/internal/adapter/inbound/http"
 	"go-judge-system/services/problem/internal/adapter/inbound/http/handler"
@@ -22,6 +23,7 @@ import (
 	adminproblemusecase "go-judge-system/services/problem/internal/application/usecase/admin/problem"
 	admintagusecase "go-judge-system/services/problem/internal/application/usecase/admin/tag"
 	admintestcaseusecase "go-judge-system/services/problem/internal/application/usecase/admin/testcase"
+	grpcproblemusecase "go-judge-system/services/problem/internal/application/usecase/problem"
 	userproblemusecase "go-judge-system/services/problem/internal/application/usecase/user/problem"
 	usertagusecase "go-judge-system/services/problem/internal/application/usecase/user/tag"
 	workertestcaseusecase "go-judge-system/services/problem/internal/application/usecase/worker/testcase"
@@ -72,6 +74,7 @@ var UseCaseProviderSet = wire.NewSet(
 	usertagusecase.NewListTagsUseCase,
 
 	workertestcaseusecase.NewGetTestCaseUseCase,
+	grpcproblemusecase.NewGetProblemUseCase,
 )
 
 var InboundProviderSet = wire.NewSet(
@@ -102,7 +105,9 @@ var InboundProviderSet = wire.NewSet(
 	http.NewRouter,
 
 	grpctestcasehandler.NewGetTestCaseHandler,
+	grpcproblemhandler.NewGetProblemHandler,
 	grpchandler.NewWorkerHandler,
+	grpchandler.NewProblemHandler,
 	grpc.NewProblemServer,
 	grpc.NewServer,
 )

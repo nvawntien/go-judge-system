@@ -5,7 +5,11 @@ package problem.v1;
 option go_package = "go-judge-system/pkg/pb/problem/v1;problemv1";
 
 service ProblemService {
-    rpc GetTestCase(GetTestCaseRequest) returns (GetTestCaseResponse);
+  rpc GetTestCase(GetTestCaseRequest) returns (GetTestCaseResponse);
+
+  // GetProblem returns canonical metadata when the actor may access the Problem.
+  // Access depends on publication state, role, and ownership; inaccessible hidden Problems return NotFound.
+  rpc GetProblem(GetProblemRequest) returns (GetProblemResponse);
 }
 
 message GetTestCaseRequest {
@@ -13,7 +17,21 @@ message GetTestCaseRequest {
 }
 
 message GetTestCaseResponse {
-    string zip_download_url = 1;
-    int32 test_count = 2;
-    int32 version = 3;
+  string zip_download_url = 1;
+  int32 test_count = 2;
+  int32 version = 3;
+}
+
+message GetProblemRequest {
+  int64 problem_id = 1;
+  string actor_user_id = 2;
+  string actor_role = 3;
+}
+
+message GetProblemResponse {
+  int64 problem_id = 1;
+  string title = 2;
+  string slug = 3;
+  double time_limit = 4;
+  int32 memory_limit = 5;
 }

@@ -1,6 +1,9 @@
 package http
 
 import (
+	"context"
+	"net/http"
+
 	"go-judge-system/services/auth/internal/adapter/inbound/http/handler"
 
 	"github.com/gin-gonic/gin"
@@ -16,6 +19,7 @@ type Router struct {
 	user       *handler.UserHandler
 	admin      *handler.AdminHandler
 	middleware gin.HandlerFunc
+	server     *http.Server
 }
 
 func NewRouter(authHandler *handler.AuthHandler, userHandler *handler.UserHandler, adminHandler *handler.AdminHandler, authMiddleware gin.HandlerFunc, logger *zap.Logger) *Router {
@@ -83,5 +87,18 @@ func (r *Router) SetupRoutes() {
 }
 
 func (r *Router) Start(port string) error {
-	return r.engine.Run(":" + port)
+	r.server = &http.Server{
+		Addr:    ":" + port,
+		Handler: r.engine,
+	}
+
+	return r.server.ListenAndServe()
+}
+
+func (r *Router) Shutdown(ctx context.Context) error {
+	if r.server == nil {
+		return nil
+	}
+
+	return r.server.Shutdown(ctx)
 }

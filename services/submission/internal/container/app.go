@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
 	"go-judge-system/pkg/config"
 	"go-judge-system/services/submission/internal/adapter/inbound/http"
-	kafkain "go-judge-system/services/submission/internal/adapter/inbound/kafka"
+	resultconsumer "go-judge-system/services/submission/internal/adapter/inbound/kafka"
 	"go-judge-system/services/submission/internal/adapter/outbound/outbox"
+
 	nethttp "net/http"
 	"os"
 	"os/signal"
@@ -16,6 +18,7 @@ import (
 
 	"github.com/IBM/sarama"
 	"go.uber.org/zap"
+	googlegrpc "google.golang.org/grpc"
 	"gorm.io/gorm"
 )
 
@@ -23,29 +26,38 @@ type App struct {
 	Config         *config.Config
 	Database       *gorm.DB
 	Router         *http.Router
-	ResultConsumer *kafkain.JudgeResultConsumer
 	OutboxRelay    *outbox.OutboxRelay
+	ResultConsumer *resultconsumer.JudgeResultConsumer
 	Logger         *zap.Logger
 	KafkaProducer  sarama.SyncProducer
+	KafkaConsumer  sarama.ConsumerGroup
+	ProblemConn    *googlegrpc.ClientConn
+	JudgeConn      JudgeClientConn
 }
 
 func NewApp(
 	cfg *config.Config,
 	database *gorm.DB,
 	router *http.Router,
-	resultConsumer *kafkain.JudgeResultConsumer,
 	outboxRelay *outbox.OutboxRelay,
+	resultConsumer *resultconsumer.JudgeResultConsumer,
 	logger *zap.Logger,
 	producer sarama.SyncProducer,
+	consumer sarama.ConsumerGroup,
+	problemConn *googlegrpc.ClientConn,
+	judgeConn JudgeClientConn,
 ) *App {
 	return &App{
 		Config:         cfg,
 		Database:       database,
 		Router:         router,
-		ResultConsumer: resultConsumer,
 		OutboxRelay:    outboxRelay,
+		ResultConsumer: resultConsumer,
 		Logger:         logger,
 		KafkaProducer:  producer,
+		KafkaConsumer:  consumer,
+		ProblemConn:    problemConn,
+		JudgeConn:      judgeConn,
 	}
 }
 
@@ -62,14 +74,14 @@ func (a *App) Run() error {
 	workerCtx, workerCancel := context.WithCancel(context.Background())
 	defer workerCancel()
 
-	consumerErrCh := make(chan error, 1)
-	go func() {
-		consumerErrCh <- a.ResultConsumer.Run(workerCtx)
-	}()
-
 	outboxErrCh := make(chan error, 1)
 	go func() {
 		outboxErrCh <- a.OutboxRelay.Start(workerCtx, 2*time.Second)
+	}()
+
+	resultErrCh := make(chan error, 1)
+	go func() {
+		resultErrCh <- a.ResultConsumer.Start(workerCtx)
 	}()
 
 	signalCh := make(chan os.Signal, 1)
@@ -78,23 +90,23 @@ func (a *App) Run() error {
 
 	select {
 	case err := <-serverErrCh:
+		workerCancel()
+		<-outboxErrCh
+		<-resultErrCh
 		if err != nil && !errors.Is(err, nethttp.ErrServerClosed) {
 			return err
 		}
-		workerCancel()
-		<-consumerErrCh
-		<-outboxErrCh
 		return nil
-	case err := <-consumerErrCh:
-		if err == nil {
-			err = errors.New("judge result consumer stopped unexpectedly")
-		}
-		return a.shutdownGracefully(err, serverErrCh, workerCancel)
 	case err := <-outboxErrCh:
 		if err == nil {
 			err = errors.New("outbox relay stopped unexpectedly")
 		}
-		return a.shutdownGracefully(err, serverErrCh, workerCancel)
+		return a.shutdownGracefully(err, serverErrCh, workerCancel, resultErrCh)
+	case err := <-resultErrCh:
+		if err == nil {
+			err = errors.New("judge result consumer stopped unexpectedly")
+		}
+		return a.shutdownGracefully(err, serverErrCh, workerCancel, outboxErrCh)
 	case sig := <-signalCh:
 		a.Logger.Info("shutdown signal received", zap.String("signal", sig.String()))
 	}
@@ -113,13 +125,15 @@ func (a *App) Run() error {
 		return err
 	}
 
-	<-consumerErrCh
 	<-outboxErrCh
+	<-resultErrCh
 
 	return nil
 }
 
-func (a *App) shutdownGracefully(cause error, serverErrCh <-chan error, workerCancel context.CancelFunc) error {
+func (a *App) shutdownGracefully(cause error, serverErrCh <-chan error, workerCancel context.CancelFunc, workerErrCh <-chan error) error {
+	workerCancel()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if shutdownErr := a.Router.Shutdown(ctx); shutdownErr != nil {
@@ -131,40 +145,49 @@ func (a *App) shutdownGracefully(cause error, serverErrCh <-chan error, workerCa
 		return errors.Join(cause, serverErr)
 	}
 
-	workerCancel()
+	<-workerErrCh
 	return cause
 }
 
 func (a *App) Close() error {
 	var closeErr error
 
-	if a.KafkaProducer != nil {
-		if err := a.KafkaProducer.Close(); err != nil {
-			a.Logger.Error("failed to close kafka producer", zap.Error(err))
-			closeErr = errors.Join(closeErr, err)
+	if a.ProblemConn != nil {
+		if err := a.ProblemConn.Close(); err != nil {
+			closeErr = errors.Join(closeErr, fmt.Errorf("close Problem Service gRPC connection: %w", err))
 		}
 	}
 
-	if a.ResultConsumer != nil {
-		if err := a.ResultConsumer.Close(); err != nil {
-			a.Logger.Error("failed to close judge result consumer", zap.Error(err))
-			closeErr = errors.Join(closeErr, err)
+	if a.JudgeConn.ClientConn != nil {
+		if err := a.JudgeConn.Close(); err != nil {
+			closeErr = errors.Join(closeErr, fmt.Errorf("close Judge Worker gRPC connection: %w", err))
+		}
+	}
+
+	if a.KafkaProducer != nil {
+		if err := a.KafkaProducer.Close(); err != nil {
+			closeErr = errors.Join(closeErr, fmt.Errorf("close kafka producer: %w", err))
+		}
+	}
+
+	if a.KafkaConsumer != nil {
+		if err := a.KafkaConsumer.Close(); err != nil {
+			closeErr = errors.Join(closeErr, fmt.Errorf("close kafka consumer group: %w", err))
 		}
 	}
 
 	if a.Database != nil {
 		sqlDB, err := a.Database.DB()
-		if err == nil {
-			if err = sqlDB.Close(); err != nil {
-				a.Logger.Error("failed to close database connection", zap.Error(err))
-				closeErr = errors.Join(closeErr, err)
-			}
+		if err != nil {
+			closeErr = errors.Join(closeErr, fmt.Errorf("obtain SQL database handle: %w", err))
+		} else if err = sqlDB.Close(); err != nil {
+			closeErr = errors.Join(closeErr, fmt.Errorf("close database: %w", err))
 		}
 	}
 
 	if a.Logger != nil {
 		if err := a.Logger.Sync(); err != nil {
-			closeErr = errors.Join(closeErr, err)
+			closeErr = errors.Join(closeErr, fmt.Errorf("sync logger: %w", err))
 		}
 	}
 

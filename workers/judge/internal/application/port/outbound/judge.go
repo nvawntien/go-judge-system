@@ -24,6 +24,43 @@ type TestCaseResult struct {
 	MemoryUsed     int     // kilobytes
 }
 
+type ExecutionLimits struct {
+	TimeLimitMS      int64
+	MemoryLimitKB    int64
+	OutputLimitBytes int64
+}
+
+type RunTestCase struct {
+	ID             string
+	Kind           string
+	Stdin          string
+	ExpectedOutput *string
+}
+
+type RunRequest struct {
+	Language   string
+	SourceCode string
+	TestCases  []RunTestCase
+	Limits     ExecutionLimits
+}
+
+type RunResult struct {
+	Status        string
+	CompileOutput string
+	TestCases     []RunTestCaseResult
+}
+
+type RunTestCaseResult struct {
+	ID              string
+	Kind            string
+	Status          string
+	Stdout          string
+	Stderr          string
+	ExpectedOutput  *string
+	ExecutionTimeMS int64
+	MemoryUsedKB    int64
+}
+
 // TestCaseBundle represents a set of testcases cached on local disk.
 // Dir points to the extracted directory containing {N}.in / {N}.out files.
 // Worker does NOT call Cleanup — cache is kept for future requests.
@@ -42,6 +79,7 @@ type TestCaseFetcher interface {
 // Receives a TestCaseBundle (disk path) instead of []TestCase (in-memory).
 type CodeExecutor interface {
 	Execute(ctx context.Context, language, sourceCode string, bundle *TestCaseBundle) (*ExecutionResult, error)
+	RunCode(ctx context.Context, req RunRequest) (*RunResult, error)
 }
 
 // ResultPublisher publishes judge results back to submission service.

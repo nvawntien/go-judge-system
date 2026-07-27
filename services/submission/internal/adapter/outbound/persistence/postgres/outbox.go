@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"go-judge-system/services/submission/internal/application/port/outbound"
@@ -40,12 +41,12 @@ func (r *outboxRepository) Create(ctx context.Context, message *entity.OutboxMes
 		Payload:     message.Payload,
 		Status:      message.Status,
 	}
-	
+
 	db := getDB(ctx, r.db)
 	if err := db.Create(dao).Error; err != nil {
-		return err
+		return fmt.Errorf("create outbox message: %w", err)
 	}
-	
+
 	message.ID = dao.ID
 	message.CreatedAt = dao.CreatedAt
 	return nil
@@ -55,9 +56,9 @@ func (r *outboxRepository) GetPending(ctx context.Context, limit int) ([]*entity
 	var daos []OutboxMessageDAO
 	db := getDB(ctx, r.db)
 	if err := db.Where("status = ?", entity.OutboxStatusPending).Limit(limit).Find(&daos).Error; err != nil {
-		return nil, err
+		return nil, fmt.Errorf("fetch pending outbox messages: %w", err)
 	}
-	
+
 	msgs := make([]*entity.OutboxMessage, len(daos))
 	for i, dao := range daos {
 		msgs[i] = &entity.OutboxMessage{
@@ -78,16 +79,22 @@ func (r *outboxRepository) GetPending(ctx context.Context, limit int) ([]*entity
 func (r *outboxRepository) MarkPublished(ctx context.Context, id int64) error {
 	now := time.Now()
 	db := getDB(ctx, r.db)
-	return db.Model(&OutboxMessageDAO{}).Where("id = ?", id).Updates(map[string]interface{}{
+	if err := db.Model(&OutboxMessageDAO{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"status":       entity.OutboxStatusPublished,
 		"published_at": now,
-	}).Error
+	}).Error; err != nil {
+		return fmt.Errorf("mark outbox message %d published: %w", id, err)
+	}
+	return nil
 }
 
 func (r *outboxRepository) MarkFailed(ctx context.Context, id int64, errReason string) error {
 	db := getDB(ctx, r.db)
-	return db.Model(&OutboxMessageDAO{}).Where("id = ?", id).Updates(map[string]interface{}{
+	if err := db.Model(&OutboxMessageDAO{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"retry_count":  gorm.Expr("retry_count + 1"),
 		"error_reason": errReason,
-	}).Error
+	}).Error; err != nil {
+		return fmt.Errorf("mark outbox message %d failed: %w", id, err)
+	}
+	return nil
 }

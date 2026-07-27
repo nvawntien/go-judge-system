@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package judge.v1;
+
+option go_package = "go-judge-system/pkg/pb/judge/v1;judgev1";
+
+service JudgeService {
+  rpc RunCode(RunCodeRequest) returns (RunCodeResponse);
+}
+
+message RunCodeRequest {
+  string language = 1;
+  string source_code = 2;
+  repeated RunTestCaseInput testcases = 3;
+  int64 time_limit_ms = 4;
+  int64 memory_limit_kb = 5;
+  int64 output_limit_bytes = 6;
+}
+
+message RunTestCaseInput {
+  string id = 1;
+  string kind = 2;
+  string stdin = 3;
+  optional string expected_output = 4;
+}
+
+message RunCodeResponse {
+  string status = 1;
+  string compile_output = 2;
+  repeated RunTestCaseResult tests = 3;
+}
+
+message RunTestCaseResult {
+  string id = 1;
+  string kind = 2;
+  string status = 3;
+  string stdout = 4;
+  string stderr = 5;
+  optional string expected_output = 6;
+  int64 execution_time_ms = 7;
+  int64 memory_used_kb = 8;
+}

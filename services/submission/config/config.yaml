@@ -26,9 +26,45 @@ database:
   max_idle_conns: 10
   conn_max_lifetime: 3600
 
+redis:
+  host: redis
+  port: 6379
+  password: ""        # overridden by REDIS_PASSWORD env
+  db: 0
+  pool_size: 10
+  min_idle_conns: 5
+  dial_timeout: 5s
+  read_timeout: 3s
+  write_timeout: 3s
+
+jwt:
+  refresh_ttl: 168h
+
 kafka:
   brokers: "kafka:9092"
   job_topic: "judge.submission.jobs"
   result_topic: "judge.submission.results"
   dlt_topic: "judge.submission.jobs.dlt"
   consumer_group: "judge-worker-v1"
+
+problem_grpc:
+  address: "problem-service:9092"
+  timeout: 1s
+
+judge_grpc:
+  address: "judge-worker:9093"
+  timeout: 30s
+
+run_code:
+  max_testcases: 10
+  max_source_code_bytes: 262144
+  max_stdin_bytes: 65536
+  max_expected_output_bytes: 65536
+  max_captured_output_bytes: 1048576
+  max_concurrent_requests: 16
+  default_time_limit: 2s
+  default_memory_limit_kb: 262144
+  default_output_limit_bytes: 1048576
+  compile_time_limit: 15s
+  compile_memory_limit_kb: 524288
+  request_timeout: 30s

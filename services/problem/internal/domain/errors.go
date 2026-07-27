@@ -3,6 +3,7 @@ package domain
 import "go-judge-system/pkg/response"
 
 var (
+	ErrActorUnauthenticated        = response.NewAppError(response.CodeUnauthorized, "Actor authentication required", nil)
 	ErrPermissionDenied            = response.NewAppError(response.CodeForbidden, "Permission denied", nil)
 	ErrProblemNotFound             = response.NewAppError(response.CodeNotFound, "Problem not found", nil)
 	ErrProblemAlreadyExists        = response.NewAppError(response.CodeConflict, "Problem already exists", nil)

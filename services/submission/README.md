@@ -1,133 +1,123 @@
 # Go Judge System - Submission Service
 
-![Go Version](https://img.shields.io/badge/Go-1.24-00ADD8?style=flat&logo=go)
-![Architecture](https://img.shields.io/badge/Architecture-Hexagonal-8A2BE2)
-![Kafka](https://img.shields.io/badge/Kafka-Producer%2FConsumer-231F20?style=flat&logo=apachekafka)
+The Submission Service owns authenticated submission creation and detail reads,
+along with the infrastructure required to deliver judge jobs reliably.
 
-The **Submission Service** acts as the primary orchestrator for code execution requests in the **Go Judge System**. It securely accepts user code, persists the submission record using the Transactional Outbox pattern, and reliably dispatches jobs to the Judge Worker via Kafka.
+## Active runtime components
 
----
+- Gin HTTP server on port `8083`
+- `GET /health`
+- authenticated `POST /api/v1/submissions`
+- authenticated `GET /api/v1/submissions/{submission_id}`
+- authenticated `GET /api/v1/me/submissions`
+- authenticated `GET /api/v1/admin/submissions`
+- PostgreSQL connection
+- shared Zap logger and HTTP logging/recovery middleware
+- shared authentication middleware wiring, including Redis-backed logout-all
+  token invalidation, ready for future protected routes
+- transactional outbox repository and Kafka relay
+- Kafka judge-result consumer for `judge.submission.results`
 
-## Elevator Pitch & Highlights
+## Judge attempt correlation
 
-- **Reliable messaging**: implements the Transactional Outbox pattern to guarantee that every saved submission is eventually published to Kafka.
-- **Event-driven synchronization**: listens to `judge.submission.results` from the worker to update submission verdicts asynchronously.
-- **Microservices integration**: works seamlessly behind the API Gateway to handle authenticated user requests.
+Every newly created Submission stores an internal `current_attempt_id`. The same
+value is written into the judge job outbox payload before the create transaction
+commits. The outbox relay publishes that persisted payload unchanged, so outbox
+retries preserve the exact attempt ID instead of generating a new one.
 
----
+Judge results also carry an internal `attempt_id`. The Submission Service result
+consumer locks the Submission row, compares the incoming attempt against
+`current_attempt_id`, and only applies matching results. Matching results update
+the Submission terminal status and replace testcase result rows atomically in the
+same database transaction.
 
-## System Architecture
+Stale results whose attempt ID no longer matches are acknowledged and ignored:
+they are not retried, not sent to DLT, and do not write to the database. Legacy
+Submissions with an empty `current_attempt_id` are intentionally treated as
+unverifiable and also ignored; backfill or cleanup for those rows should be done
+separately before relying on historical result replay.
 
-```mermaid
-flowchart LR
-    G[API Gateway] --> S[Submission REST API]
-    S --> DB[(PostgreSQL: submission_db)]
-    
-    subgraph Reliability Layer
-      DB --> O[Outbox Poller]
-      O --> KJ[(Kafka: judge.submission.jobs)]
-    end
-    
-    W[Judge Worker] -->|Runs Code| KR[(Kafka: judge.submission.results)]
-    
-    KR --> C[Result Consumer]
-    C --> DB
-```
+Duplicate results for the current attempt are safe: processing repeats the same
+deterministic replacement for testcase rows and converges on the same Submission
+status/result snapshot. Invalid/malformed result messages are non-retryable and
+are forwarded to the DLT/drop policy by the Kafka adapter.
 
-Processing flow:
-1. User submits code via REST API.
-2. Service saves the `Submission` and an `OutboxEvent` in a single DB transaction.
-3. The Outbox Poller sweeps pending events and publishes them to `judge.submission.jobs`.
-4. Sandboxed execution happens entirely in the isolated Judge Worker.
-5. Service consumes verdicts from `judge.submission.results` and updates the DB.
+Attempt IDs are internal transport/storage fields only. Public HTTP request and
+response DTOs do not expose them. Rejudge API routing and HTTP handlers are still
+deferred.
 
----
+## Submission detail
 
-## Getting Started (Quick Start)
+`GET /api/v1/submissions/{submission_id}` requires authentication.
+`submission_id` is the unique identifier of the Submission. Users and
+contributors may read their own submissions; moderators and administrators may
+read any submission. Requests for another user's inaccessible submission return
+the same `404 Not Found` response as a missing submission.
 
-### Prerequisites
+The response includes the complete stored source code and `problem_title`, the
+canonical Problem title captured as a snapshot when the Submission was created.
+The endpoint reads only from Submission Service storage and does not call
+Problem Service.
 
-- Docker Engine
-- Docker Compose
+## My submissions
 
-### Start the service
+`GET /api/v1/me/submissions` returns only the authenticated actor's own
+Submission history. Users, contributors, moderators, and administrators share
+the same owner-only behavior on this endpoint.
 
-```bash
-git clone https://github.com/nvawntien/go-judge-system.git
-cd go-judge-system
-docker compose --profile dev up -d --build submission-service
-```
+Supported query parameters:
 
-### Access points
+- `page`, default `1`;
+- `limit`, default `20`, maximum `100`;
+- `status`;
+- `language`;
+- `problem_id`.
 
-- **Internal Port**: `:8083` inside the Docker network
-- **Health Check**: use `docker compose exec submission-service wget -qO- http://localhost:8083/health`
-- **Public API**: `http://localhost:8080/api/v1/submissions...`
+Results are ordered by `created_at DESC, id DESC`. Each item is compact and
+contains `id`, `problem_id`, `problem_title`, `language`, `status`, and
+`created_at`; source code is not included. `problem_title` is the historical
+Problem title snapshot stored with the Submission. Full source code remains
+available through `GET /api/v1/submissions/{submission_id}`.
 
----
+## Admin submissions
 
-## Folder Structure
+`GET /api/v1/admin/submissions` lists Submissions across the whole system.
+Authentication is required, and only moderators and administrators are allowed.
+Users and contributors receive `403 Forbidden`.
 
-```text
-services/submission/
-├── cmd/server/                 # Application entrypoint & Wire injector
-├── config/                     # Configuration schemas
-├── internal/
-│   ├── adapter/inbound/        # REST controllers and Kafka result consumers
-│   ├── adapter/outbound/       # PostgreSQL models and Outbox publisher
-│   ├── application/usecase/    # Core business logic for submissions
-│   ├── container/              # Dependency injection logic
-│   └── domain/                 # Core entities (Submission, Limits, Outbox)
-└── Dockerfile                  # Container build instructions
-```
+Supported query parameters:
 
----
+- `page`, default `1`;
+- `limit`, default `20`, maximum `100`;
+- `status`;
+- `language`;
+- `problem_id`;
+- `user_id`.
 
-## Tech Stack
+Results are ordered by `created_at DESC, id DESC`. Each item contains `id`,
+`problem_id`, `problem_title`, `user_id`, `username`, `language`, `status`, and
+`created_at`; source code is not included. `user_id` is the canonical stable
+identity for backend operations. `username` is the Submission-time snapshot for
+display and may differ from the user's current username after an account
+rename.
 
-| Category | Technology |
-| :--- | :--- |
-| **Language** | Go 1.24 |
-| **API Framework** | Gin Web Framework |
-| **Database** | PostgreSQL (GORM) |
-| **Message Broker** | Apache Kafka (Sarama) |
-| **Dependency Injection** | Google Wire |
-
----
-
-## Key APIs & Events
-
-### REST Endpoints
-
-| Method | Route | Description | Auth Required |
-| :--- | :--- | :--- | :--- |
-| `GET` | `/api/v1/submissions` | List all submissions | No |
-| `GET` | `/api/v1/problems/id/:id/submissions` | List submissions for a problem | No |
-| `POST` | `/api/v1/submissions` | Create a new code submission | Yes |
-| `GET` | `/api/v1/my/submissions` | Get submission history for the authenticated user | Yes |
-| `GET` | `/api/v1/my/submissions/:id` | Get details/verdict of one of your submissions | Yes |
-| `GET` | `/api/v1/admin/submissions/:id` | Get submission details as an admin | Yes |
-| `PUT` | `/api/v1/admin/submissions/:id/rejudge` | Rejudge a submission | Yes |
-
-### Messaging Contracts
-
-- **Produces**: `judge.submission.jobs` (dispatched via Outbox pattern).
-- **Consumes**: `judge.submission.results` (updates database with final execution status).
-
----
+The list endpoint reads stored snapshots only: `problem_title` comes from
+`Submission.ProblemName`, and `username` comes from `Submission.Username`.
+It does not call Problem Service or Auth Service. Full source code remains
+available through `GET /api/v1/submissions/{submission_id}`. Username filtering
+is intentionally deferred; this first admin list filters users by canonical
+`user_id` only.
 
 ## Configuration
 
-The service uses a hybrid configuration model:
+The service loads `/app/config/config.yaml` through `pkg/config`. Sensitive
+database and Redis values are supplied through environment overrides.
 
-1. `config/config.yaml` stores non-sensitive runtime settings such as server mode, port, logger configuration, database host/pool parameters, and Kafka topic names.
-2. Environment variables override secret fields such as `database.password`.
-3. The application loads configuration from `/app/config` at runtime, so the Docker Compose flow is the supported execution path without additional path remapping.
+## Validation
 
-Current default runtime profile:
+From this module:
 
-- Service name: `submission-service`
-- Port: `8083`
-- Database: `submission_db`
-- Kafka topics: `judge.submission.jobs`, `judge.submission.results`, `judge.submission.jobs.dlt`
-- Consumer group: `judge-worker-v1`
+```bash
+go test ./...
+go vet ./...
+```

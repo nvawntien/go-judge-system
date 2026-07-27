@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"go-judge-system/services/submission/internal/application/port/outbound"
@@ -10,22 +11,24 @@ import (
 	"go-judge-system/services/submission/internal/domain/entity"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type SubmissionDAO struct {
-	ID            int64     `gorm:"primaryKey;autoIncrement"`
-	ProblemID     int64     `gorm:"not null;index"`
-	ProblemName   string    `gorm:"not null;size:500"`
-	UserID        string    `gorm:"not null;size:100;index"`
-	Username      string    `gorm:"not null;size:255"`
-	Language      string    `gorm:"type:varchar(20);not null;index"`
-	SourceCode    string    `gorm:"type:text;not null"`
-	Status        string    `gorm:"type:varchar(30);not null;index"`
-	ExecutionTime *int      `gorm:"type:int"`
-	MemoryUsed    *int      `gorm:"type:int"`
-	CompileOutput *string   `gorm:"type:text"`
-	CreatedAt     time.Time `gorm:"autoCreateTime;index"`
-	UpdatedAt     time.Time `gorm:"autoUpdateTime"`
+	ID               int64     `gorm:"primaryKey;autoIncrement"`
+	ProblemID        int64     `gorm:"not null;index"`
+	ProblemName      string    `gorm:"not null;size:500"`
+	UserID           string    `gorm:"not null;size:100;index"`
+	Username         string    `gorm:"not null;size:255"`
+	Language         string    `gorm:"type:varchar(20);not null;index"`
+	SourceCode       string    `gorm:"type:text;not null"`
+	CurrentAttemptID string    `gorm:"column:current_attempt_id;type:varchar(64);index"`
+	Status           string    `gorm:"type:varchar(30);not null;index"`
+	ExecutionTime    *int      `gorm:"type:int"`
+	MemoryUsed       *int      `gorm:"type:int"`
+	CompileOutput    *string   `gorm:"type:text"`
+	CreatedAt        time.Time `gorm:"autoCreateTime;index"`
+	UpdatedAt        time.Time `gorm:"autoUpdateTime"`
 }
 
 func (SubmissionDAO) TableName() string { return "submissions" }
@@ -43,7 +46,7 @@ func (r *submissionRepository) Create(ctx context.Context, submission *entity.Su
 	dao := toSubmissionDAO(submission)
 	db := getDB(ctx, r.db)
 	if err := db.Create(dao).Error; err != nil {
-		return err
+		return fmt.Errorf("create submission: %w", err)
 	}
 
 	submission.ID = dao.ID
@@ -51,13 +54,24 @@ func (r *submissionRepository) Create(ctx context.Context, submission *entity.Su
 }
 
 func (r *submissionRepository) GetByID(ctx context.Context, id int64) (*entity.Submission, error) {
+	return r.getByID(ctx, id, false)
+}
+
+func (r *submissionRepository) GetByIDForUpdate(ctx context.Context, id int64) (*entity.Submission, error) {
+	return r.getByID(ctx, id, true)
+}
+
+func (r *submissionRepository) getByID(ctx context.Context, id int64, forUpdate bool) (*entity.Submission, error) {
 	var dao SubmissionDAO
 	db := getDB(ctx, r.db)
+	if forUpdate {
+		db = db.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
 	if err := db.First(&dao, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, domain.ErrSubmissionNotFound
 		}
-		return nil, err
+		return nil, fmt.Errorf("get submission %d: %w", id, err)
 	}
 
 	return toSubmissionEntity(&dao), nil
@@ -65,17 +79,18 @@ func (r *submissionRepository) GetByID(ctx context.Context, id int64) (*entity.S
 
 func (r *submissionRepository) Update(ctx context.Context, submission *entity.Submission) error {
 	updates := map[string]interface{}{
-		"status":         string(submission.Status),
-		"execution_time": submission.ExecutionTime,
-		"memory_used":    submission.MemoryUsed,
-		"compile_output": submission.CompileOutput,
-		"updated_at":     submission.UpdatedAt,
+		"status":             string(submission.Status),
+		"current_attempt_id": submission.CurrentAttemptID,
+		"execution_time":     submission.ExecutionTime,
+		"memory_used":        submission.MemoryUsed,
+		"compile_output":     submission.CompileOutput,
+		"updated_at":         submission.UpdatedAt,
 	}
 
 	db := getDB(ctx, r.db)
 	result := db.Model(&SubmissionDAO{}).Where("id = ?", submission.ID).Updates(updates)
 	if result.Error != nil {
-		return result.Error
+		return fmt.Errorf("update submission %d: %w", submission.ID, result.Error)
 	}
 	if result.RowsAffected == 0 {
 		return domain.ErrSubmissionNotFound
@@ -84,119 +99,93 @@ func (r *submissionRepository) Update(ctx context.Context, submission *entity.Su
 	return nil
 }
 
-func (r *submissionRepository) ListByUser(ctx context.Context, userID string, offset, limit int, status, language string) ([]*entity.Submission, error) {
-	query := r.db.WithContext(ctx).Where("user_id = ?", userID)
-	query = applyListFilters(query, status, language)
+func (r *submissionRepository) List(
+	ctx context.Context,
+	filter outbound.ListSubmissionsFilter,
+) (outbound.ListSubmissionsResult, error) {
+	var total int64
+	countQuery := applyListFilters(
+		r.db.WithContext(ctx).Model(&SubmissionDAO{}),
+		filter,
+	)
+	if err := countQuery.Count(&total).Error; err != nil {
+		return outbound.ListSubmissionsResult{}, fmt.Errorf("count submissions: %w", err)
+	}
 
 	var daos []SubmissionDAO
-	if err := query.Order("created_at DESC").Offset(offset).Limit(limit).Find(&daos).Error; err != nil {
-		return nil, err
+	itemQuery := applyListFilters(
+		r.db.WithContext(ctx).Model(&SubmissionDAO{}),
+		filter,
+	)
+	if err := itemQuery.
+		Select("id", "problem_id", "problem_name", "user_id", "username", "language", "status", "created_at").
+		Order("created_at DESC, id DESC").
+		Offset(filter.Offset).
+		Limit(filter.Limit).
+		Find(&daos).Error; err != nil {
+		return outbound.ListSubmissionsResult{}, fmt.Errorf("list submissions: %w", err)
 	}
 
-	return toSubmissionEntities(daos), nil
+	return outbound.ListSubmissionsResult{
+		Items: toSubmissionEntities(daos),
+		Total: total,
+	}, nil
 }
 
-func (r *submissionRepository) CountByUser(ctx context.Context, userID string, status, language string) (int64, error) {
-	query := r.db.WithContext(ctx).Model(&SubmissionDAO{}).Where("user_id = ?", userID)
-	query = applyListFilters(query, status, language)
-
-	var count int64
-	return count, query.Count(&count).Error
-}
-
-func (r *submissionRepository) ListByProblem(ctx context.Context, problemID int64, offset, limit int, status, language string) ([]*entity.Submission, error) {
-	query := r.db.WithContext(ctx).Where("problem_id = ?", problemID)
-	query = applyListFilters(query, status, language)
-
-	var daos []SubmissionDAO
-	if err := query.Order("created_at DESC").Offset(offset).Limit(limit).Find(&daos).Error; err != nil {
-		return nil, err
+func applyListFilters(
+	query *gorm.DB,
+	filter outbound.ListSubmissionsFilter,
+) *gorm.DB {
+	if filter.UserID != nil {
+		query = query.Where("user_id = ?", *filter.UserID)
 	}
-
-	return toSubmissionEntities(daos), nil
-}
-
-func (r *submissionRepository) CountByProblem(ctx context.Context, problemID int64, status, language string) (int64, error) {
-	query := r.db.WithContext(ctx).Model(&SubmissionDAO{}).Where("problem_id = ?", problemID)
-	query = applyListFilters(query, status, language)
-
-	var count int64
-	return count, query.Count(&count).Error
-}
-
-func (r *submissionRepository) ListAll(ctx context.Context, offset, limit int, problemID *int64, userID, status, language string) ([]*entity.Submission, error) {
-	query := r.db.WithContext(ctx).Model(&SubmissionDAO{})
-	query = applyAdminFilters(query, problemID, userID, status, language)
-
-	var daos []SubmissionDAO
-	if err := query.Order("created_at DESC").Offset(offset).Limit(limit).Find(&daos).Error; err != nil {
-		return nil, err
+	if filter.Status != nil {
+		query = query.Where("status = ?", *filter.Status)
 	}
-
-	return toSubmissionEntities(daos), nil
-}
-
-func (r *submissionRepository) CountAll(ctx context.Context, problemID *int64, userID, status, language string) (int64, error) {
-	query := r.db.WithContext(ctx).Model(&SubmissionDAO{})
-	query = applyAdminFilters(query, problemID, userID, status, language)
-
-	var count int64
-	return count, query.Count(&count).Error
-}
-
-func applyListFilters(query *gorm.DB, status, language string) *gorm.DB {
-	if status != "" {
-		query = query.Where("status = ?", status)
+	if filter.Language != nil {
+		query = query.Where("language = ?", *filter.Language)
 	}
-	if language != "" {
-		query = query.Where("language = ?", language)
+	if filter.ProblemID != nil {
+		query = query.Where("problem_id = ?", *filter.ProblemID)
 	}
 	return query
 }
 
-func applyAdminFilters(query *gorm.DB, problemID *int64, userID, status, language string) *gorm.DB {
-	if problemID != nil {
-		query = query.Where("problem_id = ?", *problemID)
-	}
-	if userID != "" {
-		query = query.Where("user_id = ?", userID)
-	}
-	return applyListFilters(query, status, language)
-}
-
 func toSubmissionDAO(s *entity.Submission) *SubmissionDAO {
 	return &SubmissionDAO{
-		ID:            s.ID,
-		ProblemID:     s.ProblemID,
-		ProblemName:   s.ProblemName,
-		UserID:        s.UserID,
-		Username:      s.Username,
-		Language:      string(s.Language),
-		SourceCode:    s.SourceCode,
-		Status:        string(s.Status),
-		ExecutionTime: s.ExecutionTime,
-		MemoryUsed:    s.MemoryUsed,
-		CompileOutput: s.CompileOutput,
-		CreatedAt:     s.CreatedAt,
-		UpdatedAt:     s.UpdatedAt,
+		ID:               s.ID,
+		ProblemID:        s.ProblemID,
+		ProblemName:      s.ProblemName,
+		UserID:           s.UserID,
+		Username:         s.Username,
+		Language:         string(s.Language),
+		SourceCode:       s.SourceCode,
+		CurrentAttemptID: s.CurrentAttemptID,
+		Status:           string(s.Status),
+		ExecutionTime:    s.ExecutionTime,
+		MemoryUsed:       s.MemoryUsed,
+		CompileOutput:    s.CompileOutput,
+		CreatedAt:        s.CreatedAt,
+		UpdatedAt:        s.UpdatedAt,
 	}
 }
 
 func toSubmissionEntity(dao *SubmissionDAO) *entity.Submission {
 	return &entity.Submission{
-		ID:            dao.ID,
-		ProblemID:     dao.ProblemID,
-		ProblemName:   dao.ProblemName,
-		UserID:        dao.UserID,
-		Username:      dao.Username,
-		Language:      entity.Language(dao.Language),
-		SourceCode:    dao.SourceCode,
-		Status:        entity.Status(dao.Status),
-		ExecutionTime: dao.ExecutionTime,
-		MemoryUsed:    dao.MemoryUsed,
-		CompileOutput: dao.CompileOutput,
-		CreatedAt:     dao.CreatedAt,
-		UpdatedAt:     dao.UpdatedAt,
+		ID:               dao.ID,
+		ProblemID:        dao.ProblemID,
+		ProblemName:      dao.ProblemName,
+		UserID:           dao.UserID,
+		Username:         dao.Username,
+		Language:         entity.Language(dao.Language),
+		SourceCode:       dao.SourceCode,
+		CurrentAttemptID: dao.CurrentAttemptID,
+		Status:           entity.Status(dao.Status),
+		ExecutionTime:    dao.ExecutionTime,
+		MemoryUsed:       dao.MemoryUsed,
+		CompileOutput:    dao.CompileOutput,
+		CreatedAt:        dao.CreatedAt,
+		UpdatedAt:        dao.UpdatedAt,
 	}
 }
 

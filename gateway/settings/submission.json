@@ -45,14 +45,105 @@
       ]
     },
     {
-      "endpoint": "/api/v1/my/submissions",
+      "endpoint": "/api/v1/submissions/run",
+      "method": "POST",
+      "timeout": "30s",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "*"
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "HS256",
+          "jwk_local_path": "/etc/krakend/symmetric.json",
+          "disable_jwk_security": true,
+          "cookie_key": "access_token",
+          "propagate_claims": [
+            [
+              "sub",
+              "X-User-ID"
+            ],
+            [
+              "role",
+              "X-Role"
+            ],
+            [
+              "username",
+              "X-Username"
+            ],
+            [
+              "iat",
+              "X-Token-Iat"
+            ]
+          ]
+        }
+      },
+      "backend": [
+        {
+          "url_pattern": "/api/v1/submissions/run",
+          "encoding": "no-op",
+          "host": [
+            "http://submission-service:8083"
+          ]
+        }
+      ]
+    },
+    {
+      "endpoint": "/api/v1/submissions/{submission_id}",
+      "method": "GET",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "*"
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "HS256",
+          "jwk_local_path": "/etc/krakend/symmetric.json",
+          "disable_jwk_security": true,
+          "cookie_key": "access_token",
+          "propagate_claims": [
+            [
+              "sub",
+              "X-User-ID"
+            ],
+            [
+              "role",
+              "X-Role"
+            ],
+            [
+              "username",
+              "X-Username"
+            ],
+            [
+              "iat",
+              "X-Token-Iat"
+            ]
+          ]
+        }
+      },
+      "backend": [
+        {
+          "url_pattern": "/api/v1/submissions/{submission_id}",
+          "encoding": "no-op",
+          "host": [
+            "http://submission-service:8083"
+          ]
+        }
+      ]
+    },
+    {
+      "endpoint": "/api/v1/me/submissions",
       "method": "GET",
       "output_encoding": "no-op",
       "input_headers": [
         "*"
       ],
       "input_query_strings": [
-        "*"
+        "page",
+        "limit",
+        "status",
+        "language",
+        "problem_id"
       ],
       "extra_config": {
         "auth/validator": {
@@ -82,7 +173,7 @@
       },
       "backend": [
         {
-          "url_pattern": "/api/v1/my/submissions",
+          "url_pattern": "/api/v1/me/submissions",
           "encoding": "no-op",
           "host": [
             "http://submission-service:8083"
@@ -91,11 +182,19 @@
       ]
     },
     {
-      "endpoint": "/api/v1/my/submissions/{id}",
+      "endpoint": "/api/v1/admin/submissions",
       "method": "GET",
       "output_encoding": "no-op",
       "input_headers": [
         "*"
+      ],
+      "input_query_strings": [
+        "page",
+        "limit",
+        "status",
+        "language",
+        "problem_id",
+        "user_id"
       ],
       "extra_config": {
         "auth/validator": {
@@ -125,50 +224,7 @@
       },
       "backend": [
         {
-          "url_pattern": "/api/v1/my/submissions/{id}",
-          "encoding": "no-op",
-          "host": [
-            "http://submission-service:8083"
-          ]
-        }
-      ]
-    },
-    {
-      "endpoint": "/api/v1/admin/submissions/{id}",
-      "method": "GET",
-      "output_encoding": "no-op",
-      "input_headers": [
-        "*"
-      ],
-      "extra_config": {
-        "auth/validator": {
-          "alg": "HS256",
-          "jwk_local_path": "/etc/krakend/symmetric.json",
-          "disable_jwk_security": true,
-          "cookie_key": "access_token",
-          "propagate_claims": [
-            [
-              "sub",
-              "X-User-ID"
-            ],
-            [
-              "role",
-              "X-Role"
-            ],
-            [
-              "username",
-              "X-Username"
-            ],
-            [
-              "iat",
-              "X-Token-Iat"
-            ]
-          ]
-        }
-      },
-      "backend": [
-        {
-          "url_pattern": "/api/v1/admin/submissions/{id}",
+          "url_pattern": "/api/v1/admin/submissions",
           "encoding": "no-op",
           "host": [
             "http://submission-service:8083"

@@ -4,23 +4,36 @@ import (
 	"context"
 	"net/http"
 
+	pkgmiddleware "go-judge-system/pkg/middleware"
 	"go-judge-system/services/submission/internal/adapter/inbound/http/handler"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 type Router struct {
-	engine            *gin.Engine
-	submissionHandler *handler.SubmissionHandler
-	authMiddleware    gin.HandlerFunc
-	server            *http.Server
+	engine         *gin.Engine
+	userHandler    *handler.UserHandler
+	adminHandler   *handler.AdminHandler
+	authMiddleware gin.HandlerFunc
+	server         *http.Server
 }
 
-func NewRouter(submissionHandler *handler.SubmissionHandler, authMiddleware gin.HandlerFunc) *Router {
+func NewRouter(
+	userHandler *handler.UserHandler,
+	adminHandler *handler.AdminHandler,
+	authMiddleware gin.HandlerFunc,
+	logger *zap.Logger,
+) *Router {
+	engine := gin.New()
+	engine.Use(pkgmiddleware.Recovery(logger))
+	engine.Use(pkgmiddleware.UnifiedLogger(logger))
+
 	return &Router{
-		engine:            gin.Default(),
-		submissionHandler: submissionHandler,
-		authMiddleware:    authMiddleware,
+		engine:         engine,
+		userHandler:    userHandler,
+		adminHandler:   adminHandler,
+		authMiddleware: authMiddleware,
 	}
 }
 
@@ -30,33 +43,11 @@ func (r *Router) SetupRoutes() {
 	})
 
 	v1 := r.engine.Group("/api/v1")
-	v1.GET("/submissions", r.submissionHandler.ListSubmissions.Handle)
-
-	problems := v1.Group("/problems")
-	{
-		problems.GET("/id/:id/submissions", r.submissionHandler.ListSubmissions.HandleProblem)
-	}
-
-	auth := v1.Group("")
-	auth.Use(r.authMiddleware)
-	{
-		auth.POST("/submissions", r.submissionHandler.CreateSubmission.Handle)
-	}
-
-	my := v1.Group("/my")
-	my.Use(r.authMiddleware)
-	{
-		my.GET("/submissions", r.submissionHandler.ListSubmissions.HandleMy)
-		my.GET("/submissions/:id", r.submissionHandler.GetSubmission.HandleMy)
-	}
-
-	admin := v1.Group("/admin")
-	admin.Use(r.authMiddleware)
-	{
-		admin.GET("/submissions/:id", r.submissionHandler.GetSubmission.HandleAdmin)
-		admin.PUT("/submissions/:id/rejudge", r.submissionHandler.RejudgeSubmission.Handle)
-	}
-
+	v1.POST("/submissions", r.authMiddleware, r.userHandler.CreateSubmission.Handle)
+	v1.POST("/submissions/run", r.authMiddleware, r.userHandler.RunCode.Handle)
+	v1.GET("/submissions/:submission_id", r.authMiddleware, r.userHandler.GetSubmission.Handle)
+	v1.GET("/me/submissions", r.authMiddleware, r.userHandler.ListMySubmissions.Handle)
+	v1.GET("/admin/submissions", r.authMiddleware, r.adminHandler.ListSubmissions.Handle)
 }
 
 func (r *Router) Start(port string) error {

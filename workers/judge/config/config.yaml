@@ -1,5 +1,6 @@
 server:
   port: 0  # not used, judge worker is event-driven
+  grpc_port: 9093
 
 logger:
   level: debug
@@ -21,3 +22,7 @@ judging:
   memory_limit_mb: 256
   go_judge_url: ""
   max_concurrent_jobs: 4
+
+run_code:
+  max_captured_output_bytes: 1048576
+  default_output_limit_bytes: 1048576

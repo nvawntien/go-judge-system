@@ -11,7 +11,17 @@ const (
 	LanguagePython     Language = "PYTHON"
 	LanguageGo         Language = "GO"
 	LanguageJavaScript Language = "JAVASCRIPT"
+	MaxSourceCodeBytes          = 256 * 1024
 )
+
+func (l Language) IsExecutable() bool {
+	switch l {
+	case LanguageCPP, LanguageGo, LanguagePython, LanguageJava:
+		return true
+	default:
+		return false
+	}
+}
 
 type Status string
 
@@ -27,34 +37,53 @@ const (
 	StatusSystemError       Status = "SYSTEM_ERROR"
 )
 
-type Submission struct {
-	ID            int64
-	ProblemID     int64
-	ProblemName   string
-	UserID        string
-	Username      string
-	Language      Language
-	SourceCode    string
-	Status        Status
-	ExecutionTime *int
-	MemoryUsed    *int
-	CompileOutput *string
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+func ParseStatus(value string) (Status, bool) {
+	switch Status(value) {
+	case StatusPending,
+		StatusJudging,
+		StatusAccepted,
+		StatusWrongAnswer,
+		StatusTimeLimitExceed,
+		StatusMemoryLimitExceed,
+		StatusRuntimeError,
+		StatusCompilationError,
+		StatusSystemError:
+		return Status(value), true
+	default:
+		return "", false
+	}
 }
 
-func NewSubmission(problemID int64, problemName, userID, username string, language Language, sourceCode string) *Submission {
+type Submission struct {
+	ID               int64
+	ProblemID        int64
+	ProblemName      string
+	UserID           string
+	Username         string
+	Language         Language
+	SourceCode       string
+	CurrentAttemptID string
+	Status           Status
+	ExecutionTime    *int
+	MemoryUsed       *int
+	CompileOutput    *string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+}
+
+func NewSubmission(problemID int64, problemName, userID, username string, language Language, sourceCode, currentAttemptID string) *Submission {
 	now := time.Now()
 	return &Submission{
-		ProblemID:   problemID,
-		ProblemName: problemName,
-		UserID:      userID,
-		Username:    username,
-		Language:    language,
-		SourceCode:  sourceCode,
-		Status:      StatusPending,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		ProblemID:        problemID,
+		ProblemName:      problemName,
+		UserID:           userID,
+		Username:         username,
+		Language:         language,
+		SourceCode:       sourceCode,
+		CurrentAttemptID: currentAttemptID,
+		Status:           StatusPending,
+		CreatedAt:        now,
+		UpdatedAt:        now,
 	}
 }
 

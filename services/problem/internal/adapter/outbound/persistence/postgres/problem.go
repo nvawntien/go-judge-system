@@ -20,9 +20,10 @@ import (
 // exampleJSON is an adapter-level struct with json tags for JSONB serialization.
 // Domain entity.ProblemExample has no tags (clean domain).
 type exampleJSON struct {
-	Input       string `json:"input"`
-	Output      string `json:"output"`
-	Explanation string `json:"explanation,omitempty"`
+	Input          string `json:"input"`
+	ExpectedOutput string `json:"expected_output,omitempty"`
+	LegacyOutput   string `json:"output,omitempty"`
+	Explanation    string `json:"explanation,omitempty"`
 }
 
 // ExamplesJSON maps []entity.ProblemExample ↔ PostgreSQL JSONB column
@@ -31,7 +32,7 @@ type ExamplesJSON []entity.ProblemExample
 func (e ExamplesJSON) Value() (driver.Value, error) {
 	items := make([]exampleJSON, len(e))
 	for i, ex := range e {
-		items[i] = exampleJSON{Input: ex.Input, Output: ex.Output, Explanation: ex.Explanation}
+		items[i] = exampleJSON{Input: ex.Input, ExpectedOutput: ex.Output, Explanation: ex.Explanation}
 	}
 	b, err := json.Marshal(items)
 	return string(b), err
@@ -57,7 +58,11 @@ func (e *ExamplesJSON) Scan(src interface{}) error {
 	}
 	result := make(ExamplesJSON, len(items))
 	for i, item := range items {
-		result[i] = entity.ProblemExample{Input: item.Input, Output: item.Output, Explanation: item.Explanation}
+		output := item.ExpectedOutput
+		if output == "" {
+			output = item.LegacyOutput
+		}
+		result[i] = entity.ProblemExample{Input: item.Input, Output: output, Explanation: item.Explanation}
 	}
 	*e = result
 	return nil
