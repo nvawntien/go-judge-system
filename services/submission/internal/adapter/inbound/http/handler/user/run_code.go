@@ -2,7 +2,6 @@ package user
 
 import (
 	"go-judge-system/pkg/response"
-	"go-judge-system/services/submission/internal/application/dto"
 	inbound "go-judge-system/services/submission/internal/application/port/inbound/user"
 
 	"github.com/gin-gonic/gin"
@@ -17,5 +16,5 @@ func NewRunCodeHandler(uc inbound.RunCodeUseCase) *RunCodeHandler {
 }
 
 func (h *RunCodeHandler) Handle(c *gin.Context) {
-	response.HandleWithClaims[dto.RunCodeRequest, dto.RunCodeResponse](c, h.uc.Execute, response.CodeSuccess)
+	response.HandleWithClaims(c, h.uc.Execute, response.CodeSuccess)
 }
