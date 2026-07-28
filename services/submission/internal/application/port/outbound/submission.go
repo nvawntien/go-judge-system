@@ -13,6 +13,7 @@ type SubmissionRepository interface {
 	GetByIDForUpdate(ctx context.Context, id int64) (*entity.Submission, error)
 	Update(ctx context.Context, submission *entity.Submission) error
 	List(ctx context.Context, filter ListSubmissionsFilter) (ListSubmissionsResult, error)
+	ResultSummaries(ctx context.Context, submissionIDs []int64) (map[int64]SubmissionResultSummary, error)
 }
 
 type ListSubmissionsFilter struct {
@@ -27,6 +28,12 @@ type ListSubmissionsFilter struct {
 type ListSubmissionsResult struct {
 	Items []*entity.Submission
 	Total int64
+}
+
+type SubmissionResultSummary struct {
+	SubmissionID int64
+	Passed       int
+	Total        int
 }
 
 type SubmissionResultRepository interface {

@@ -77,6 +77,12 @@ func (r *fakeSubmissionRepository) List(
 ) (outbound.ListSubmissionsResult, error) {
 	return outbound.ListSubmissionsResult{}, nil
 }
+func (r *fakeSubmissionRepository) ResultSummaries(
+	context.Context,
+	[]int64,
+) (map[int64]outbound.SubmissionResultSummary, error) {
+	return map[int64]outbound.SubmissionResultSummary{}, nil
+}
 
 type fakeJudgePublisher struct {
 	publishErr error

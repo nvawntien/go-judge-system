@@ -97,12 +97,28 @@ const UNKNOWN_VERDICT: VerdictMeta = {
   terminal: true,
 };
 
+export const TERMINAL_SUBMISSION_STATUSES = new Set<SubmissionStatus>([
+  'ACCEPTED',
+  'WRONG_ANSWER',
+  'TIME_LIMIT_EXCEEDED',
+  'MEMORY_LIMIT_EXCEEDED',
+  'RUNTIME_ERROR',
+  'COMPILATION_ERROR',
+  'SYSTEM_ERROR',
+]);
+
+export const NON_TERMINAL_SUBMISSION_STATUSES = new Set<SubmissionStatus>(['PENDING', 'JUDGING']);
+
 export function verdictMeta(status: string): VerdictMeta {
   return VERDICTS[status as SubmissionStatus] ?? UNKNOWN_VERDICT;
 }
 
 export function isPendingStatus(status: string): boolean {
-  return status === 'PENDING' || status === 'JUDGING';
+  return NON_TERMINAL_SUBMISSION_STATUSES.has(status as SubmissionStatus);
+}
+
+export function isTerminalSubmissionStatus(status: string): boolean {
+  return TERMINAL_SUBMISSION_STATUSES.has(status as SubmissionStatus);
 }
 
 /** Options for the submissions status filter, in the order the design lists them. */
@@ -256,6 +272,25 @@ export function formatTimeLimit(value: number): string {
 
 export function formatMemoryLimit(mb: number): string {
   return mb ? `${mb} MB` : '—';
+}
+
+export function formatRuntimeMs(ms: number | null | undefined): string {
+  if (ms === null || ms === undefined) return '—';
+  return `${ms} ms`;
+}
+
+export function formatMemoryKb(kb: number | null | undefined): string {
+  if (kb === null || kb === undefined) return '—';
+  if (kb >= 1024) return `${(kb / 1024).toFixed(kb >= 10240 ? 1 : 2)} MB`;
+  return `${kb} KB`;
+}
+
+export function formatTestcaseCount(
+  passed: number | null | undefined,
+  total: number | null | undefined,
+): string {
+  if (passed === null || passed === undefined || total === null || total === undefined) return '—';
+  return `${passed}/${total}`;
 }
 
 /** Rating tiers used for the badge next to a username. */

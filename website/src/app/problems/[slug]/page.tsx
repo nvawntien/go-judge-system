@@ -15,11 +15,27 @@ import {
 } from '@/components/workspace/ProblemPanel';
 import { Icon, Spinner } from '@/components/ui';
 import { ApiError, NetworkError, problemApi, submissionApi } from '@/lib/api';
-import { LANGUAGES, isPendingStatus, languageMeta, verdictMeta } from '@/lib/format';
+import {
+  LANGUAGES,
+  formatDateTime,
+  formatMemoryKb,
+  formatRuntimeMs,
+  formatTestcaseCount,
+  isPendingStatus,
+  languageMeta,
+  verdictMeta,
+} from '@/lib/format';
 import { useDismissable, useOnline, useViewportWidth } from '@/lib/hooks';
 import { fetchProgress, invalidateProgress } from '@/lib/progress';
 import { CODE_TEMPLATES, draftKey } from '@/lib/templates';
-import type { LanguageCode, Problem, RunResponse, RunTestCaseResult, Submission } from '@/lib/types';
+import type {
+  LanguageCode,
+  Problem,
+  RunResponse,
+  RunTestCaseResult,
+  Submission,
+  SubmissionDetail,
+} from '@/lib/types';
 
 type BottomTab = 'tests' | 'console' | 'result';
 type LoadState = 'loading' | 'ready' | 'notfound' | 'error';
@@ -120,6 +136,8 @@ export default function WorkspacePage() {
   const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null);
   const [jumpLine, setJumpLine] = useState<number | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
+  const [restoreSubmission, setRestoreSubmission] = useState<SubmissionDetail | null>(null);
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
 
   const settingsRef = useDismissable<HTMLDivElement>(settingsOpen, () => setSettingsOpen(false));
 
@@ -179,6 +197,49 @@ export default function WorkspacePage() {
       /* ignore */
     }
   };
+
+  const restoreSubmissionCode = useCallback(
+    (detail: SubmissionDetail) => {
+      if (!problem) return;
+      const nextLanguage = detail.language.toUpperCase() as LanguageCode;
+      if (!LANGUAGES.some((item) => item.code === nextLanguage)) {
+        showToast(`Cannot restore unsupported language: ${detail.language}`, 'error');
+        return;
+      }
+
+      try {
+        localStorage.setItem('astra-lang', nextLanguage);
+        localStorage.setItem(draftKey(problem.id, nextLanguage), detail.source_code);
+      } catch {
+        /* editor still updates even if local draft persistence is unavailable */
+      }
+
+      setLanguage(nextLanguage);
+      setCode(detail.source_code);
+      setDraftRestored(false);
+      setDraftSavedAt(Date.now());
+      setJumpLine(null);
+      setRestoreSubmission(null);
+      setBottomOpen(true);
+      setBottomTab('tests');
+      if (stacked) setMobileView('editor');
+      showToast(`Submission #${detail.id} restored to the editor`, 'success');
+    },
+    [problem, showToast, stacked],
+  );
+
+  const requestRestoreSubmissionCode = useCallback(
+    (detail: SubmissionDetail) => {
+      const nextLanguage = detail.language.toUpperCase() as LanguageCode;
+      const willReplaceDraft = code !== detail.source_code || language !== nextLanguage;
+      if (willReplaceDraft) {
+        setRestoreSubmission(detail);
+        return;
+      }
+      restoreSubmissionCode(detail);
+    },
+    [code, language, restoreSubmissionCode],
+  );
 
   /* ---------------------------------------------------------------- tests */
 
@@ -315,6 +376,7 @@ export default function WorkspacePage() {
       pollRef.current = setTimeout(async () => {
         try {
           const latest = await submissionApi.get(id);
+          pollRef.current = null;
           setSubmission(latest);
 
           if (isPendingStatus(latest.status)) {
@@ -328,6 +390,7 @@ export default function WorkspacePage() {
           }
 
           setSubmitting(false);
+          setHistoryRefreshKey((current) => current + 1);
           const verdict = verdictMeta(latest.status);
           showToast(
             latest.status === 'ACCEPTED' ? 'Accepted' : `Verdict: ${verdict.label}`,
@@ -336,6 +399,7 @@ export default function WorkspacePage() {
           invalidateProgress();
           void syncProgress(true);
         } catch (err) {
+          pollRef.current = null;
           setSubmitting(false);
           if (err instanceof NetworkError) {
             showToast('Lost connection while polling the judge', 'error');
@@ -361,6 +425,10 @@ export default function WorkspacePage() {
     }
 
     setSubmitting(true);
+    if (pollRef.current) {
+      clearTimeout(pollRef.current);
+      pollRef.current = null;
+    }
     setPollTimedOut(false);
     setSubmission(null);
     setRunResult(null);
@@ -382,6 +450,12 @@ export default function WorkspacePage() {
         language: created.language,
         source_code: code,
         status: created.status,
+        execution_time_ms: null,
+        memory_used_kb: null,
+        passed_testcases: null,
+        total_testcases: null,
+        compile_output: '',
+        error_message: '',
         created_at: created.created_at,
         updated_at: created.created_at,
       });
@@ -473,7 +547,6 @@ export default function WorkspacePage() {
 
   const langMeta = languageMeta(language);
   const busy = running || submitting;
-  const verdict = submission && !isPendingStatus(submission.status) ? verdictMeta(submission.status) : null;
   const runResultsByID = useMemo(() => {
     const entries = runResult?.tests.map((test) => [test.id, test] as const) ?? [];
     return new Map(entries);
@@ -603,6 +676,7 @@ export default function WorkspacePage() {
                 solved={solved}
                 attempted={attempted}
                 signedIn={Boolean(user)}
+                historyRefreshKey={historyRefreshKey}
                 onUseExample={(input, expected) => {
                   setTests((current) => {
                     const next = [
@@ -624,6 +698,7 @@ export default function WorkspacePage() {
                   showToast('Example added as a custom test', 'success');
                   if (stacked) setMobileView('editor');
                 }}
+                onUseSubmissionCode={requestRestoreSubmissionCode}
               />
             </div>
           )}
@@ -1099,7 +1174,10 @@ export default function WorkspacePage() {
                         pollTimedOut={pollTimedOut}
                         runResult={runResult}
                         running={running}
-                        onOpenSubmissions={() => router.push('/submissions')}
+                        onOpenSubmissions={() => {
+                          setTab('submissions');
+                          if (stacked) setMobileView('problem');
+                        }}
                       />
                     )}
                   </div>
@@ -1239,6 +1317,94 @@ export default function WorkspacePage() {
                 }}
               >
                 Reset code
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {restoreSubmission && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 70,
+            background: 'rgba(15,10,35,.45)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 20,
+          }}
+          onClick={() => setRestoreSubmission(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Replace editor code"
+            onClick={(event) => event.stopPropagation()}
+            style={{
+              background: 'var(--surface)',
+              border: '1px solid var(--border)',
+              borderRadius: 14,
+              boxShadow: 'var(--shadow-lg)',
+              padding: 22,
+              width: '100%',
+              maxWidth: 420,
+              animation: 'acPop .18s ease',
+            }}
+          >
+            <h2 style={{ margin: '0 0 6px', fontSize: 15.5, fontWeight: 650 }}>
+              Replace current editor code?
+            </h2>
+            <p style={{ margin: '0 0 10px', fontSize: 13, color: 'var(--text2)' }}>
+              Your current draft will be replaced with submission #{restoreSubmission.id}.
+            </p>
+            <p
+              style={{
+                margin: '0 0 18px',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 11.5,
+                color: 'var(--text3)',
+              }}
+            >
+              {languageMeta(restoreSubmission.language).label} · {formatDateTime(restoreSubmission.created_at)}
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button
+                type="button"
+                onClick={() => setRestoreSubmission(null)}
+                className="ac-hover-surface2"
+                style={{
+                  height: 36,
+                  padding: '0 14px',
+                  border: '1px solid var(--border)',
+                  borderRadius: 8,
+                  background: 'var(--surface)',
+                  color: 'var(--text2)',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => restoreSubmissionCode(restoreSubmission)}
+                className="ac-hover-accent"
+                style={{
+                  height: 36,
+                  padding: '0 14px',
+                  border: 'none',
+                  borderRadius: 8,
+                  background: 'var(--accent)',
+                  color: 'var(--accent-ink)',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Use this code
               </button>
             </div>
           </div>
@@ -1537,7 +1703,7 @@ function ResultPanel({
 
   if (submission && !isPendingStatus(submission.status)) {
     const verdict = verdictMeta(submission.status);
-    const compileError = submission.status === 'COMPILATION_ERROR';
+    const diagnosticOutput = submission.compile_output || submission.error_message;
 
     return (
       <div style={{ animation: 'acFadeUp .3s ease' }}>
@@ -1596,14 +1762,17 @@ function ResultPanel({
         >
           <ResultTile value={languageMeta(submission.language).label} label="Language" />
           <ResultTile value={`#${submission.problem_id}`} label={submission.problem_title} />
+          <ResultTile value={formatRuntimeMs(submission.execution_time_ms)} label="Runtime" />
+          <ResultTile value={formatMemoryKb(submission.memory_used_kb)} label="Memory" />
+          <ResultTile
+            value={formatTestcaseCount(submission.passed_testcases, submission.total_testcases)}
+            label="Test cases"
+          />
           <ResultTile value={new Date(submission.updated_at).toLocaleTimeString()} label="Judged at" />
         </div>
 
-        {compileError && (
-          <p style={{ margin: '0 0 8px', fontSize: 12.5, color: 'var(--text2)' }}>
-            The compiler rejected your source. The submission API does not return the compiler output,
-            so check your code locally or view the submission for details.
-          </p>
+        {diagnosticOutput && (
+          <pre style={{ ...runOutputBlock, marginBottom: 12 }}>{diagnosticOutput}</pre>
         )}
 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>

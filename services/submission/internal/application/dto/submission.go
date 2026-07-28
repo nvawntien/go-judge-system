@@ -61,16 +61,22 @@ type GetSubmissionRequest struct {
 }
 
 type GetSubmissionResponse struct {
-	ID           int64     `json:"id"`
-	ProblemID    int64     `json:"problem_id"`
-	ProblemTitle string    `json:"problem_title"`
-	UserID       string    `json:"user_id"`
-	Username     string    `json:"username"`
-	Language     string    `json:"language"`
-	SourceCode   string    `json:"source_code"`
-	Status       string    `json:"status"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID              int64     `json:"id"`
+	ProblemID       int64     `json:"problem_id"`
+	ProblemTitle    string    `json:"problem_title"`
+	UserID          string    `json:"user_id"`
+	Username        string    `json:"username"`
+	Language        string    `json:"language"`
+	SourceCode      string    `json:"source_code"`
+	Status          string    `json:"status"`
+	ExecutionTimeMS *int      `json:"execution_time_ms"`
+	MemoryUsedKB    *int      `json:"memory_used_kb"`
+	PassedTestCases *int      `json:"passed_testcases"`
+	TotalTestCases  *int      `json:"total_testcases"`
+	CompileOutput   string    `json:"compile_output"`
+	ErrorMessage    string    `json:"error_message"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 type ListMySubmissionsRequest struct {
@@ -91,12 +97,16 @@ type ListAdminSubmissionsRequest struct {
 }
 
 type SubmissionListItem struct {
-	ID           int64     `json:"id"`
-	ProblemID    int64     `json:"problem_id"`
-	ProblemTitle string    `json:"problem_title"`
-	Language     string    `json:"language"`
-	Status       string    `json:"status"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID              int64     `json:"id"`
+	ProblemID       int64     `json:"problem_id"`
+	ProblemTitle    string    `json:"problem_title"`
+	Language        string    `json:"language"`
+	Status          string    `json:"status"`
+	ExecutionTimeMS *int      `json:"execution_time_ms"`
+	MemoryUsedKB    *int      `json:"memory_used_kb"`
+	PassedTestCases *int      `json:"passed_testcases"`
+	TotalTestCases  *int      `json:"total_testcases"`
+	CreatedAt       time.Time `json:"created_at"`
 }
 
 type PaginationResponse struct {

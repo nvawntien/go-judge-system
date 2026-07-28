@@ -179,6 +179,12 @@ export interface Submission {
   language: string;
   source_code: string;
   status: SubmissionStatus;
+  execution_time_ms: number | null;
+  memory_used_kb: number | null;
+  passed_testcases: number | null;
+  total_testcases: number | null;
+  compile_output: string;
+  error_message: string;
   created_at: string;
   updated_at: string;
 }
@@ -189,8 +195,14 @@ export interface SubmissionListItem {
   problem_title: string;
   language: string;
   status: SubmissionStatus;
+  execution_time_ms: number | null;
+  memory_used_kb: number | null;
+  passed_testcases: number | null;
+  total_testcases: number | null;
   created_at: string;
 }
+
+export type SubmissionDetail = Submission;
 
 export interface Pagination {
   page: number;

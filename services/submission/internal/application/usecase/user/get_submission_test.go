@@ -3,22 +3,27 @@ package user
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
 	"go-judge-system/pkg/auth"
 	"go-judge-system/pkg/rbac"
 	"go-judge-system/services/submission/internal/application/dto"
+	"go-judge-system/services/submission/internal/application/port/outbound"
 	"go-judge-system/services/submission/internal/domain"
 	"go-judge-system/services/submission/internal/domain/entity"
 )
 
 type fakeGetSubmissionRepository struct {
 	*fakeSubmissionRepository
-	submission *entity.Submission
-	err        error
-	calls      int
-	id         int64
+	submission   *entity.Submission
+	err          error
+	summaryErr   error
+	summaries    map[int64]outbound.SubmissionResultSummary
+	calls        int
+	summaryCalls int
+	id           int64
 }
 
 func newFakeGetSubmissionRepository(submission *entity.Submission) *fakeGetSubmissionRepository {
@@ -37,18 +42,41 @@ func (r *fakeGetSubmissionRepository) GetByID(ctx context.Context, id int64) (*e
 	return r.submission, r.err
 }
 
+func (r *fakeGetSubmissionRepository) ResultSummaries(
+	ctx context.Context,
+	submissionIDs []int64,
+) (map[int64]outbound.SubmissionResultSummary, error) {
+	r.summaryCalls++
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if r.summaryErr != nil {
+		return nil, r.summaryErr
+	}
+	if r.summaries == nil {
+		return map[int64]outbound.SubmissionResultSummary{}, nil
+	}
+	return r.summaries, nil
+}
+
 func submissionDetailFixture(ownerID string) *entity.Submission {
+	executionTime := 12
+	memoryUsed := 4300
+	compileOutput := "main.go:8:2: undefined: fmtx"
 	return &entity.Submission{
-		ID:          77,
-		ProblemID:   42,
-		ProblemName: "Two Sum",
-		UserID:      ownerID,
-		Username:    "owner-name",
-		Language:    entity.LanguageGo,
-		SourceCode:  "package main\n",
-		Status:      entity.StatusPending,
-		CreatedAt:   time.Date(2026, 7, 23, 14, 0, 0, 0, time.UTC),
-		UpdatedAt:   time.Date(2026, 7, 23, 14, 1, 0, 0, time.UTC),
+		ID:            77,
+		ProblemID:     42,
+		ProblemName:   "Two Sum",
+		UserID:        ownerID,
+		Username:      "owner-name",
+		Language:      entity.LanguageGo,
+		SourceCode:    "package main\n",
+		Status:        entity.StatusCompilationError,
+		ExecutionTime: &executionTime,
+		MemoryUsed:    &memoryUsed,
+		CompileOutput: &compileOutput,
+		CreatedAt:     time.Date(2026, 7, 23, 14, 0, 0, 0, time.UTC),
+		UpdatedAt:     time.Date(2026, 7, 23, 14, 1, 0, 0, time.UTC),
 	}
 }
 
@@ -73,6 +101,9 @@ func TestGetSubmissionAccessMatrix(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			submission := submissionDetailFixture("owner")
 			repo := newFakeGetSubmissionRepository(submission)
+			repo.summaries = map[int64]outbound.SubmissionResultSummary{
+				submission.ID: {SubmissionID: submission.ID, Passed: 4, Total: 20},
+			}
 			uc := NewGetSubmissionUseCase(repo)
 
 			got, err := uc.Execute(
@@ -87,25 +118,37 @@ func TestGetSubmissionAccessMatrix(t *testing.T) {
 				t.Fatalf("repository calls/id = %d/%d, want 1/%d", repo.calls, repo.id, submission.ID)
 			}
 			if tt.wantErr != nil {
+				if repo.summaryCalls != 0 {
+					t.Fatalf("summary calls = %d, want 0 when access denied", repo.summaryCalls)
+				}
 				if got != (dto.GetSubmissionResponse{}) {
 					t.Fatalf("response = %+v, want zero value", got)
 				}
 				return
 			}
+			if repo.summaryCalls != 1 {
+				t.Fatalf("summary calls = %d, want 1", repo.summaryCalls)
+			}
 
 			want := dto.GetSubmissionResponse{
-				ID:           submission.ID,
-				ProblemID:    submission.ProblemID,
-				ProblemTitle: submission.ProblemName,
-				UserID:       submission.UserID,
-				Username:     submission.Username,
-				Language:     string(submission.Language),
-				SourceCode:   submission.SourceCode,
-				Status:       string(submission.Status),
-				CreatedAt:    submission.CreatedAt,
-				UpdatedAt:    submission.UpdatedAt,
+				ID:              submission.ID,
+				ProblemID:       submission.ProblemID,
+				ProblemTitle:    submission.ProblemName,
+				UserID:          submission.UserID,
+				Username:        submission.Username,
+				Language:        string(submission.Language),
+				SourceCode:      submission.SourceCode,
+				Status:          string(submission.Status),
+				ExecutionTimeMS: submission.ExecutionTime,
+				MemoryUsedKB:    submission.MemoryUsed,
+				PassedTestCases: intPointer(4),
+				TotalTestCases:  intPointer(20),
+				CompileOutput:   stringValue(submission.CompileOutput),
+				ErrorMessage:    stringValue(submission.CompileOutput),
+				CreatedAt:       submission.CreatedAt,
+				UpdatedAt:       submission.UpdatedAt,
 			}
-			if got != want {
+			if !reflect.DeepEqual(got, want) {
 				t.Fatalf("response = %+v, want %+v", got, want)
 			}
 			if got.ProblemTitle != "Two Sum" {
@@ -201,6 +244,21 @@ func TestGetSubmissionRepositoryErrors(t *testing.T) {
 				t.Fatalf("Execute() error = %v, want wrapped repository error", err)
 			}
 		})
+	}
+}
+
+func TestGetSubmissionSummaryErrorIsMappedSafely(t *testing.T) {
+	databaseErr := errors.New("summary unavailable")
+	repo := newFakeGetSubmissionRepository(submissionDetailFixture("actor"))
+	repo.summaryErr = databaseErr
+
+	_, err := NewGetSubmissionUseCase(repo).Execute(
+		context.Background(),
+		auth.Claims{UserID: "actor", Role: rbac.RoleUser},
+		dto.GetSubmissionRequest{SubmissionID: 77},
+	)
+	if !errors.Is(err, domain.ErrInternalServer) || !errors.Is(err, databaseErr) {
+		t.Fatalf("Execute() error = %v, want safely wrapped summary error", err)
 	}
 }
 

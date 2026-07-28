@@ -95,18 +95,37 @@ func (uc *listMySubmissionsUseCase) Execute(ctx context.Context, claims auth.Cla
 		return dto.ListMySubmissionsResponse{}, domain.ErrInternalServer.Wrap(err)
 	}
 
-	items := make([]dto.SubmissionListItem, 0, len(result.Items))
+	ids := make([]int64, 0, len(result.Items))
 	for _, submission := range result.Items {
 		if submission == nil {
 			return dto.ListMySubmissionsResponse{}, domain.ErrInternalServer
 		}
+		ids = append(ids, submission.ID)
+	}
+
+	summaries, err := uc.submissionRepo.ResultSummaries(ctx, ids)
+	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return dto.ListMySubmissionsResponse{}, err
+		}
+		return dto.ListMySubmissionsResponse{}, domain.ErrInternalServer.Wrap(err)
+	}
+
+	items := make([]dto.SubmissionListItem, 0, len(result.Items))
+	for _, submission := range result.Items {
+		summary, found := summaries[submission.ID]
+		passed, total := testcaseSummaryForStatus(submission.Status, summary, found)
 		items = append(items, dto.SubmissionListItem{
-			ID:           submission.ID,
-			ProblemID:    submission.ProblemID,
-			ProblemTitle: submission.ProblemName,
-			Language:     string(submission.Language),
-			Status:       string(submission.Status),
-			CreatedAt:    submission.CreatedAt,
+			ID:              submission.ID,
+			ProblemID:       submission.ProblemID,
+			ProblemTitle:    submission.ProblemName,
+			Language:        string(submission.Language),
+			Status:          string(submission.Status),
+			ExecutionTimeMS: submission.ExecutionTime,
+			MemoryUsedKB:    submission.MemoryUsed,
+			PassedTestCases: passed,
+			TotalTestCases:  total,
+			CreatedAt:       submission.CreatedAt,
 		})
 	}
 

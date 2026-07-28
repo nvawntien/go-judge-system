@@ -1,20 +1,25 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { RichText } from '@/components/RichText';
-import { EmptyState, Icon, SkeletonBar } from '@/components/ui';
+import { EmptyState, Icon, SkeletonBar, Spinner } from '@/components/ui';
 import { useToast } from '@/components/ToastProvider';
-import { submissionApi } from '@/lib/api';
+import { ApiError, NetworkError, submissionApi } from '@/lib/api';
 import {
   difficultyMeta,
+  formatDateTime,
+  formatMemoryKb,
   formatMemoryLimit,
+  formatRuntimeMs,
+  formatTestcaseCount,
   formatTimeLimit,
+  isPendingStatus,
   languageLabel,
   timeAgo,
   verdictMeta,
 } from '@/lib/format';
-import type { Problem, SubmissionListItem } from '@/lib/types';
+import type { Problem, SubmissionDetail, SubmissionListItem } from '@/lib/types';
 
 export type ProblemTab = 'description' | 'submissions' | 'solutions' | 'discussion';
 
@@ -82,6 +87,8 @@ export function ProblemPanel({
   attempted,
   signedIn,
   onUseExample,
+  onUseSubmissionCode,
+  historyRefreshKey,
 }: {
   problem: Problem;
   tab: ProblemTab;
@@ -90,6 +97,8 @@ export function ProblemPanel({
   attempted: boolean;
   signedIn: boolean;
   onUseExample: (input: string, expected: string) => void;
+  onUseSubmissionCode: (submission: SubmissionDetail) => void;
+  historyRefreshKey: number;
 }) {
   const { showToast } = useToast();
   const diff = difficultyMeta(problem.difficulty);
@@ -402,7 +411,12 @@ export function ProblemPanel({
         )}
 
         {tab === 'submissions' && (
-          <ProblemSubmissions problemId={problem.id} signedIn={signedIn} />
+          <ProblemSubmissions
+            problemId={problem.id}
+            signedIn={signedIn}
+            refreshKey={historyRefreshKey}
+            onUseSubmissionCode={onUseSubmissionCode}
+          />
         )}
 
         {tab === 'solutions' && (
@@ -483,21 +497,73 @@ function HintList({ hints }: { hints: string[] }) {
   );
 }
 
-function ProblemSubmissions({ problemId, signedIn }: { problemId: number; signedIn: boolean }) {
+const SUBMISSIONS_PAGE_SIZE = 10;
+const DETAIL_POLL_INTERVAL_MS = 1500;
+
+function ProblemSubmissions({
+  problemId,
+  signedIn,
+  refreshKey,
+  onUseSubmissionCode,
+}: {
+  problemId: number;
+  signedIn: boolean;
+  refreshKey: number;
+  onUseSubmissionCode: (submission: SubmissionDetail) => void;
+}) {
   const [items, setItems] = useState<SubmissionListItem[] | null>(null);
-  const [failed, setFailed] = useState(false);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(0);
+  const [failed, setFailed] = useState('');
+  const [retryKey, setRetryKey] = useState(0);
+  const [selectedID, setSelectedID] = useState<number | null>(null);
 
   useEffect(() => {
-    if (!signedIn) return;
+    setPage(1);
+    setSelectedID(null);
+  }, [problemId, refreshKey]);
+
+  useEffect(() => {
+    if (!signedIn) {
+      setItems(null);
+      setFailed('');
+      return;
+    }
     const controller = new AbortController();
+    setItems(null);
+    setFailed('');
     submissionApi
-      .listMine({ problem_id: problemId, limit: 20 }, controller.signal)
-      .then((res) => setItems(res.items ?? []))
-      .catch(() => {
-        if (!controller.signal.aborted) setFailed(true);
+      .listMine({ problem_id: problemId, page, limit: SUBMISSIONS_PAGE_SIZE }, controller.signal)
+      .then((res) => {
+        setItems(res.items ?? []);
+        setTotalPages(res.pagination.total_pages ?? 0);
+      })
+      .catch((err) => {
+        if (controller.signal.aborted) return;
+        if (err instanceof NetworkError) setFailed('Cannot reach the API gateway.');
+        else if (err instanceof ApiError) setFailed(err.message || 'Submission history request failed.');
+        else setFailed('Submission history request failed.');
       });
     return () => controller.abort();
-  }, [problemId, signedIn]);
+  }, [page, problemId, retryKey, signedIn]);
+
+  const updateListItem = useCallback((detail: SubmissionDetail) => {
+    setItems((current) => {
+      if (!current) return current;
+      return current.map((item) =>
+        item.id === detail.id
+          ? {
+              ...item,
+              status: detail.status,
+              execution_time_ms: detail.execution_time_ms,
+              memory_used_kb: detail.memory_used_kb,
+              passed_testcases: detail.passed_testcases,
+              total_testcases: detail.total_testcases,
+            }
+          : item,
+      );
+    });
+  }, []);
 
   if (!signedIn) {
     return (
@@ -507,7 +573,24 @@ function ProblemSubmissions({ problemId, signedIn }: { problemId: number; signed
       />
     );
   }
-  if (failed) return <EmptyState title="Couldn't load your submissions" />;
+  if (failed) {
+    return (
+      <EmptyState
+        title="Couldn't load your submissions"
+        description={failed}
+        action={
+          <button
+            type="button"
+            onClick={() => setRetryKey((current) => current + 1)}
+            className="ac-hover-accent"
+            style={primaryButton}
+          >
+            Retry
+          </button>
+        }
+      />
+    );
+  }
   if (!items) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -528,9 +611,12 @@ function ProblemSubmissions({ problemId, signedIn }: { problemId: number; signed
 
   return (
     <>
-      <h2 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 650 }}>
-        Your submissions on this problem
-      </h2>
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+        <h2 style={{ margin: 0, fontSize: 14, fontWeight: 650 }}>Your submissions on this problem</h2>
+        <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text3)' }}>
+          Page {page}{totalPages > 0 ? ` / ${totalPages}` : ''}
+        </span>
+      </div>
       <div
         style={{
           display: 'flex',
@@ -543,15 +629,26 @@ function ProblemSubmissions({ problemId, signedIn }: { problemId: number; signed
         {items.map((submission) => {
           const verdict = verdictMeta(submission.status);
           return (
-            <div
+            <button
               key={submission.id}
+              type="button"
+              onClick={() => setSelectedID((current) => (current === submission.id ? null : submission.id))}
+              className="ac-hover-surface2"
               style={{
                 display: 'flex',
+                flexWrap: 'wrap',
                 alignItems: 'center',
                 gap: 10,
                 padding: '10px 12px',
                 borderTop: '1px solid var(--border)',
+                borderRight: 'none',
+                borderBottom: 'none',
+                borderLeft: 'none',
                 marginTop: -1,
+                background: selectedID === submission.id ? 'var(--accent-soft)' : 'var(--surface)',
+                color: 'inherit',
+                cursor: 'pointer',
+                textAlign: 'left',
               }}
             >
               <span
@@ -579,19 +676,377 @@ function ProblemSubmissions({ problemId, signedIn }: { problemId: number; signed
                   {verdict.label}
                 </span>
                 <span style={{ fontSize: 11, color: 'var(--text3)' }}>
-                  {languageLabel(submission.language)} · {timeAgo(submission.created_at)}
+                  {languageLabel(submission.language)} · {formatRuntimeMs(submission.execution_time_ms)} ·{' '}
+                  {formatMemoryKb(submission.memory_used_kb)}
                 </span>
+              </span>
+              <span style={submissionMetric}>
+                {formatTestcaseCount(submission.passed_testcases, submission.total_testcases)}
+                <small style={submissionMetricLabel}>tests</small>
+              </span>
+              <span style={submissionMetric}>
+                {timeAgo(submission.created_at)}
+                <small style={submissionMetricLabel}>submitted</small>
               </span>
               <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text3)' }}>
                 #{submission.id}
               </span>
-            </div>
+            </button>
           );
         })}
       </div>
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 12 }}>
+          <button
+            type="button"
+            onClick={() => setPage((current) => Math.max(1, current - 1))}
+            disabled={page <= 1}
+            className="ac-hover-surface2"
+            style={pagerButton(page <= 1)}
+          >
+            Previous
+          </button>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text3)' }}>
+            {items.length} shown
+          </span>
+          <button
+            type="button"
+            onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+            disabled={page >= totalPages}
+            className="ac-hover-surface2"
+            style={pagerButton(page >= totalPages)}
+          >
+            Next
+          </button>
+        </div>
+      )}
+
+      {selectedID !== null && (
+        <SubmissionDetailPanel
+          submissionID={selectedID}
+          onUseSubmissionCode={onUseSubmissionCode}
+          onClose={() => setSelectedID(null)}
+          onUpdateListItem={updateListItem}
+        />
+      )}
     </>
   );
 }
+
+function SubmissionDetailPanel({
+  submissionID,
+  onUseSubmissionCode,
+  onUpdateListItem,
+  onClose,
+}: {
+  submissionID: number;
+  onUseSubmissionCode: (submission: SubmissionDetail) => void;
+  onUpdateListItem: (submission: SubmissionDetail) => void;
+  onClose: () => void;
+}) {
+  const { showToast } = useToast();
+  const [detail, setDetail] = useState<SubmissionDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState('');
+  const [retryKey, setRetryKey] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+
+    const load = async () => {
+      setLoading(true);
+      setFailed('');
+      try {
+        const next = await submissionApi.get(submissionID, controller.signal);
+        setDetail(next);
+        onUpdateListItem(next);
+        if (isPendingStatus(next.status) && !controller.signal.aborted) {
+          timeout = setTimeout(load, DETAIL_POLL_INTERVAL_MS);
+        }
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        if (err instanceof NetworkError) setFailed('Cannot reach the API gateway.');
+        else if (err instanceof ApiError) setFailed(err.message || 'Submission detail request failed.');
+        else setFailed('Submission detail request failed.');
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    };
+
+    void load();
+    return () => {
+      controller.abort();
+      if (timeout) clearTimeout(timeout);
+    };
+  }, [onUpdateListItem, retryKey, submissionID]);
+
+  return (
+    <section
+      aria-label="Submission detail"
+      style={{
+        marginTop: 14,
+        border: '1px solid var(--border)',
+        borderRadius: 12,
+        background: 'var(--surface)',
+        overflow: 'hidden',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          gap: 8,
+          padding: '10px 12px',
+          borderBottom: '1px solid var(--border)',
+          background: 'var(--surface2)',
+        }}
+      >
+        <h3 style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>Submission #{submissionID}</h3>
+        {loading && <Spinner size={12} />}
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close submission detail"
+          className="ac-hover-text"
+          style={{
+            marginLeft: 'auto',
+            border: 'none',
+            background: 'none',
+            color: 'var(--text3)',
+            cursor: 'pointer',
+            fontSize: 13,
+          }}
+        >
+          ✕
+        </button>
+      </div>
+
+      <div style={{ padding: 12 }}>
+        {failed && (
+          <div role="alert" style={{ display: 'grid', gap: 10 }}>
+            <p style={{ margin: 0, fontSize: 12.5, color: 'var(--error)' }}>{failed}</p>
+            <button
+              type="button"
+              onClick={() => setRetryKey((current) => current + 1)}
+              className="ac-hover-surface2"
+              style={smallButton}
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
+        {!failed && !detail && (
+          <div style={{ display: 'grid', gap: 8 }}>
+            <SkeletonBar height={18} radius={6} />
+            <SkeletonBar height={18} radius={6} width="72%" />
+            <SkeletonBar height={90} radius={8} />
+          </div>
+        )}
+
+        {detail && (
+          <SubmissionDetailContent
+            detail={detail}
+            onUseSubmissionCode={onUseSubmissionCode}
+            onCopy={async (text, message) => {
+              try {
+                await navigator.clipboard.writeText(text);
+                showToast(message, 'success');
+              } catch {
+                showToast('Clipboard is unavailable in this browser', 'error');
+              }
+            }}
+          />
+        )}
+      </div>
+    </section>
+  );
+}
+
+function SubmissionDetailContent({
+  detail,
+  onUseSubmissionCode,
+  onCopy,
+}: {
+  detail: SubmissionDetail;
+  onUseSubmissionCode: (submission: SubmissionDetail) => void;
+  onCopy: (text: string, message: string) => void;
+}) {
+  const verdict = verdictMeta(detail.status);
+  const output = detail.compile_output || detail.error_message;
+
+  return (
+    <div style={{ display: 'grid', gap: 12 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+        <span
+          aria-hidden="true"
+          style={{
+            width: 22,
+            height: 22,
+            borderRadius: verdict.shape,
+            background: verdict.bg,
+            color: verdict.color,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 12,
+            fontWeight: 800,
+          }}
+        >
+          {verdict.icon}
+        </span>
+        <strong style={{ color: verdict.color, fontSize: 13 }}>{verdict.label}</strong>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text3)' }}>
+          {formatDateTime(detail.created_at)}
+        </span>
+      </div>
+
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit,minmax(120px,1fr))',
+          gap: 8,
+        }}
+      >
+        <ResultMeta value={languageLabel(detail.language)} label="Language" />
+        <ResultMeta value={formatRuntimeMs(detail.execution_time_ms)} label="Runtime" />
+        <ResultMeta value={formatMemoryKb(detail.memory_used_kb)} label="Memory" />
+        <ResultMeta
+          value={formatTestcaseCount(detail.passed_testcases, detail.total_testcases)}
+          label="Test cases"
+        />
+      </div>
+
+      {output && (
+        <div>
+          <div style={detailBlockLabel}>{detail.status === 'COMPILATION_ERROR' ? 'Compilation Error' : 'Message'}</div>
+          <pre style={detailOutputBlock}>{output}</pre>
+        </div>
+      )}
+
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+          <div style={detailBlockLabel}>Source code</div>
+          <button
+            type="button"
+            onClick={() => onCopy(detail.source_code, 'Source code copied')}
+            className="ac-hover-surface2-text"
+            style={{ ...smallButton, marginLeft: 'auto' }}
+          >
+            Copy
+          </button>
+          <button
+            type="button"
+            onClick={() => onUseSubmissionCode(detail)}
+            className="ac-hover-accent"
+            style={primaryButton}
+          >
+            Use this code
+          </button>
+        </div>
+        <pre style={sourceCodeBlock}>{detail.source_code}</pre>
+      </div>
+    </div>
+  );
+}
+
+function ResultMeta({ value, label }: { value: string; label: string }) {
+  return (
+    <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
+      <span style={{ display: 'block', fontFamily: 'var(--font-mono)', fontSize: 12.5, fontWeight: 650 }}>
+        {value}
+      </span>
+      <span style={{ display: 'block', marginTop: 2, fontSize: 10.5, color: 'var(--text3)' }}>
+        {label}
+      </span>
+    </div>
+  );
+}
+
+const submissionMetric: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'flex-end',
+  gap: 1,
+  minWidth: 74,
+  fontFamily: 'var(--font-mono)',
+  fontSize: 11.5,
+  color: 'var(--text2)',
+};
+
+const submissionMetricLabel: React.CSSProperties = {
+  fontFamily: 'var(--font-sans)',
+  fontSize: 10,
+  color: 'var(--text3)',
+};
+
+function pagerButton(disabled: boolean): React.CSSProperties {
+  return {
+    height: 32,
+    padding: '0 12px',
+    border: '1px solid var(--border)',
+    borderRadius: 8,
+    background: 'var(--surface)',
+    color: 'var(--text2)',
+    fontSize: 12,
+    fontWeight: 600,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    opacity: disabled ? 0.45 : 1,
+  };
+}
+
+const primaryButton: React.CSSProperties = {
+  height: 28,
+  padding: '0 10px',
+  border: 'none',
+  borderRadius: 7,
+  background: 'var(--accent)',
+  color: 'var(--accent-ink)',
+  fontSize: 11,
+  fontWeight: 650,
+  cursor: 'pointer',
+  whiteSpace: 'nowrap',
+};
+
+const detailBlockLabel: React.CSSProperties = {
+  marginBottom: 6,
+  fontSize: 11,
+  fontWeight: 700,
+  letterSpacing: '.06em',
+  textTransform: 'uppercase',
+  color: 'var(--text3)',
+};
+
+const detailOutputBlock: React.CSSProperties = {
+  margin: 0,
+  padding: 10,
+  border: '1px solid var(--border)',
+  borderRadius: 8,
+  background: 'var(--code-bg)',
+  color: 'var(--error)',
+  fontFamily: 'var(--font-mono)',
+  fontSize: 11.5,
+  lineHeight: 1.6,
+  whiteSpace: 'pre-wrap',
+  overflowX: 'auto',
+};
+
+const sourceCodeBlock: React.CSSProperties = {
+  margin: 0,
+  maxHeight: 260,
+  overflow: 'auto',
+  padding: 12,
+  border: '1px solid var(--border)',
+  borderRadius: 8,
+  background: 'var(--code-bg)',
+  color: 'var(--code-fg)',
+  fontFamily: 'var(--font-mono)',
+  fontSize: 11.5,
+  lineHeight: 1.65,
+  whiteSpace: 'pre',
+};
 
 const sectionHeading: React.CSSProperties = {
   margin: '18px 0 8px',

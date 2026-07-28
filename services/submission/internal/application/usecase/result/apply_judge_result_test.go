@@ -58,6 +58,12 @@ func (r *fakeSubmissionRepo) Update(ctx context.Context, submission *entity.Subm
 func (r *fakeSubmissionRepo) List(context.Context, outbound.ListSubmissionsFilter) (outbound.ListSubmissionsResult, error) {
 	return outbound.ListSubmissionsResult{}, nil
 }
+func (r *fakeSubmissionRepo) ResultSummaries(
+	context.Context,
+	[]int64,
+) (map[int64]outbound.SubmissionResultSummary, error) {
+	return map[int64]outbound.SubmissionResultSummary{}, nil
+}
 
 type fakeSubmissionResultRepo struct {
 	replaceErr error
