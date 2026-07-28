@@ -30,6 +30,12 @@ type RunCodeResponse struct {
 	Tests         []RunTestCaseResult `json:"tests"`
 }
 
+const (
+	RunCodeStatusCompleted        = "completed"
+	RunCodeStatusCompilationError = "compile_error"
+	RunCodeStatusSystemError      = "system_error"
+)
+
 type RunTestCaseResult struct {
 	ID              string  `json:"id"`
 	Kind            string  `json:"kind"`

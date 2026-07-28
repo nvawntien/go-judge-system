@@ -10,6 +10,12 @@ type RunCodeUseCase struct {
 	executor outbound.CodeExecutor
 }
 
+const (
+	runCodeStatusCompleted        = "completed"
+	runCodeStatusCompilationError = "compile_error"
+	runCodeStatusSystemError      = "system_error"
+)
+
 func NewRunCodeUseCase(executor outbound.CodeExecutor) *RunCodeUseCase {
 	return &RunCodeUseCase{executor: executor}
 }
@@ -42,12 +48,12 @@ func (u *RunCodeUseCase) Execute(ctx context.Context, req outbound.RunRequest) (
 
 func mapExecutionResultToRunResult(result *outbound.ExecutionResult) *outbound.RunResult {
 	if result == nil {
-		return &outbound.RunResult{Status: "system_error", TestCases: []outbound.RunTestCaseResult{}}
+		return &outbound.RunResult{Status: runCodeStatusSystemError, TestCases: []outbound.RunTestCaseResult{}}
 	}
 
-	status := "completed"
+	status := runCodeStatusCompleted
 	if result.Status == "COMPILATION_ERROR" {
-		status = "compile_error"
+		status = runCodeStatusCompilationError
 	}
 	compileOutput := ""
 	if result.CompileOutput != nil {
@@ -101,6 +107,6 @@ func mapExecutionStatusToRunStatus(status string, expected *string) string {
 	case "RUNTIME_ERROR":
 		return "runtime_error"
 	default:
-		return "system_error"
+		return runCodeStatusSystemError
 	}
 }

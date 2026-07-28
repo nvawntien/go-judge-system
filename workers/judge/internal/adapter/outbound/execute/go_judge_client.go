@@ -154,6 +154,7 @@ func (c *GoJudgeClient) compile(
 	if resp.IsError() || len(compileResp) == 0 {
 		return nil, "", fmt.Errorf("go-judge compile returned status: %d", resp.StatusCode())
 	}
+	c.logger.Debug("go-judge compile request completed")
 
 	res := compileResp[0]
 	if res.Status != "Accepted" {
@@ -233,6 +234,7 @@ func (c *GoJudgeClient) runBatch(
 	if resp.IsError() {
 		return nil, fmt.Errorf("go-judge run returned status: %d", resp.StatusCode())
 	}
+	c.logger.Debug("go-judge run request completed", zap.Int("testcases", len(testCases)))
 	return runResp, nil
 }
 

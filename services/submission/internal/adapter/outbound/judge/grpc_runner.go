@@ -51,7 +51,7 @@ func (r *grpcRunner) RunCode(ctx context.Context, req outbound.JudgeRunRequest) 
 	}
 
 	out := dto.RunCodeResponse{
-		Status:        res.GetStatus(),
+		Status:        mapRunCodeStatus(res.GetStatus()),
 		CompileOutput: res.GetCompileOutput(),
 		Tests:         make([]dto.RunTestCaseResult, 0, len(res.GetTests())),
 	}
@@ -69,4 +69,13 @@ func (r *grpcRunner) RunCode(ctx context.Context, req outbound.JudgeRunRequest) 
 	}
 
 	return out, nil
+}
+
+func mapRunCodeStatus(status string) string {
+	switch status {
+	case dto.RunCodeStatusCompleted, dto.RunCodeStatusCompilationError, dto.RunCodeStatusSystemError:
+		return status
+	default:
+		return dto.RunCodeStatusSystemError
+	}
 }

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"go-judge-system/pkg/gojudge"
 	"go-judge-system/workers/judge/internal/application/port/outbound"
@@ -80,5 +81,35 @@ func TestRunCodeCompileErrorReturnsNoTests(t *testing.T) {
 	}
 	if res.Status != "COMPILATION_ERROR" || len(res.TestCases) != 0 {
 		t.Fatalf("result = %#v, want COMPILATION_ERROR with no tests", res)
+	}
+}
+
+func TestExecutePropagatesContextCancellationToGoJudge(t *testing.T) {
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+		case <-release:
+		}
+	}))
+	defer func() {
+		close(release)
+		server.Close()
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+
+	client := NewGoJudgeClient(server.URL, zap.NewNop())
+	_, err := client.Execute(ctx, outbound.ExecutionRequest{
+		Language:   "GO",
+		SourceCode: "package main\nfunc main() {}\n",
+		TestCases:  []outbound.ExecutionTestCase{{Index: 1, ID: "case-1", Kind: "custom", Stdin: "1\n"}},
+	})
+	if err == nil {
+		t.Fatal("Execute() error = nil, want context cancellation error")
+	}
+	if ctx.Err() == nil {
+		t.Fatal("context was not cancelled")
 	}
 }

@@ -1,6 +1,9 @@
 {
   "endpoint": "{{ .endpoint.endpoint }}",
   "method": "{{ .endpoint.method }}",
+{{- if .endpoint.timeout }}
+  "timeout": "{{ .endpoint.timeout }}",
+{{- end }}
   "output_encoding": "{{ .endpoint.output_encoding }}",
   "input_headers": {{ if .endpoint.input_headers }}{{ marshal .endpoint.input_headers }}{{ else }}{{ marshal .service.input_headers }}{{ end }},
 {{- if .endpoint.input_query_strings }}
