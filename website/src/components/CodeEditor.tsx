@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { tokenizeLine } from '@/lib/highlight';
+import { handleCodeEditorKeyDown } from '@/lib/codeEditorKeys';
 import type { LanguageCode } from '@/lib/types';
 
 interface CodeEditorProps {
@@ -61,18 +62,13 @@ export function CodeEditor({
   }, [highlightLine, lines, fontSize, syncCaret]);
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key !== 'Tab' || readOnly) return;
-    event.preventDefault();
-
-    const el = event.currentTarget;
-    const { selectionStart, selectionEnd } = el;
-    const indent = ' '.repeat(tabSize);
-    const next = `${value.slice(0, selectionStart)}${indent}${value.slice(selectionEnd)}`;
-    onChange(next);
-
-    requestAnimationFrame(() => {
-      el.selectionStart = el.selectionEnd = selectionStart + indent.length;
-      syncCaret();
+    if (readOnly) return;
+    handleCodeEditorKeyDown({
+      event,
+      value,
+      onChange,
+      tabSize,
+      syncCaret,
     });
   };
 
