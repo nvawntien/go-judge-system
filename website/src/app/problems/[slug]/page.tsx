@@ -29,6 +29,7 @@ import { useDismissable, useOnline, useViewportWidth } from '@/lib/hooks';
 import { fetchProgress, invalidateProgress } from '@/lib/progress';
 import { CODE_TEMPLATES, draftKey } from '@/lib/templates';
 import type {
+  CodeDiagnostic,
   LanguageCode,
   Problem,
   RunResponse,
@@ -135,6 +136,7 @@ export default function WorkspacePage() {
   const [draftRestored, setDraftRestored] = useState(false);
   const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null);
   const [jumpLine, setJumpLine] = useState<number | null>(null);
+  const [codeDiagnostics, setCodeDiagnostics] = useState<CodeDiagnostic[]>([]);
   const [fullscreen, setFullscreen] = useState(false);
   const [restoreSubmission, setRestoreSubmission] = useState<SubmissionDetail | null>(null);
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
@@ -160,6 +162,8 @@ export default function WorkspacePage() {
   // Load the draft (or template) whenever the problem/language pair changes.
   useEffect(() => {
     if (!problem) return;
+    setCodeDiagnostics([]);
+    setJumpLine(null);
     let restored = false;
     try {
       const draft = localStorage.getItem(draftKey(problem.id, language));
@@ -191,6 +195,8 @@ export default function WorkspacePage() {
 
   const changeLanguage = (next: LanguageCode) => {
     setLanguage(next);
+    setCodeDiagnostics([]);
+    setJumpLine(null);
     try {
       localStorage.setItem('astra-lang', next);
     } catch {
@@ -216,6 +222,7 @@ export default function WorkspacePage() {
 
       setLanguage(nextLanguage);
       setCode(detail.source_code);
+      setCodeDiagnostics([]);
       setDraftRestored(false);
       setDraftSavedAt(Date.now());
       setJumpLine(null);
@@ -328,6 +335,8 @@ export default function WorkspacePage() {
     }
 
     setRunning(true);
+    setCodeDiagnostics([]);
+    setJumpLine(null);
     setBottomTab('result');
 
     try {
@@ -343,6 +352,9 @@ export default function WorkspacePage() {
         })),
       });
       setRunResult(result);
+      const diagnostics = collectRunDiagnostics(result);
+      setCodeDiagnostics(diagnostics);
+      if (diagnostics[0]?.line) setJumpLine(diagnostics[0].line);
       const firstFailed = result.tests.findIndex((test) => isRunFailure(test));
       if (firstFailed >= 0) setSelectedTest(firstFailed);
       else if (selectedTest >= tests.length) setSelectedTest(0);
@@ -432,6 +444,8 @@ export default function WorkspacePage() {
     setPollTimedOut(false);
     setSubmission(null);
     setRunResult(null);
+    setCodeDiagnostics([]);
+    setJumpLine(null);
     setBottomTab('result');
     setBottomOpen(true);
 
@@ -967,12 +981,14 @@ export default function WorkspacePage() {
                 value={code}
                 onChange={(next) => {
                   setCode(next);
+                  setCodeDiagnostics([]);
                   setJumpLine(null);
                 }}
                 language={language}
                 fontSize={fontSize}
                 tabSize={tabSize}
                 highlightLine={jumpLine}
+                diagnostics={codeDiagnostics}
               />
 
               <div
@@ -1174,6 +1190,13 @@ export default function WorkspacePage() {
                         pollTimedOut={pollTimedOut}
                         runResult={runResult}
                         running={running}
+                        diagnostics={codeDiagnostics}
+                        onSelectDiagnostic={(diagnostic) => {
+                          if (diagnostic.line > 0) {
+                            setJumpLine(diagnostic.line);
+                            if (stacked) setMobileView('editor');
+                          }
+                        }}
                         onOpenSubmissions={() => {
                           setTab('submissions');
                           if (stacked) setMobileView('problem');
@@ -1608,6 +1631,8 @@ function ResultPanel({
   pollTimedOut,
   runResult,
   running,
+  diagnostics,
+  onSelectDiagnostic,
   onOpenSubmissions,
 }: {
   submitting: boolean;
@@ -1615,6 +1640,8 @@ function ResultPanel({
   pollTimedOut: boolean;
   runResult: RunResponse | null;
   running: boolean;
+  diagnostics: CodeDiagnostic[];
+  onSelectDiagnostic: (diagnostic: CodeDiagnostic) => void;
   onOpenSubmissions: () => void;
 }) {
   if (running) {
@@ -1807,6 +1834,7 @@ function ResultPanel({
             Compile Error
           </div>
           <pre style={runOutputBlock}>{runResult.compile_output || 'Compilation failed'}</pre>
+          <DiagnosticList diagnostics={diagnostics} onSelect={onSelectDiagnostic} />
         </div>
       );
     }
@@ -1892,6 +1920,7 @@ function ResultPanel({
             </div>
           ))}
         </div>
+        <DiagnosticList diagnostics={diagnostics} onSelect={onSelectDiagnostic} />
       </div>
     );
   }
@@ -1900,6 +1929,81 @@ function ResultPanel({
     <p style={{ margin: '8px 0', fontSize: 12.5, color: 'var(--text3)' }}>
       Run your code against the test cases, or submit for the full judge.
     </p>
+  );
+}
+
+function DiagnosticList({
+  diagnostics,
+  onSelect,
+}: {
+  diagnostics: CodeDiagnostic[];
+  onSelect: (diagnostic: CodeDiagnostic) => void;
+}) {
+  if (diagnostics.length === 0) return null;
+
+  return (
+    <div
+      role="list"
+      aria-label="Code diagnostics"
+      style={{
+        marginTop: 12,
+        border: '1px solid var(--error)',
+        borderRadius: 10,
+        background: 'var(--error-bg)',
+        overflow: 'hidden',
+      }}
+    >
+      {diagnostics.map((diagnostic, index) => (
+        <button
+          key={`${diagnostic.kind}-${diagnostic.testcase_id ?? 'compile'}-${diagnostic.line}-${diagnostic.column}-${index}`}
+          type="button"
+          role="listitem"
+          onClick={() => onSelect(diagnostic)}
+          className="ac-hover-surface2"
+          style={{
+            display: 'flex',
+            width: '100%',
+            gap: 10,
+            alignItems: 'flex-start',
+            padding: '9px 11px',
+            border: 'none',
+            borderTop: index === 0 ? 'none' : '1px solid color-mix(in srgb, var(--error) 25%, transparent)',
+            background: 'transparent',
+            color: 'var(--text)',
+            textAlign: 'left',
+            cursor: diagnostic.line > 0 ? 'pointer' : 'default',
+          }}
+        >
+          <span
+            aria-hidden="true"
+            style={{
+              width: 18,
+              height: 18,
+              borderRadius: 5,
+              background: 'var(--surface)',
+              color: 'var(--error)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 11,
+              fontWeight: 800,
+              flexShrink: 0,
+            }}
+          >
+            !
+          </span>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: 'block', fontFamily: 'var(--font-mono)', fontSize: 11.5, color: 'var(--error)' }}>
+              {diagnostic.testcase_id ? `${diagnostic.testcase_id} · ` : ''}
+              Line {diagnostic.line || '—'}, Column {diagnostic.column || 1}
+            </span>
+            <span style={{ display: 'block', marginTop: 2, fontSize: 12.5, color: 'var(--text2)' }}>
+              {diagnostic.message}
+            </span>
+          </span>
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -1944,6 +2048,30 @@ function formatRunStatus(status: string): string {
     .split('_')
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
+}
+
+function collectRunDiagnostics(result: RunResponse): CodeDiagnostic[] {
+  const seen = new Set<string>();
+  const diagnostics: CodeDiagnostic[] = [];
+  const add = (diagnostic: CodeDiagnostic) => {
+    if (!diagnostic || diagnostic.line <= 0) return;
+    const key = [
+      diagnostic.testcase_id ?? '',
+      diagnostic.kind,
+      diagnostic.line,
+      diagnostic.column,
+      diagnostic.message,
+    ].join('|');
+    if (seen.has(key)) return;
+    seen.add(key);
+    diagnostics.push(diagnostic);
+  };
+
+  for (const diagnostic of result.diagnostics ?? []) add(diagnostic);
+  for (const test of result.tests ?? []) {
+    for (const diagnostic of test.diagnostics ?? []) add(diagnostic);
+  }
+  return diagnostics;
 }
 
 function buildRunConsoleLines(result: RunResponse): { text: string; color: string }[] {

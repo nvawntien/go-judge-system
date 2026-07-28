@@ -50,3 +50,71 @@ func TestRunCodeUseCaseUsesSharedExecutorAndMapsResult(t *testing.T) {
 		t.Fatalf("run result = %#v", got)
 	}
 }
+
+func TestRunCodeUseCaseMapsCompileErrorDiagnostics(t *testing.T) {
+	t.Parallel()
+
+	compileOutput := "main.go:19:9: make (built-in) must be called"
+	executor := &fakeRunExecutor{
+		result: &outbound.ExecutionResult{
+			Status:        "COMPILATION_ERROR",
+			CompileOutput: &compileOutput,
+			Diagnostics: []outbound.CodeDiagnostic{{
+				Kind:     "compile",
+				Severity: "error",
+				Message:  "make (built-in) must be called",
+				Line:     19,
+				Column:   9,
+			}},
+		},
+	}
+
+	got, err := NewRunCodeUseCase(executor).Execute(context.Background(), outbound.RunRequest{
+		Language:   "GO",
+		SourceCode: "bad",
+		TestCases:  []outbound.RunTestCase{{ID: "sample-1", Kind: "sample"}},
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if got.Status != "compile_error" || got.CompileOutput != compileOutput || len(got.Diagnostics) != 1 {
+		t.Fatalf("run result = %#v, want compile_error with diagnostics", got)
+	}
+}
+
+func TestRunCodeUseCaseMapsRuntimeDiagnostics(t *testing.T) {
+	t.Parallel()
+
+	testCaseID := "custom-1"
+	executor := &fakeRunExecutor{
+		result: &outbound.ExecutionResult{
+			Status: "RUNTIME_ERROR",
+			TestCases: []outbound.TestCaseResult{{
+				ID:     testCaseID,
+				Kind:   "custom",
+				Status: "RUNTIME_ERROR",
+				Diagnostics: []outbound.CodeDiagnostic{{
+					TestCaseID: &testCaseID,
+					Kind:       "runtime",
+					Severity:   "error",
+					Message:    "panic: boom",
+					Line:       7,
+					Column:     1,
+				}},
+			}},
+		},
+	}
+
+	got, err := NewRunCodeUseCase(executor).Execute(context.Background(), outbound.RunRequest{
+		Language:   "GO",
+		SourceCode: "package main",
+		TestCases:  []outbound.RunTestCase{{ID: testCaseID, Kind: "custom"}},
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if got.Status != "completed" || got.TestCases[0].Status != "runtime_error" || len(got.Diagnostics) != 1 ||
+		len(got.TestCases[0].Diagnostics) != 1 {
+		t.Fatalf("run result = %#v, want runtime test diagnostic", got)
+	}
+}

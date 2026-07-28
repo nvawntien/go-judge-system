@@ -64,7 +64,6 @@ func (uc *getSubmissionUseCase) Execute(ctx context.Context, claims auth.Claims,
 	}
 	summary, found := summaries[submission.ID]
 	passed, total := testcaseSummaryForStatus(submission.Status, summary, found)
-	compileOutput := stringValue(submission.CompileOutput)
 
 	return dto.GetSubmissionResponse{
 		ID:              submission.ID,
@@ -79,8 +78,8 @@ func (uc *getSubmissionUseCase) Execute(ctx context.Context, claims auth.Claims,
 		MemoryUsedKB:    submission.MemoryUsed,
 		PassedTestCases: passed,
 		TotalTestCases:  total,
-		CompileOutput:   compileOutput,
-		ErrorMessage:    compileOutput,
+		CompileOutput:   submission.CompileOutput,
+		ErrorMessage:    nil,
 		CreatedAt:       submission.CreatedAt,
 		UpdatedAt:       submission.UpdatedAt,
 	}, nil

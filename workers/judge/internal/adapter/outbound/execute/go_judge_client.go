@@ -82,7 +82,7 @@ func (c *GoJudgeClient) Execute(ctx context.Context, req outbound.ExecutionReque
 		}
 
 		for i, raw := range runResp {
-			tcResult := mapTestCaseResult(batch[i], raw)
+			tcResult := mapTestCaseResult(req.Language, batch[i], raw)
 			result.TestCases = append(result.TestCases, tcResult)
 			if tcResult.ExecutionTime > result.ExecutionTime {
 				result.ExecutionTime = tcResult.ExecutionTime
@@ -168,6 +168,7 @@ func (c *GoJudgeClient) compile(
 		return &outbound.ExecutionResult{
 			Status:        "COMPILATION_ERROR",
 			CompileOutput: &compileOutput,
+			Diagnostics:   parseCompileDiagnostics(language, compileOutput),
 			TestCases:     []outbound.TestCaseResult{},
 		}, "", nil
 	}
@@ -238,10 +239,10 @@ func (c *GoJudgeClient) runBatch(
 	return runResp, nil
 }
 
-func mapTestCaseResult(testCase outbound.ExecutionTestCase, res gojudge.Result) outbound.TestCaseResult {
+func mapTestCaseResult(language string, testCase outbound.ExecutionTestCase, res gojudge.Result) outbound.TestCaseResult {
 	status := mapJudgeStatus(res.Status, res.ExitStatus)
 	stdout := res.Files["stdout"]
-	stderr := res.Files["stderr"]
+	stderr := sanitizeOutput(res.Files["stderr"])
 
 	if status == "ACCEPTED" && testCase.ExpectedOutput != nil && !workerdomain.OutputEqual(stdout, *testCase.ExpectedOutput) {
 		status = "WRONG_ANSWER"
@@ -267,6 +268,7 @@ func mapTestCaseResult(testCase outbound.ExecutionTestCase, res gojudge.Result) 
 		ExpectedOutput: testCase.ExpectedOutput,
 		ExecutionTime:  int(res.Time / uint64(time.Millisecond)),
 		MemoryUsed:     int(res.Memory / 1024),
+		Diagnostics:    parseRuntimeDiagnostics(language, testCase.ID, stderr),
 	}
 }
 
@@ -283,7 +285,7 @@ func mapJudgeStatus(status string, exitStatus int) string {
 		return "TIME_LIMIT_EXCEEDED"
 	case "Output Limit Exceeded":
 		return "OUTPUT_LIMIT_EXCEEDED"
-	case "File Error", "Nonzero Exit Status", "Signalled", "Run Error":
+	case "File Error", "Nonzero Exit Status", "Signalled", "Run Error", "Runtime Error":
 		return "RUNTIME_ERROR"
 	case "Internal Error":
 		return "SYSTEM_ERROR"
@@ -303,12 +305,6 @@ func normalizeLimits(limits outbound.ExecutionLimits) outbound.ExecutionLimits {
 		limits.OutputLimitBytes = 1024 * 1024
 	}
 	return limits
-}
-
-func sanitizeOutput(output string) string {
-	output = strings.ReplaceAll(output, "/w/", "")
-	output = strings.ReplaceAll(output, "/tmp/", "")
-	return output
 }
 
 func maxInt64(a, b int64) int64 {

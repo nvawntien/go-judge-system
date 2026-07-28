@@ -60,6 +60,8 @@ func mapExecutionResultToRunResult(result *outbound.ExecutionResult) *outbound.R
 		compileOutput = *result.CompileOutput
 	}
 
+	diagnostics := make([]outbound.CodeDiagnostic, 0, len(result.Diagnostics))
+	diagnostics = append(diagnostics, result.Diagnostics...)
 	testCases := make([]outbound.RunTestCaseResult, 0, len(result.TestCases))
 	for _, testCase := range result.TestCases {
 		stdout := ""
@@ -70,6 +72,7 @@ func mapExecutionResultToRunResult(result *outbound.ExecutionResult) *outbound.R
 		if testCase.Stderr != nil {
 			stderr = *testCase.Stderr
 		}
+		diagnostics = append(diagnostics, testCase.Diagnostics...)
 		testCases = append(testCases, outbound.RunTestCaseResult{
 			ID:              testCase.ID,
 			Kind:            testCase.Kind,
@@ -79,12 +82,14 @@ func mapExecutionResultToRunResult(result *outbound.ExecutionResult) *outbound.R
 			ExpectedOutput:  testCase.ExpectedOutput,
 			ExecutionTimeMS: int64(testCase.ExecutionTime),
 			MemoryUsedKB:    int64(testCase.MemoryUsed),
+			Diagnostics:     testCase.Diagnostics,
 		})
 	}
 
 	return &outbound.RunResult{
 		Status:        status,
 		CompileOutput: compileOutput,
+		Diagnostics:   diagnostics,
 		TestCases:     testCases,
 	}
 }

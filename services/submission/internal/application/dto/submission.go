@@ -27,6 +27,7 @@ type RunTestCaseInput struct {
 type RunCodeResponse struct {
 	Status        string              `json:"status"`
 	CompileOutput string              `json:"compile_output"`
+	Diagnostics   []CodeDiagnostic    `json:"diagnostics"`
 	Tests         []RunTestCaseResult `json:"tests"`
 }
 
@@ -37,14 +38,26 @@ const (
 )
 
 type RunTestCaseResult struct {
-	ID              string  `json:"id"`
-	Kind            string  `json:"kind"`
-	Status          string  `json:"status"`
-	Stdout          string  `json:"stdout"`
-	Stderr          string  `json:"stderr"`
-	ExpectedOutput  *string `json:"expected_output"`
-	ExecutionTimeMS int64   `json:"execution_time_ms"`
-	MemoryUsedKB    int64   `json:"memory_used_kb"`
+	ID              string           `json:"id"`
+	Kind            string           `json:"kind"`
+	Status          string           `json:"status"`
+	Stdout          string           `json:"stdout"`
+	Stderr          string           `json:"stderr"`
+	ExpectedOutput  *string          `json:"expected_output"`
+	ExecutionTimeMS int64            `json:"execution_time_ms"`
+	MemoryUsedKB    int64            `json:"memory_used_kb"`
+	Diagnostics     []CodeDiagnostic `json:"diagnostics"`
+}
+
+type CodeDiagnostic struct {
+	TestCaseID *string `json:"testcase_id,omitempty"`
+	Kind       string  `json:"kind"`
+	Severity   string  `json:"severity"`
+	Message    string  `json:"message"`
+	Line       int     `json:"line"`
+	Column     int     `json:"column"`
+	EndLine    *int    `json:"end_line,omitempty"`
+	EndColumn  *int    `json:"end_column,omitempty"`
 }
 
 type CreateSubmissionResponse struct {
@@ -73,8 +86,8 @@ type GetSubmissionResponse struct {
 	MemoryUsedKB    *int      `json:"memory_used_kb"`
 	PassedTestCases *int      `json:"passed_testcases"`
 	TotalTestCases  *int      `json:"total_testcases"`
-	CompileOutput   string    `json:"compile_output"`
-	ErrorMessage    string    `json:"error_message"`
+	CompileOutput   *string   `json:"compile_output"`
+	ErrorMessage    *string   `json:"error_message"`
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
 }

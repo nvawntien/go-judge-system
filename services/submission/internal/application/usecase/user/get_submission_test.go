@@ -143,8 +143,8 @@ func TestGetSubmissionAccessMatrix(t *testing.T) {
 				MemoryUsedKB:    submission.MemoryUsed,
 				PassedTestCases: intPointer(4),
 				TotalTestCases:  intPointer(20),
-				CompileOutput:   stringValue(submission.CompileOutput),
-				ErrorMessage:    stringValue(submission.CompileOutput),
+				CompileOutput:   submission.CompileOutput,
+				ErrorMessage:    nil,
 				CreatedAt:       submission.CreatedAt,
 				UpdatedAt:       submission.UpdatedAt,
 			}

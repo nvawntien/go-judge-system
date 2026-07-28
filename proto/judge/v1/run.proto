@@ -28,6 +28,7 @@ message RunCodeResponse {
   string status = 1;
   string compile_output = 2;
   repeated RunTestCaseResult tests = 3;
+  repeated CodeDiagnostic diagnostics = 4;
 }
 
 message RunTestCaseResult {
@@ -39,4 +40,16 @@ message RunTestCaseResult {
   optional string expected_output = 6;
   int64 execution_time_ms = 7;
   int64 memory_used_kb = 8;
+  repeated CodeDiagnostic diagnostics = 9;
+}
+
+message CodeDiagnostic {
+  string kind = 1;
+  string severity = 2;
+  string message = 3;
+  int32 line = 4;
+  int32 column = 5;
+  optional int32 end_line = 6;
+  optional int32 end_column = 7;
+  optional string testcase_id = 8;
 }

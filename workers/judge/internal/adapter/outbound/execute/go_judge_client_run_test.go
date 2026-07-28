@@ -35,7 +35,7 @@ func TestRunCodeCompilesOnceAndRunsAllCases(t *testing.T) {
 		}
 		_ = json.NewEncoder(w).Encode(gojudge.Response{
 			{Status: "Accepted", Files: map[string]string{"stdout": "1\n", "stderr": ""}, Time: 1_000_000, Memory: 1024},
-			{Status: "Nonzero Exit Status", ExitStatus: 1, Files: map[string]string{"stdout": "", "stderr": "boom"}, Time: 2_000_000, Memory: 2048},
+			{Status: "Runtime Error", ExitStatus: 1, Files: map[string]string{"stdout": "", "stderr": "panic: boom\nmain.main()\n\t/tmp/run/main.go:9 +0x1"}, Time: 2_000_000, Memory: 2048},
 			{Status: "Accepted", Files: map[string]string{"stdout": "3\n", "stderr": ""}, Time: 3_000_000, Memory: 3072},
 		})
 	}))
@@ -61,12 +61,15 @@ func TestRunCodeCompilesOnceAndRunsAllCases(t *testing.T) {
 	if got := []string{res.TestCases[0].Status, res.TestCases[1].Status, res.TestCases[2].Status}; got[0] != "ACCEPTED" || got[1] != "RUNTIME_ERROR" || got[2] != "ACCEPTED" {
 		t.Fatalf("statuses = %v, want [ACCEPTED RUNTIME_ERROR ACCEPTED]", got)
 	}
+	if len(res.TestCases[1].Diagnostics) != 1 || res.TestCases[1].Diagnostics[0].Line != 9 {
+		t.Fatalf("runtime diagnostics = %+v, want line 9", res.TestCases[1].Diagnostics)
+	}
 }
 
 func TestRunCodeCompileErrorReturnsNoTests(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(gojudge.Response{{Status: "Nonzero Exit Status", Files: map[string]string{"stderr": "undefined symbol"}}})
+		_ = json.NewEncoder(w).Encode(gojudge.Response{{Status: "Nonzero Exit Status", Files: map[string]string{"stderr": "./main.go:19:9: make (built-in) must be called"}}})
 	}))
 	defer server.Close()
 
@@ -81,6 +84,35 @@ func TestRunCodeCompileErrorReturnsNoTests(t *testing.T) {
 	}
 	if res.Status != "COMPILATION_ERROR" || len(res.TestCases) != 0 {
 		t.Fatalf("result = %#v, want COMPILATION_ERROR with no tests", res)
+	}
+	if res.CompileOutput == nil || *res.CompileOutput != "main.go:19:9: make (built-in) must be called" {
+		t.Fatalf("compile output = %v, want sanitized compiler output", res.CompileOutput)
+	}
+	if len(res.Diagnostics) != 1 || res.Diagnostics[0].Line != 19 || res.Diagnostics[0].Column != 9 {
+		t.Fatalf("compile diagnostics = %+v, want line 19 column 9", res.Diagnostics)
+	}
+}
+
+func TestMapJudgeStatusClassifiesUserCodeFailures(t *testing.T) {
+	tests := []struct {
+		name       string
+		status     string
+		exitStatus int
+		want       string
+	}{
+		{name: "runtime error", status: "Runtime Error", want: "RUNTIME_ERROR"},
+		{name: "nonzero exit", status: "Nonzero Exit Status", want: "RUNTIME_ERROR"},
+		{name: "tle", status: "Time Limit Exceeded", want: "TIME_LIMIT_EXCEEDED"},
+		{name: "mle", status: "Memory Limit Exceeded", want: "MEMORY_LIMIT_EXCEEDED"},
+		{name: "internal", status: "Internal Error", want: "SYSTEM_ERROR"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := mapJudgeStatus(tt.status, tt.exitStatus); got != tt.want {
+				t.Fatalf("mapJudgeStatus(%q) = %q, want %q", tt.status, got, tt.want)
+			}
+		})
 	}
 }
 

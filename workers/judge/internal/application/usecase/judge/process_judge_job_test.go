@@ -124,6 +124,73 @@ func TestProcessJudgeJobReturnsRetryableErrorWithoutPublishing(t *testing.T) {
 	}
 }
 
+func TestProcessJudgeJobPublishesUserCodeVerdictsWithoutSystemError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		result *outbound.ExecutionResult
+		want   string
+	}{
+		{
+			name:   "compilation error",
+			result: &outbound.ExecutionResult{Status: "COMPILATION_ERROR", CompileOutput: stringPtr("main.go:3:2: undefined: x")},
+			want:   "COMPILATION_ERROR",
+		},
+		{
+			name: "runtime error",
+			result: &outbound.ExecutionResult{
+				Status:    "RUNTIME_ERROR",
+				TestCases: []outbound.TestCaseResult{{Index: 1, Status: "RUNTIME_ERROR"}},
+			},
+			want: "RUNTIME_ERROR",
+		},
+		{
+			name: "time limit",
+			result: &outbound.ExecutionResult{
+				Status:    "TIME_LIMIT_EXCEEDED",
+				TestCases: []outbound.TestCaseResult{{Index: 1, Status: "TIME_LIMIT_EXCEEDED"}},
+			},
+			want: "TIME_LIMIT_EXCEEDED",
+		},
+		{
+			name: "memory limit",
+			result: &outbound.ExecutionResult{
+				Status:    "MEMORY_LIMIT_EXCEEDED",
+				TestCases: []outbound.TestCaseResult{{Index: 1, Status: "MEMORY_LIMIT_EXCEEDED"}},
+			},
+			want: "MEMORY_LIMIT_EXCEEDED",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			publisher := &fakeResultPublisher{}
+			useCase := NewProcessJudgeJobUseCase(
+				&fakeExecutor{result: tt.result},
+				publisher,
+				&fakeMetadataReader{metadata: outbound.ProblemTestCaseMetadata{ProblemID: 42, TestCount: 1, Version: 1}},
+				&fakeOfficialLoader{testCases: []outbound.ExecutionTestCase{{Index: 1, Stdin: "1\n"}}},
+				zap.NewNop(),
+			)
+
+			err := useCase.Execute(context.Background(), &pkgjudge.JobMessage{
+				SubmissionID: 99,
+				ProblemID:    42,
+				AttemptID:    "attempt-a",
+				Language:     "GO",
+				SourceCode:   "package main\nfunc main(){}",
+			})
+			if err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+			if publisher.result == nil || publisher.result.Status != tt.want {
+				t.Fatalf("published result = %#v, want %s", publisher.result, tt.want)
+			}
+		})
+	}
+}
+
 func TestProcessJudgeJobPublishesNonRetryableSystemError(t *testing.T) {
 	t.Parallel()
 
@@ -143,4 +210,8 @@ func TestProcessJudgeJobPublishesNonRetryableSystemError(t *testing.T) {
 	if publisher.result == nil || publisher.result.Status != "SYSTEM_ERROR" {
 		t.Fatalf("published result = %#v, want SYSTEM_ERROR", publisher.result)
 	}
+}
+
+func stringPtr(value string) *string {
+	return &value
 }

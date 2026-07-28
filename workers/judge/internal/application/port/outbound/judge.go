@@ -39,6 +39,7 @@ type ExecutionRequest struct {
 type ExecutionResult struct {
 	Status        string // "ACCEPTED", "WRONG_ANSWER", "TLE", "MLE", "RUNTIME_ERROR", "COMPILATION_ERROR"
 	CompileOutput *string
+	Diagnostics   []CodeDiagnostic
 	TestCases     []TestCaseResult
 	ExecutionTime int // milliseconds
 	MemoryUsed    int // kilobytes
@@ -56,6 +57,18 @@ type TestCaseResult struct {
 	ExpectedOutput *string // populated for failed tests only
 	ExecutionTime  int     // milliseconds
 	MemoryUsed     int     // kilobytes
+	Diagnostics    []CodeDiagnostic
+}
+
+type CodeDiagnostic struct {
+	TestCaseID *string
+	Kind       string
+	Severity   string
+	Message    string
+	Line       int
+	Column     int
+	EndLine    *int
+	EndColumn  *int
 }
 
 type ExecutionLimits struct {
@@ -81,6 +94,7 @@ type RunRequest struct {
 type RunResult struct {
 	Status        string
 	CompileOutput string
+	Diagnostics   []CodeDiagnostic
 	TestCases     []RunTestCaseResult
 }
 
@@ -93,6 +107,7 @@ type RunTestCaseResult struct {
 	ExpectedOutput  *string
 	ExecutionTimeMS int64
 	MemoryUsedKB    int64
+	Diagnostics     []CodeDiagnostic
 }
 
 type CodeExecutor interface {

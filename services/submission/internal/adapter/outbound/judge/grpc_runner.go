@@ -53,6 +53,7 @@ func (r *grpcRunner) RunCode(ctx context.Context, req outbound.JudgeRunRequest) 
 	out := dto.RunCodeResponse{
 		Status:        mapRunCodeStatus(res.GetStatus()),
 		CompileOutput: res.GetCompileOutput(),
+		Diagnostics:   mapCodeDiagnostics(res.GetDiagnostics()),
 		Tests:         make([]dto.RunTestCaseResult, 0, len(res.GetTests())),
 	}
 	for _, tc := range res.GetTests() {
@@ -65,10 +66,38 @@ func (r *grpcRunner) RunCode(ctx context.Context, req outbound.JudgeRunRequest) 
 			ExpectedOutput:  tc.ExpectedOutput,
 			ExecutionTimeMS: tc.GetExecutionTimeMs(),
 			MemoryUsedKB:    tc.GetMemoryUsedKb(),
+			Diagnostics:     mapCodeDiagnostics(tc.GetDiagnostics()),
 		})
 	}
 
 	return out, nil
+}
+
+func mapCodeDiagnostics(items []*judgev1.CodeDiagnostic) []dto.CodeDiagnostic {
+	diagnostics := make([]dto.CodeDiagnostic, 0, len(items))
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		diagnostic := dto.CodeDiagnostic{
+			TestCaseID: item.TestcaseId,
+			Kind:       item.GetKind(),
+			Severity:   item.GetSeverity(),
+			Message:    item.GetMessage(),
+			Line:       int(item.GetLine()),
+			Column:     int(item.GetColumn()),
+		}
+		if item.EndLine != nil {
+			value := int(item.GetEndLine())
+			diagnostic.EndLine = &value
+		}
+		if item.EndColumn != nil {
+			value := int(item.GetEndColumn())
+			diagnostic.EndColumn = &value
+		}
+		diagnostics = append(diagnostics, diagnostic)
+	}
+	return diagnostics
 }
 
 func mapRunCodeStatus(status string) string {

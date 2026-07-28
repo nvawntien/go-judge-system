@@ -37,10 +37,3 @@ func isTerminalSubmissionStatus(status entity.Status) bool {
 		return false
 	}
 }
-
-func stringValue(value *string) string {
-	if value == nil {
-		return ""
-	}
-	return *value
-}
