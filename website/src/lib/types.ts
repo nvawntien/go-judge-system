@@ -30,6 +30,10 @@ export interface RegisterRequest {
   password: string;
 }
 
+export interface VerifyEmailRequest {
+  token: string;
+}
+
 export interface ChangePasswordRequest {
   current_password: string;
   new_password: string;
