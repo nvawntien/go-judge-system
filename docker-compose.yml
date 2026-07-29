@@ -12,11 +12,31 @@ x-healthcheck-defaults: &healthcheck-defaults
   start_period: 15s
 
 services:
+  nginx:
+    container_name: judge_nginx
+    image: nginx:1.27.4-alpine
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      gateway:
+        condition: service_started
+      submission-service:
+        condition: service_healthy
+    networks:
+      - judge_internal
+    logging: *default-logging
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: [ "CMD-SHELL", "wget -qO- http://127.0.0.1:8080/nginx-health | grep -qx ok" ]
+
   gateway:
     container_name: judge_gateway
     image: devopsfaith/krakend:2.6.0
-    ports:
-      - "8080:8080"
+    expose:
+      - "8080"
     volumes:
       - ./gateway/krakend.tmpl:/etc/krakend/krakend.tmpl:ro
       - ./gateway/settings:/etc/krakend/settings:ro
