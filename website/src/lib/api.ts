@@ -17,6 +17,7 @@ import type {
   RunResponse,
   Submission,
   UpdateProfileRequest,
+  VerifyEmailRequest,
 } from './types';
 
 export const API_BASE_URL = (
@@ -192,13 +193,14 @@ export const authApi = {
   changePassword: (body: ChangePasswordRequest) =>
     apiRequest<void>('/api/v1/auth/password/change', { method: 'PUT', body }),
 
-  verifyEmail: (token: string) =>
-    apiRequest<void>('/api/v1/auth/email/verify', { method: 'POST', body: { token }, noRetry: true }),
+  verifyEmail: (body: VerifyEmailRequest, signal?: AbortSignal) =>
+    apiRequest<void>('/api/v1/auth/email/verify', { method: 'POST', body, signal, noRetry: true }),
 
-  resendVerification: (email: string) =>
+  resendVerification: (email: string, signal?: AbortSignal) =>
     apiRequest<void>('/api/v1/auth/email/resend-verification', {
       method: 'POST',
       body: { email },
+      signal,
       noRetry: true,
     }),
 };

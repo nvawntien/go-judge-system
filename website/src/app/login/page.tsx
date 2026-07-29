@@ -72,6 +72,8 @@ function AuthCard() {
   const [showPw, setShowPw] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+  const [registeredEmail, setRegisteredEmail] = useState('');
+  const [resendBusy, setResendBusy] = useState(false);
 
   // Already signed in — nothing to do on this screen.
   useEffect(() => {
@@ -115,6 +117,7 @@ function AuthCard() {
           password,
         });
         showToast('Account created — check your email to verify it', 'success');
+        setRegisteredEmail(email.trim());
         setMode('login');
         setIdentifier(email.trim());
         setPassword('');
@@ -140,6 +143,26 @@ function AuthCard() {
       }
     } finally {
       setBusy(false);
+    }
+  };
+
+  const resendRegisteredVerification = async () => {
+    if (!registeredEmail || resendBusy) return;
+
+    setResendBusy(true);
+    try {
+      await authApi.resendVerification(registeredEmail);
+      showToast('If that account still needs verification, a new link is on its way', 'success');
+    } catch (err) {
+      if (err instanceof NetworkError) {
+        showToast('Cannot reach the API gateway — is it running on :8080?', 'error');
+      } else if (err instanceof ApiError && err.httpStatus === 429) {
+        showToast('Please wait a moment before requesting another link', 'error');
+      } else {
+        showToast('Could not send another verification link right now', 'error');
+      }
+    } finally {
+      setResendBusy(false);
     }
   };
 
@@ -238,6 +261,7 @@ function AuthCard() {
               onClick={() => {
                 setMode('register');
                 setErrors({});
+                setRegisteredEmail('');
               }}
               style={tabStyle(mode === 'register')}
             >
@@ -255,6 +279,46 @@ function AuthCard() {
               </h1>
               <p style={{ margin: 0, fontSize: 12.5, color: 'var(--text3)' }}>{copy.sub}</p>
             </div>
+
+            {mode === 'login' && registeredEmail && (
+              <div
+                role="status"
+                style={{
+                  border: '1px solid var(--success)',
+                  background: 'var(--success-bg)',
+                  color: 'var(--success)',
+                  borderRadius: 10,
+                  padding: '11px 12px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 8,
+                  fontSize: 12.5,
+                  lineHeight: 1.45,
+                }}
+              >
+                <span>
+                  Account created. Check your inbox and spam folder, then open the verification link before signing in.
+                </span>
+                <button
+                  type="button"
+                  onClick={resendRegisteredVerification}
+                  disabled={resendBusy}
+                  style={{
+                    alignSelf: 'flex-start',
+                    border: 'none',
+                    background: 'none',
+                    padding: 0,
+                    color: 'inherit',
+                    fontSize: 12.5,
+                    fontWeight: 650,
+                    cursor: resendBusy ? 'progress' : 'pointer',
+                    textDecoration: 'underline',
+                  }}
+                >
+                  {resendBusy ? 'Sending…' : 'Resend verification email'}
+                </button>
+              </div>
+            )}
 
             {mode === 'login' && (
               <label style={labelStyle()}>
