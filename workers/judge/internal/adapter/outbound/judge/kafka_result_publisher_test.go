@@ -14,34 +14,79 @@ import (
 	"go.uber.org/zap"
 )
 
-type captureSyncProducer struct {
+type resultSyncProducer struct {
 	message *sarama.ProducerMessage
 }
 
-func (p *captureSyncProducer) SendMessage(msg *sarama.ProducerMessage) (int32, int64, error) {
-	p.message = msg
-	return 1, 42, nil
+func (p *resultSyncProducer) SendMessage(message *sarama.ProducerMessage) (int32, int64, error) {
+	p.message = message
+	return 0, 12, nil
+}
+func (*resultSyncProducer) SendMessages([]*sarama.ProducerMessage) error { return nil }
+func (*resultSyncProducer) Close() error                                 { return nil }
+func (*resultSyncProducer) TxnStatus() sarama.ProducerTxnStatusFlag      { return 0 }
+func (*resultSyncProducer) IsTransactional() bool                        { return false }
+func (*resultSyncProducer) BeginTxn() error                              { return nil }
+func (*resultSyncProducer) CommitTxn() error                             { return nil }
+func (*resultSyncProducer) AbortTxn() error                              { return nil }
+func (*resultSyncProducer) AddOffsetsToTxn(map[string][]*sarama.PartitionOffsetMetadata, string) error {
+	return nil
+}
+func (*resultSyncProducer) AddMessageToTxn(*sarama.ConsumerMessage, string, *string) error {
+	return nil
 }
 
-func (p *captureSyncProducer) SendMessages(_ []*sarama.ProducerMessage) error { return nil }
-func (p *captureSyncProducer) Close() error                                   { return nil }
-func (p *captureSyncProducer) TxnStatus() sarama.ProducerTxnStatusFlag {
-	return sarama.ProducerTxnFlagReady
-}
-func (p *captureSyncProducer) IsTransactional() bool { return false }
-func (p *captureSyncProducer) BeginTxn() error       { return nil }
-func (p *captureSyncProducer) CommitTxn() error      { return nil }
-func (p *captureSyncProducer) AbortTxn() error       { return nil }
-func (p *captureSyncProducer) AddOffsetsToTxn(_ map[string][]*sarama.PartitionOffsetMetadata, _ string) error {
-	return nil
-}
-func (p *captureSyncProducer) AddMessageToTxn(_ *sarama.ConsumerMessage, _ string, _ *string) error {
-	return nil
+func TestKafkaResultPublisherIncludesSanitizedErrorMessageAndAttemptID(t *testing.T) {
+	producer := &resultSyncProducer{}
+	publisher := NewKafkaResultPublisher(
+		producer,
+		config.KafkaConfig{ResultTopic: "judge.submission.results"},
+		zap.NewNop(),
+	)
+
+	errMsg := "panic: runtime error: index out of range"
+	err := publisher.PublishResult(context.Background(), 77, "attempt-77", &outbound.ExecutionResult{
+		Status:       "RUNTIME_ERROR",
+		ErrorMessage: &errMsg,
+		TestCases: []outbound.TestCaseResult{{
+			Index:  1,
+			Status: "RUNTIME_ERROR",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("PublishResult() error = %v", err)
+	}
+	if producer.message == nil {
+		t.Fatal("producer message = nil")
+	}
+
+	value, err := producer.message.Value.Encode()
+	if err != nil {
+		t.Fatalf("encode message value: %v", err)
+	}
+	var payload pkgjudge.ResultMessage
+	if err := json.Unmarshal(value, &payload); err != nil {
+		t.Fatalf("decode result payload: %v", err)
+	}
+
+	if payload.SubmissionID != 77 || payload.AttemptID != "attempt-77" || payload.Status != "RUNTIME_ERROR" {
+		t.Fatalf("payload identity/status = %+v", payload)
+	}
+	if payload.ErrorMessage == nil || *payload.ErrorMessage != errMsg {
+		t.Fatalf("payload error_message = %v, want %q", payload.ErrorMessage, errMsg)
+	}
+	if len(payload.TestCases) != 1 || payload.TestCases[0].Input != nil || payload.TestCases[0].ExpectedOutput != nil || payload.TestCases[0].ActualOutput != nil {
+		t.Fatalf("payload testcase leaked hidden fields: %+v", payload.TestCases)
+	}
 }
 
 func TestPublishResultDoesNotIncludeHiddenTestcaseData(t *testing.T) {
-	producer := &captureSyncProducer{}
-	publisher := NewKafkaResultPublisher(producer, configWithResultTopic("judge.submission.results"), zap.NewNop())
+	producer := &resultSyncProducer{}
+	publisher := NewKafkaResultPublisher(
+		producer,
+		config.KafkaConfig{ResultTopic: "judge.submission.results"},
+		zap.NewNop(),
+	)
 	largeHidden := strings.Repeat("secret", 256*1024)
 
 	err := publisher.PublishResult(context.Background(), 77, "attempt-77", &outbound.ExecutionResult{
@@ -92,10 +137,6 @@ func TestPublishResultDoesNotIncludeHiddenTestcaseData(t *testing.T) {
 	if testcase.ActualOutput != nil || testcase.Input != nil || testcase.ExpectedOutput != nil {
 		t.Fatalf("hidden testcase data must be omitted: %+v", testcase)
 	}
-}
-
-func configWithResultTopic(topic string) config.KafkaConfig {
-	return config.KafkaConfig{ResultTopic: topic}
 }
 
 func stringPtr(s string) *string {

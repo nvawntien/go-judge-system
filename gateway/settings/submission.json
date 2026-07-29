@@ -47,7 +47,7 @@
     {
       "endpoint": "/api/v1/submissions/run",
       "method": "POST",
-      "timeout": "30s",
+      "timeout": "40s",
       "output_encoding": "no-op",
       "input_headers": [
         "*"

@@ -178,6 +178,7 @@ type RunCodeResponse struct {
 	Status        string                 `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
 	CompileOutput string                 `protobuf:"bytes,2,opt,name=compile_output,json=compileOutput,proto3" json:"compile_output,omitempty"`
 	Tests         []*RunTestCaseResult   `protobuf:"bytes,3,rep,name=tests,proto3" json:"tests,omitempty"`
+	Diagnostics   []*CodeDiagnostic      `protobuf:"bytes,4,rep,name=diagnostics,proto3" json:"diagnostics,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -233,6 +234,13 @@ func (x *RunCodeResponse) GetTests() []*RunTestCaseResult {
 	return nil
 }
 
+func (x *RunCodeResponse) GetDiagnostics() []*CodeDiagnostic {
+	if x != nil {
+		return x.Diagnostics
+	}
+	return nil
+}
+
 type RunTestCaseResult struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	Id              string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -243,6 +251,7 @@ type RunTestCaseResult struct {
 	ExpectedOutput  *string                `protobuf:"bytes,6,opt,name=expected_output,json=expectedOutput,proto3,oneof" json:"expected_output,omitempty"`
 	ExecutionTimeMs int64                  `protobuf:"varint,7,opt,name=execution_time_ms,json=executionTimeMs,proto3" json:"execution_time_ms,omitempty"`
 	MemoryUsedKb    int64                  `protobuf:"varint,8,opt,name=memory_used_kb,json=memoryUsedKb,proto3" json:"memory_used_kb,omitempty"`
+	Diagnostics     []*CodeDiagnostic      `protobuf:"bytes,9,rep,name=diagnostics,proto3" json:"diagnostics,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -333,6 +342,113 @@ func (x *RunTestCaseResult) GetMemoryUsedKb() int64 {
 	return 0
 }
 
+func (x *RunTestCaseResult) GetDiagnostics() []*CodeDiagnostic {
+	if x != nil {
+		return x.Diagnostics
+	}
+	return nil
+}
+
+type CodeDiagnostic struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Kind          string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
+	Severity      string                 `protobuf:"bytes,2,opt,name=severity,proto3" json:"severity,omitempty"`
+	Message       string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
+	Line          int32                  `protobuf:"varint,4,opt,name=line,proto3" json:"line,omitempty"`
+	Column        int32                  `protobuf:"varint,5,opt,name=column,proto3" json:"column,omitempty"`
+	EndLine       *int32                 `protobuf:"varint,6,opt,name=end_line,json=endLine,proto3,oneof" json:"end_line,omitempty"`
+	EndColumn     *int32                 `protobuf:"varint,7,opt,name=end_column,json=endColumn,proto3,oneof" json:"end_column,omitempty"`
+	TestcaseId    *string                `protobuf:"bytes,8,opt,name=testcase_id,json=testcaseId,proto3,oneof" json:"testcase_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CodeDiagnostic) Reset() {
+	*x = CodeDiagnostic{}
+	mi := &file_proto_judge_v1_run_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CodeDiagnostic) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CodeDiagnostic) ProtoMessage() {}
+
+func (x *CodeDiagnostic) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_judge_v1_run_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CodeDiagnostic.ProtoReflect.Descriptor instead.
+func (*CodeDiagnostic) Descriptor() ([]byte, []int) {
+	return file_proto_judge_v1_run_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *CodeDiagnostic) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *CodeDiagnostic) GetSeverity() string {
+	if x != nil {
+		return x.Severity
+	}
+	return ""
+}
+
+func (x *CodeDiagnostic) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *CodeDiagnostic) GetLine() int32 {
+	if x != nil {
+		return x.Line
+	}
+	return 0
+}
+
+func (x *CodeDiagnostic) GetColumn() int32 {
+	if x != nil {
+		return x.Column
+	}
+	return 0
+}
+
+func (x *CodeDiagnostic) GetEndLine() int32 {
+	if x != nil && x.EndLine != nil {
+		return *x.EndLine
+	}
+	return 0
+}
+
+func (x *CodeDiagnostic) GetEndColumn() int32 {
+	if x != nil && x.EndColumn != nil {
+		return *x.EndColumn
+	}
+	return 0
+}
+
+func (x *CodeDiagnostic) GetTestcaseId() string {
+	if x != nil && x.TestcaseId != nil {
+		return *x.TestcaseId
+	}
+	return ""
+}
+
 var File_proto_judge_v1_run_proto protoreflect.FileDescriptor
 
 const file_proto_judge_v1_run_proto_rawDesc = "" +
@@ -351,11 +467,12 @@ const file_proto_judge_v1_run_proto_rawDesc = "" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x14\n" +
 	"\x05stdin\x18\x03 \x01(\tR\x05stdin\x12,\n" +
 	"\x0fexpected_output\x18\x04 \x01(\tH\x00R\x0eexpectedOutput\x88\x01\x01B\x12\n" +
-	"\x10_expected_output\"\x83\x01\n" +
+	"\x10_expected_output\"\xbf\x01\n" +
 	"\x0fRunCodeResponse\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12%\n" +
 	"\x0ecompile_output\x18\x02 \x01(\tR\rcompileOutput\x121\n" +
-	"\x05tests\x18\x03 \x03(\v2\x1b.judge.v1.RunTestCaseResultR\x05tests\"\x93\x02\n" +
+	"\x05tests\x18\x03 \x03(\v2\x1b.judge.v1.RunTestCaseResultR\x05tests\x12:\n" +
+	"\vdiagnostics\x18\x04 \x03(\v2\x18.judge.v1.CodeDiagnosticR\vdiagnostics\"\xcf\x02\n" +
 	"\x11RunTestCaseResult\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x16\n" +
@@ -364,8 +481,23 @@ const file_proto_judge_v1_run_proto_rawDesc = "" +
 	"\x06stderr\x18\x05 \x01(\tR\x06stderr\x12,\n" +
 	"\x0fexpected_output\x18\x06 \x01(\tH\x00R\x0eexpectedOutput\x88\x01\x01\x12*\n" +
 	"\x11execution_time_ms\x18\a \x01(\x03R\x0fexecutionTimeMs\x12$\n" +
-	"\x0ememory_used_kb\x18\b \x01(\x03R\fmemoryUsedKbB\x12\n" +
-	"\x10_expected_output2N\n" +
+	"\x0ememory_used_kb\x18\b \x01(\x03R\fmemoryUsedKb\x12:\n" +
+	"\vdiagnostics\x18\t \x03(\v2\x18.judge.v1.CodeDiagnosticR\vdiagnosticsB\x12\n" +
+	"\x10_expected_output\"\x9c\x02\n" +
+	"\x0eCodeDiagnostic\x12\x12\n" +
+	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x1a\n" +
+	"\bseverity\x18\x02 \x01(\tR\bseverity\x12\x18\n" +
+	"\amessage\x18\x03 \x01(\tR\amessage\x12\x12\n" +
+	"\x04line\x18\x04 \x01(\x05R\x04line\x12\x16\n" +
+	"\x06column\x18\x05 \x01(\x05R\x06column\x12\x1e\n" +
+	"\bend_line\x18\x06 \x01(\x05H\x00R\aendLine\x88\x01\x01\x12\"\n" +
+	"\n" +
+	"end_column\x18\a \x01(\x05H\x01R\tendColumn\x88\x01\x01\x12$\n" +
+	"\vtestcase_id\x18\b \x01(\tH\x02R\n" +
+	"testcaseId\x88\x01\x01B\v\n" +
+	"\t_end_lineB\r\n" +
+	"\v_end_columnB\x0e\n" +
+	"\f_testcase_id2N\n" +
 	"\fJudgeService\x12>\n" +
 	"\aRunCode\x12\x18.judge.v1.RunCodeRequest\x1a\x19.judge.v1.RunCodeResponseB)Z'go-judge-system/pkg/pb/judge/v1;judgev1b\x06proto3"
 
@@ -381,23 +513,26 @@ func file_proto_judge_v1_run_proto_rawDescGZIP() []byte {
 	return file_proto_judge_v1_run_proto_rawDescData
 }
 
-var file_proto_judge_v1_run_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_proto_judge_v1_run_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_proto_judge_v1_run_proto_goTypes = []any{
 	(*RunCodeRequest)(nil),    // 0: judge.v1.RunCodeRequest
 	(*RunTestCaseInput)(nil),  // 1: judge.v1.RunTestCaseInput
 	(*RunCodeResponse)(nil),   // 2: judge.v1.RunCodeResponse
 	(*RunTestCaseResult)(nil), // 3: judge.v1.RunTestCaseResult
+	(*CodeDiagnostic)(nil),    // 4: judge.v1.CodeDiagnostic
 }
 var file_proto_judge_v1_run_proto_depIdxs = []int32{
 	1, // 0: judge.v1.RunCodeRequest.testcases:type_name -> judge.v1.RunTestCaseInput
 	3, // 1: judge.v1.RunCodeResponse.tests:type_name -> judge.v1.RunTestCaseResult
-	0, // 2: judge.v1.JudgeService.RunCode:input_type -> judge.v1.RunCodeRequest
-	2, // 3: judge.v1.JudgeService.RunCode:output_type -> judge.v1.RunCodeResponse
-	3, // [3:4] is the sub-list for method output_type
-	2, // [2:3] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	4, // 2: judge.v1.RunCodeResponse.diagnostics:type_name -> judge.v1.CodeDiagnostic
+	4, // 3: judge.v1.RunTestCaseResult.diagnostics:type_name -> judge.v1.CodeDiagnostic
+	0, // 4: judge.v1.JudgeService.RunCode:input_type -> judge.v1.RunCodeRequest
+	2, // 5: judge.v1.JudgeService.RunCode:output_type -> judge.v1.RunCodeResponse
+	5, // [5:6] is the sub-list for method output_type
+	4, // [4:5] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_proto_judge_v1_run_proto_init() }
@@ -407,13 +542,14 @@ func file_proto_judge_v1_run_proto_init() {
 	}
 	file_proto_judge_v1_run_proto_msgTypes[1].OneofWrappers = []any{}
 	file_proto_judge_v1_run_proto_msgTypes[3].OneofWrappers = []any{}
+	file_proto_judge_v1_run_proto_msgTypes[4].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_judge_v1_run_proto_rawDesc), len(file_proto_judge_v1_run_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

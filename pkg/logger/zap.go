@@ -3,6 +3,7 @@ package logger
 import (
 	"go-judge-system/pkg/config"
 	"os"
+	"strings"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -10,14 +11,6 @@ import (
 )
 
 func NewLogger(cfg config.LoggerConfig, mode string) *zap.Logger {
-	fileWriter := zapcore.AddSync(&lumberjack.Logger{
-		Filename:   cfg.Filename,
-		MaxSize:    cfg.MaxSize,
-		MaxBackups: cfg.MaxBackups,
-		MaxAge:     cfg.MaxAge,
-		Compress:   cfg.Compress,
-	})
-
 	consoleWriter := zapcore.Lock(os.Stdout)
 
 	encodeConfig := zap.NewProductionEncoderConfig()
@@ -36,10 +29,19 @@ func NewLogger(cfg config.LoggerConfig, mode string) *zap.Logger {
 		level = zap.DebugLevel
 	}
 
-	core := zapcore.NewTee(
-		zapcore.NewCore(encoder, fileWriter, level),
+	cores := []zapcore.Core{
 		zapcore.NewCore(encoder, consoleWriter, level),
-	)
+	}
+	if strings.TrimSpace(cfg.Filename) != "" {
+		fileWriter := zapcore.AddSync(&lumberjack.Logger{
+			Filename:   cfg.Filename,
+			MaxSize:    cfg.MaxSize,
+			MaxBackups: cfg.MaxBackups,
+			MaxAge:     cfg.MaxAge,
+			Compress:   cfg.Compress,
+		})
+		cores = append(cores, zapcore.NewCore(encoder, fileWriter, level))
+	}
 
-	return zap.New(core, zap.AddCaller())
+	return zap.New(zapcore.NewTee(cores...), zap.AddCaller())
 }

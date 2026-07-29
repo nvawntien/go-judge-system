@@ -12,7 +12,7 @@ server:
 
 logger:
   level: debug
-  filename: /app/logs/auth.log
+  filename: ""
   max_size: 10
   max_backups: 5
   max_age: 30

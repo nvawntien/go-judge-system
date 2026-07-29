@@ -16,6 +16,7 @@ import (
 	"go-judge-system/workers/judge/internal/adapter/outbound/execute"
 	"go-judge-system/workers/judge/internal/adapter/outbound/judge"
 	"go-judge-system/workers/judge/internal/adapter/outbound/problem"
+	"go-judge-system/workers/judge/internal/adapter/outbound/testcase"
 	"go-judge-system/workers/judge/internal/application/port/inbound"
 	"go-judge-system/workers/judge/internal/application/port/outbound"
 	judgeuc "go-judge-system/workers/judge/internal/application/usecase/judge"
@@ -32,10 +33,6 @@ var InfrastructureProviderSet = wire.NewSet(
 	logger.NewLogger,
 	kafka.NewSyncProducer,
 	kafka.NewConsumerGroup,
-	ProvideProblemGRPCConfig,
-	ProvideProblemClientConn,
-	ProvideProblemServiceClient,
-	ProvideProblemGRPCTimeout,
 )
 
 var OutboundProviderSet = wire.NewSet(
@@ -43,8 +40,14 @@ var OutboundProviderSet = wire.NewSet(
 	wire.Bind(new(outbound.CodeExecutor), new(*execute.GoJudgeClient)),
 	judge.NewKafkaResultPublisher,
 	wire.Bind(new(outbound.ResultPublisher), new(*judge.KafkaResultPublisher)),
-	ProvideProblemClient,
-	wire.Bind(new(outbound.TestCaseFetcher), new(*problem.ProblemServiceClient)),
+	ProvideProblemGRPCConfig,
+	ProvideProblemClientConn,
+	ProvideProblemServiceClient,
+	ProvideProblemGRPCTimeout,
+	problem.NewGRPCMetadataReader,
+	wire.Bind(new(outbound.ProblemTestCaseMetadataReader), new(*problem.GRPCMetadataReader)),
+	testcase.NewOfficialLoader,
+	wire.Bind(new(outbound.OfficialTestCaseLoader), new(*testcase.OfficialLoader)),
 	ProvideSandboxServiceURL,
 )
 
@@ -76,10 +79,6 @@ func ProvideServiceName() string {
 	return "judge-worker"
 }
 
-type ProblemClientConn struct {
-	*googlegrpc.ClientConn
-}
-
 func ProvideProblemGRPCConfig(cfg *config.Config) (config.ProblemGRPCConfig, error) {
 	problemCfg := cfg.ProblemGRPC
 	problemCfg.Address = strings.TrimSpace(problemCfg.Address)
@@ -87,33 +86,28 @@ func ProvideProblemGRPCConfig(cfg *config.Config) (config.ProblemGRPCConfig, err
 		problemCfg.Address = "problem-service:9092"
 	}
 	if problemCfg.Timeout == 0 {
-		problemCfg.Timeout = time.Second
+		problemCfg.Timeout = 5 * time.Second
 	}
 	if problemCfg.Timeout < 0 {
 		return config.ProblemGRPCConfig{}, fmt.Errorf("problem gRPC timeout must be greater than zero")
 	}
-
 	return problemCfg, nil
 }
 
-func ProvideProblemClientConn(cfg config.ProblemGRPCConfig) (ProblemClientConn, error) {
+func ProvideProblemClientConn(cfg config.ProblemGRPCConfig) (*googlegrpc.ClientConn, error) {
 	conn, err := sharedgrpc.NewClientConn(cfg.Address, sharedgrpc.WithInsecureTransport())
 	if err != nil {
-		return ProblemClientConn{}, fmt.Errorf("create Problem Service gRPC connection: %w", err)
+		return nil, fmt.Errorf("create Problem Service gRPC connection: %w", err)
 	}
-	return ProblemClientConn{ClientConn: conn}, nil
+	return conn, nil
 }
 
-func ProvideProblemServiceClient(conn ProblemClientConn) problemv1.ProblemServiceClient {
-	return problemv1.NewProblemServiceClient(conn.ClientConn)
+func ProvideProblemServiceClient(conn *googlegrpc.ClientConn) problemv1.ProblemServiceClient {
+	return problemv1.NewProblemServiceClient(conn)
 }
 
 func ProvideProblemGRPCTimeout(cfg config.ProblemGRPCConfig) time.Duration {
 	return cfg.Timeout
-}
-
-func ProvideProblemClient(client problemv1.ProblemServiceClient, timeout time.Duration, logger *zap.Logger) *problem.ProblemServiceClient {
-	return problem.NewProblemServiceClient(client, timeout, logger)
 }
 
 type SandboxServiceURL string

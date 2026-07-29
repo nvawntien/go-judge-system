@@ -15,6 +15,7 @@ import (
 
 	"github.com/IBM/sarama"
 	"go.uber.org/zap"
+	googlegrpc "google.golang.org/grpc"
 )
 
 type App struct {
@@ -23,7 +24,7 @@ type App struct {
 	GRPC          *grpcin.Server
 	Logger        *zap.Logger
 	KafkaProducer sarama.SyncProducer
-	ProblemConn   ProblemClientConn
+	ProblemConn   *googlegrpc.ClientConn
 }
 
 func NewApp(
@@ -32,7 +33,7 @@ func NewApp(
 	grpcServer *grpcin.Server,
 	logger *zap.Logger,
 	producer sarama.SyncProducer,
-	problemConn ProblemClientConn,
+	problemConn *googlegrpc.ClientConn,
 ) *App {
 	return &App{
 		Config:        cfg,
@@ -128,11 +129,7 @@ func (a *App) Close() error {
 		}()
 	}
 
-	if a.GRPC != nil {
-		a.GRPC.Stop()
-	}
-
-	if a.ProblemConn.ClientConn != nil {
+	if a.ProblemConn != nil {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -141,6 +138,10 @@ func (a *App) Close() error {
 				closeErr = errors.Join(closeErr, err)
 			}
 		}()
+	}
+
+	if a.GRPC != nil {
+		a.GRPC.Stop()
 	}
 
 	if a.Logger != nil {

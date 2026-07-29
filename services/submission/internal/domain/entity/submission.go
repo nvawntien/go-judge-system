@@ -67,6 +67,7 @@ type Submission struct {
 	ExecutionTime    *int
 	MemoryUsed       *int
 	CompileOutput    *string
+	ErrorMessage     *string
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 }
@@ -101,11 +102,12 @@ func (s *Submission) MarkJudging() {
 	s.UpdatedAt = time.Now()
 }
 
-func (s *Submission) MarkCompleted(status Status, timeUsed, memoryUsed *int, compileOutput *string) {
+func (s *Submission) MarkCompleted(status Status, timeUsed, memoryUsed *int, compileOutput *string, errorMessage *string) {
 	s.Status = status
 	s.ExecutionTime = timeUsed
 	s.MemoryUsed = memoryUsed
 	s.CompileOutput = compileOutput
+	s.ErrorMessage = errorMessage
 	s.UpdatedAt = time.Now()
 }
 
@@ -114,5 +116,6 @@ func (s *Submission) ResetForRejudge() {
 	s.ExecutionTime = nil
 	s.MemoryUsed = nil
 	s.CompileOutput = nil
+	s.ErrorMessage = nil
 	s.UpdatedAt = time.Now()
 }

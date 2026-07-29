@@ -49,6 +49,13 @@ func (r *fakeListAdminSubmissionsRepository) List(
 	return r.result, r.err
 }
 
+func (r *fakeListAdminSubmissionsRepository) ResultSummaries(
+	context.Context,
+	[]int64,
+) (map[int64]outbound.SubmissionResultSummary, error) {
+	return map[int64]outbound.SubmissionResultSummary{}, nil
+}
+
 func intPointer(value int) *int          { return &value }
 func int64Pointer(value int64) *int64    { return &value }
 func stringPointer(value string) *string { return &value }

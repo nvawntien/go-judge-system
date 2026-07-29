@@ -138,7 +138,7 @@ Current default runtime profile:
 - Service name: `problem-service`
 - Port: `8082`
 - Database: `problem_db`
-- Log file: `/app/logs/problem.log`
+- Docker logging: stdout/stderr via `docker compose logs`
 
 ---
 Built for the Go Judge System.

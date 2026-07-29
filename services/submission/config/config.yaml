@@ -9,7 +9,7 @@ server:
 
 logger:
   level: debug
-  filename: /app/logs/submission.log
+  filename: ""
   max_size: 10
   max_backups: 5
   max_age: 30

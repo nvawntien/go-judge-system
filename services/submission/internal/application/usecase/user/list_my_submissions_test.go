@@ -2,6 +2,7 @@ package user
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -16,10 +17,14 @@ import (
 
 type fakeListMySubmissionsRepository struct {
 	*fakeSubmissionRepository
-	result outbound.ListSubmissionsResult
-	err    error
-	filter outbound.ListSubmissionsFilter
-	calls  int
+	result       outbound.ListSubmissionsResult
+	err          error
+	summaryErr   error
+	summaries    map[int64]outbound.SubmissionResultSummary
+	filter       outbound.ListSubmissionsFilter
+	calls        int
+	summaryCalls int
+	summaryIDs   []int64
 }
 
 func newFakeListMySubmissionsRepository() *fakeListMySubmissionsRepository {
@@ -40,21 +45,43 @@ func (r *fakeListMySubmissionsRepository) List(
 	return r.result, r.err
 }
 
+func (r *fakeListMySubmissionsRepository) ResultSummaries(
+	ctx context.Context,
+	submissionIDs []int64,
+) (map[int64]outbound.SubmissionResultSummary, error) {
+	r.summaryCalls++
+	r.summaryIDs = append([]int64(nil), submissionIDs...)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if r.summaryErr != nil {
+		return nil, r.summaryErr
+	}
+	if r.summaries == nil {
+		return map[int64]outbound.SubmissionResultSummary{}, nil
+	}
+	return r.summaries, nil
+}
+
 func intPointer(value int) *int          { return &value }
 func int64Pointer(value int64) *int64    { return &value }
 func stringPointer(value string) *string { return &value }
 
 func listSubmissionFixture() *entity.Submission {
+	executionTime := 12
+	memoryUsed := 4300
 	return &entity.Submission{
-		ID:          123,
-		ProblemID:   42,
-		ProblemName: "Two Sum",
-		UserID:      "actor",
-		Username:    "actor-name",
-		Language:    entity.LanguageGo,
-		SourceCode:  "must not be exposed",
-		Status:      entity.StatusPending,
-		CreatedAt:   time.Date(2026, 7, 25, 13, 0, 0, 0, time.UTC),
+		ID:            123,
+		ProblemID:     42,
+		ProblemName:   "Two Sum",
+		UserID:        "actor",
+		Username:      "actor-name",
+		Language:      entity.LanguageGo,
+		SourceCode:    "must not be exposed",
+		Status:        entity.StatusAccepted,
+		ExecutionTime: &executionTime,
+		MemoryUsed:    &memoryUsed,
+		CreatedAt:     time.Date(2026, 7, 25, 13, 0, 0, 0, time.UTC),
 	}
 }
 
@@ -71,6 +98,9 @@ func TestListMySubmissionsSupportedRolesRemainOwnerScoped(t *testing.T) {
 				Items: []*entity.Submission{listSubmissionFixture()},
 				Total: 1,
 			}
+			repo.summaries = map[int64]outbound.SubmissionResultSummary{
+				123: {SubmissionID: 123, Passed: 20, Total: 20},
+			}
 
 			got, err := NewListMySubmissionsUseCase(repo).Execute(
 				context.Background(),
@@ -82,6 +112,9 @@ func TestListMySubmissionsSupportedRolesRemainOwnerScoped(t *testing.T) {
 			}
 			if repo.calls != 1 {
 				t.Fatalf("repository calls = %d, want 1", repo.calls)
+			}
+			if repo.summaryCalls != 1 || len(repo.summaryIDs) != 1 || repo.summaryIDs[0] != 123 {
+				t.Fatalf("summary calls/ids = %d/%v, want 1/[123]", repo.summaryCalls, repo.summaryIDs)
 			}
 			if repo.filter.UserID == nil || *repo.filter.UserID != "actor" {
 				t.Fatalf("repository UserID = %v, want authenticated actor", repo.filter.UserID)
@@ -95,6 +128,22 @@ func TestListMySubmissionsSupportedRolesRemainOwnerScoped(t *testing.T) {
 			if got.Items[0].ProblemTitle != "Two Sum" {
 				t.Fatalf("ProblemTitle = %q, want ProblemName snapshot", got.Items[0].ProblemTitle)
 			}
+			payload, err := json.Marshal(got.Items[0])
+			if err != nil {
+				t.Fatalf("marshal list item: %v", err)
+			}
+			if string(payload) == "" || json.Valid(payload) == false {
+				t.Fatalf("marshal list item produced invalid json: %s", payload)
+			}
+			if containsJSONField(payload, "source_code") {
+				t.Fatalf("list item leaked source_code field: %s", payload)
+			}
+			if got.Items[0].ExecutionTimeMS == nil || *got.Items[0].ExecutionTimeMS != 12 ||
+				got.Items[0].MemoryUsedKB == nil || *got.Items[0].MemoryUsedKB != 4300 ||
+				got.Items[0].PassedTestCases == nil || *got.Items[0].PassedTestCases != 20 ||
+				got.Items[0].TotalTestCases == nil || *got.Items[0].TotalTestCases != 20 {
+				t.Fatalf("metadata = %+v, want runtime/memory/pass counts", got.Items[0])
+			}
 			if got.Pagination != (dto.PaginationResponse{
 				Page:       1,
 				Limit:      20,
@@ -105,6 +154,15 @@ func TestListMySubmissionsSupportedRolesRemainOwnerScoped(t *testing.T) {
 			}
 		})
 	}
+}
+
+func containsJSONField(payload []byte, field string) bool {
+	var decoded map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		return false
+	}
+	_, ok := decoded[field]
+	return ok
 }
 
 func TestListMySubmissionsFiltersAndPagination(t *testing.T) {
@@ -248,6 +306,25 @@ func TestListMySubmissionsRepositoryFailureIsMappedSafely(t *testing.T) {
 	)
 	if !errors.Is(err, domain.ErrInternalServer) || !errors.Is(err, databaseErr) {
 		t.Fatalf("Execute() error = %v, want safely wrapped repository error", err)
+	}
+}
+
+func TestListMySubmissionsSummaryFailureIsMappedSafely(t *testing.T) {
+	databaseErr := errors.New("summary unavailable")
+	repo := newFakeListMySubmissionsRepository()
+	repo.result = outbound.ListSubmissionsResult{
+		Items: []*entity.Submission{listSubmissionFixture()},
+		Total: 1,
+	}
+	repo.summaryErr = databaseErr
+
+	_, err := NewListMySubmissionsUseCase(repo).Execute(
+		context.Background(),
+		auth.Claims{UserID: "actor", Role: rbac.RoleUser},
+		dto.ListMySubmissionsRequest{},
+	)
+	if !errors.Is(err, domain.ErrInternalServer) || !errors.Is(err, databaseErr) {
+		t.Fatalf("Execute() error = %v, want safely wrapped summary error", err)
 	}
 }
 
