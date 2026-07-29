@@ -189,7 +189,7 @@ func (c *GoJudgeClient) Execute(ctx context.Context, language, sourceCode string
 
 		// Early termination: if any test in this batch failed, stop immediately
 		for _, res := range runResp {
-			status := mapJudgeStatus(res.Status, res.ExitStatus)
+			status := mapSubmissionJudgeStatus(res.Status, res.ExitStatus)
 			if status != "ACCEPTED" {
 				c.logger.Info("early termination: non-ACCEPTED result detected, skipping remaining batches",
 					zap.Int("tests_run", len(allResponses)),
@@ -414,7 +414,7 @@ func (c *GoJudgeClient) parseJudgeResult(responses gojudge.Response, bundle *out
 	for i, res := range responses {
 		testIndex := i + 1
 
-		status := mapJudgeStatus(res.Status, res.ExitStatus)
+		status := mapSubmissionJudgeStatus(res.Status, res.ExitStatus)
 		if status != "ACCEPTED" && firstFailIndex == -1 {
 			allAccepted = false
 			firstFailIndex = i
@@ -561,6 +561,14 @@ func mapJudgeStatus(status string, exitStatus int) string {
 	default:
 		return "SYSTEM_ERROR"
 	}
+}
+
+func mapSubmissionJudgeStatus(status string, exitStatus int) string {
+	mapped := mapJudgeStatus(status, exitStatus)
+	if mapped == "OUTPUT_LIMIT_EXCEEDED" {
+		return "WRONG_ANSWER"
+	}
+	return mapped
 }
 
 func mapRunStatus(status string, exitStatus int) string {

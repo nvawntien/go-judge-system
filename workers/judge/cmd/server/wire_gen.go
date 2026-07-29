@@ -36,9 +36,18 @@ func InitializeApp(cfg *config.Config) (*container.App, func(), error) {
 		return nil, nil, err
 	}
 	kafkaResultPublisher := judge.NewKafkaResultPublisher(syncProducer, kafkaConfig, zapLogger)
-	problemServiceURL := container.ProvideProblemServiceURL()
-	problemServiceClient := container.ProvideProblemClient(problemServiceURL, zapLogger)
-	processJudgeJobUseCase := judge2.NewProcessJudgeJobUseCase(goJudgeClient, kafkaResultPublisher, problemServiceClient, zapLogger)
+	problemGRPCConfig, err := container.ProvideProblemGRPCConfig(cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	problemClientConn, err := container.ProvideProblemClientConn(problemGRPCConfig)
+	if err != nil {
+		return nil, nil, err
+	}
+	problemServiceClient := container.ProvideProblemServiceClient(problemClientConn)
+	duration := container.ProvideProblemGRPCTimeout(problemGRPCConfig)
+	problemProblemServiceClient := container.ProvideProblemClient(problemServiceClient, duration, zapLogger)
+	processJudgeJobUseCase := judge2.NewProcessJudgeJobUseCase(goJudgeClient, kafkaResultPublisher, problemProblemServiceClient, zapLogger)
 	dltPublisher := kafka2.NewDLTPublisher(syncProducer, kafkaConfig, zapLogger)
 	judgeJobConsumer := kafka2.NewJudgeJobConsumer(consumerGroup, kafkaConfig, processJudgeJobUseCase, dltPublisher, zapLogger)
 	serverConfig := cfg.Server
@@ -46,7 +55,7 @@ func InitializeApp(cfg *config.Config) (*container.App, func(), error) {
 	runCodeHandler := handler.NewRunCodeHandler(runCodeUseCase)
 	judgeServer := grpc.NewJudgeServer(runCodeHandler)
 	server := grpc.NewServer(serverConfig, judgeServer)
-	app := container.NewApp(cfg, judgeJobConsumer, server, zapLogger, syncProducer)
+	app := container.NewApp(cfg, judgeJobConsumer, server, zapLogger, syncProducer, problemClientConn)
 	return app, func() {
 	}, nil
 }

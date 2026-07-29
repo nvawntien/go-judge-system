@@ -1,9 +1,15 @@
 package container
 
 import (
+	"fmt"
+	"strings"
+	"time"
+
 	"go-judge-system/pkg/config"
+	sharedgrpc "go-judge-system/pkg/grpc"
 	"go-judge-system/pkg/kafka"
 	"go-judge-system/pkg/logger"
+	problemv1 "go-judge-system/pkg/pb/problem/v1"
 	grpcin "go-judge-system/workers/judge/internal/adapter/inbound/grpc"
 	grpchandler "go-judge-system/workers/judge/internal/adapter/inbound/grpc/handler"
 	kafkain "go-judge-system/workers/judge/internal/adapter/inbound/kafka"
@@ -16,6 +22,7 @@ import (
 
 	"github.com/google/wire"
 	"go.uber.org/zap"
+	googlegrpc "google.golang.org/grpc"
 )
 
 var InfrastructureProviderSet = wire.NewSet(
@@ -25,6 +32,10 @@ var InfrastructureProviderSet = wire.NewSet(
 	logger.NewLogger,
 	kafka.NewSyncProducer,
 	kafka.NewConsumerGroup,
+	ProvideProblemGRPCConfig,
+	ProvideProblemClientConn,
+	ProvideProblemServiceClient,
+	ProvideProblemGRPCTimeout,
 )
 
 var OutboundProviderSet = wire.NewSet(
@@ -34,7 +45,6 @@ var OutboundProviderSet = wire.NewSet(
 	wire.Bind(new(outbound.ResultPublisher), new(*judge.KafkaResultPublisher)),
 	ProvideProblemClient,
 	wire.Bind(new(outbound.TestCaseFetcher), new(*problem.ProblemServiceClient)),
-	ProvideProblemServiceURL,
 	ProvideSandboxServiceURL,
 )
 
@@ -66,17 +76,44 @@ func ProvideServiceName() string {
 	return "judge-worker"
 }
 
-// ProblemServiceURL is a custom type to prevent Wire injection conflicts with other strings
-type ProblemServiceURL string
-
-// ProvideProblemServiceURL provides the base URL for the problem service.
-// This assumes the problem service is reachable at this internal Docker DNS.
-func ProvideProblemServiceURL() ProblemServiceURL {
-	return "http://judge_problem:8082" // Note: the docker-compose defined problem service correctly
+type ProblemClientConn struct {
+	*googlegrpc.ClientConn
 }
 
-func ProvideProblemClient(url ProblemServiceURL, logger *zap.Logger) *problem.ProblemServiceClient {
-	return problem.NewProblemServiceClient(string(url), logger)
+func ProvideProblemGRPCConfig(cfg *config.Config) (config.ProblemGRPCConfig, error) {
+	problemCfg := cfg.ProblemGRPC
+	problemCfg.Address = strings.TrimSpace(problemCfg.Address)
+	if problemCfg.Address == "" {
+		problemCfg.Address = "problem-service:9092"
+	}
+	if problemCfg.Timeout == 0 {
+		problemCfg.Timeout = time.Second
+	}
+	if problemCfg.Timeout < 0 {
+		return config.ProblemGRPCConfig{}, fmt.Errorf("problem gRPC timeout must be greater than zero")
+	}
+
+	return problemCfg, nil
+}
+
+func ProvideProblemClientConn(cfg config.ProblemGRPCConfig) (ProblemClientConn, error) {
+	conn, err := sharedgrpc.NewClientConn(cfg.Address, sharedgrpc.WithInsecureTransport())
+	if err != nil {
+		return ProblemClientConn{}, fmt.Errorf("create Problem Service gRPC connection: %w", err)
+	}
+	return ProblemClientConn{ClientConn: conn}, nil
+}
+
+func ProvideProblemServiceClient(conn ProblemClientConn) problemv1.ProblemServiceClient {
+	return problemv1.NewProblemServiceClient(conn.ClientConn)
+}
+
+func ProvideProblemGRPCTimeout(cfg config.ProblemGRPCConfig) time.Duration {
+	return cfg.Timeout
+}
+
+func ProvideProblemClient(client problemv1.ProblemServiceClient, timeout time.Duration, logger *zap.Logger) *problem.ProblemServiceClient {
+	return problem.NewProblemServiceClient(client, timeout, logger)
 }
 
 type SandboxServiceURL string

@@ -81,3 +81,12 @@ func TestRunCodeCompileErrorReturnsNoTests(t *testing.T) {
 		t.Fatalf("result = %#v, want compile_error with no tests", res)
 	}
 }
+
+func TestSubmissionOutputLimitMapsToWrongAnswerWithoutChangingRunCodeContract(t *testing.T) {
+	if got := mapSubmissionJudgeStatus("Output Limit Exceeded", 0); got != "WRONG_ANSWER" {
+		t.Fatalf("submission status = %q, want WRONG_ANSWER", got)
+	}
+	if got := mapRunStatus("Output Limit Exceeded", 0); got != "output_limit_exceeded" {
+		t.Fatalf("run status = %q, want output_limit_exceeded", got)
+	}
+}

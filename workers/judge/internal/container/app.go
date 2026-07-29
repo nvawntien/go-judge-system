@@ -23,6 +23,7 @@ type App struct {
 	GRPC          *grpcin.Server
 	Logger        *zap.Logger
 	KafkaProducer sarama.SyncProducer
+	ProblemConn   ProblemClientConn
 }
 
 func NewApp(
@@ -31,6 +32,7 @@ func NewApp(
 	grpcServer *grpcin.Server,
 	logger *zap.Logger,
 	producer sarama.SyncProducer,
+	problemConn ProblemClientConn,
 ) *App {
 	return &App{
 		Config:        cfg,
@@ -38,6 +40,7 @@ func NewApp(
 		GRPC:          grpcServer,
 		Logger:        logger,
 		KafkaProducer: producer,
+		ProblemConn:   problemConn,
 	}
 }
 
@@ -127,6 +130,17 @@ func (a *App) Close() error {
 
 	if a.GRPC != nil {
 		a.GRPC.Stop()
+	}
+
+	if a.ProblemConn.ClientConn != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := a.ProblemConn.Close(); err != nil {
+				a.Logger.Error("failed to close problem gRPC connection", zap.Error(err))
+				closeErr = errors.Join(closeErr, err)
+			}
+		}()
 	}
 
 	if a.Logger != nil {

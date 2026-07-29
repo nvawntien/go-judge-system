@@ -5,15 +5,16 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
+	problemv1 "go-judge-system/pkg/pb/problem/v1"
 	"go-judge-system/workers/judge/internal/application/port/outbound"
 
 	"go.uber.org/zap"
@@ -21,37 +22,34 @@ import (
 
 const cacheBaseDir = "/cache/testcases"
 
-// ProblemServiceClient fetches test cases from Problem Service's internal API.
+// ProblemServiceClient fetches test case metadata from Problem Service gRPC.
 // Implements local disk cache with atomic rename to prevent cache stampede.
 type ProblemServiceClient struct {
 	httpClient *http.Client
-	baseURL    string
+	client     problemv1.ProblemServiceClient
+	timeout    time.Duration
 	logger     *zap.Logger
 }
 
-func NewProblemServiceClient(baseURL string, logger *zap.Logger) *ProblemServiceClient {
+func NewProblemServiceClient(client problemv1.ProblemServiceClient, timeout time.Duration, logger *zap.Logger) *ProblemServiceClient {
 	return &ProblemServiceClient{
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
-		baseURL: baseURL,
+		client:  client,
+		timeout: timeout,
 		logger:  logger,
 	}
 }
 
-// internalTestCaseResponse matches the Problem Service internal API response.
-type internalTestCaseResponse struct {
-	Code int `json:"code"`
-	Data struct {
-		ProblemID      int64  `json:"problem_id"`
-		TestCount      int    `json:"test_count"`
-		Version        string `json:"version"`
-		ZipDownloadURL string `json:"zip_download_url"`
-	} `json:"data"`
+type testCaseMetadata struct {
+	TestCount      int
+	Version        string
+	ZipDownloadURL string
 }
 
 func (c *ProblemServiceClient) FetchTestCases(ctx context.Context, problemID int64) (*outbound.TestCaseBundle, error) {
-	// 1. Call Problem Service internal API → get metadata + presigned URL
+	// 1. Call Problem Service gRPC → get metadata + presigned URL
 	meta, err := c.fetchMetadata(ctx, problemID)
 	if err != nil {
 		return nil, fmt.Errorf("fetch testcase metadata: %w", err)
@@ -62,24 +60,24 @@ func (c *ProblemServiceClient) FetchTestCases(ctx context.Context, problemID int
 	versionFile := filepath.Join(cacheDir, ".version")
 
 	cachedVersion, readErr := os.ReadFile(versionFile)
-	if readErr == nil && strings.TrimSpace(string(cachedVersion)) == meta.Data.Version {
+	if readErr == nil && strings.TrimSpace(string(cachedVersion)) == meta.Version {
 		// CACHE HIT — use files on disk, zero network I/O
 		c.logger.Debug("testcase cache hit",
 			zap.Int64("problem_id", problemID),
-			zap.String("version", meta.Data.Version),
+			zap.String("version", meta.Version),
 		)
-		return &outbound.TestCaseBundle{Dir: cacheDir, TestCount: meta.Data.TestCount}, nil
+		return &outbound.TestCaseBundle{Dir: cacheDir, TestCount: meta.TestCount}, nil
 	}
 
 	// 3. CACHE MISS — download ZIP from MinIO + atomic rename
 	c.logger.Info("testcase cache miss, downloading",
 		zap.Int64("problem_id", problemID),
-		zap.String("version", meta.Data.Version),
+		zap.String("version", meta.Version),
 	)
 
 	// 3a. Download ZIP stream → temp file (not in RAM)
-	zipPath := filepath.Join(os.TempDir(), fmt.Sprintf("tc_%d_%s_%s.zip", problemID, meta.Data.Version, randHex(6)))
-	if err := c.downloadToFile(ctx, meta.Data.ZipDownloadURL, zipPath); err != nil {
+	zipPath := filepath.Join(os.TempDir(), fmt.Sprintf("tc_%d_%s_%s.zip", problemID, meta.Version, randHex(6)))
+	if err := c.downloadToFile(ctx, meta.ZipDownloadURL, zipPath); err != nil {
 		return nil, fmt.Errorf("download zip: %w", err)
 	}
 	defer os.Remove(zipPath)
@@ -95,7 +93,7 @@ func (c *ProblemServiceClient) FetchTestCases(ctx context.Context, problemID int
 	}
 
 	// 3c. Write version file INTO temp directory
-	if err := os.WriteFile(filepath.Join(tmpDir, ".version"), []byte(meta.Data.Version), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, ".version"), []byte(meta.Version), 0644); err != nil {
 		os.RemoveAll(tmpDir)
 		return nil, fmt.Errorf("write version file: %w", err)
 	}
@@ -113,45 +111,53 @@ func (c *ProblemServiceClient) FetchTestCases(ctx context.Context, problemID int
 
 		// Verify winner's cache has correct version
 		winnerVersion, readErr := os.ReadFile(filepath.Join(cacheDir, ".version"))
-		if readErr != nil || strings.TrimSpace(string(winnerVersion)) != meta.Data.Version {
+		if readErr != nil || strings.TrimSpace(string(winnerVersion)) != meta.Version {
 			return nil, fmt.Errorf("cache race: winner has wrong version")
 		}
 	}
 
 	c.logger.Info("testcase cached successfully",
 		zap.Int64("problem_id", problemID),
-		zap.String("version", meta.Data.Version),
-		zap.Int("test_count", meta.Data.TestCount),
+		zap.String("version", meta.Version),
+		zap.Int("test_count", meta.TestCount),
 	)
 
-	return &outbound.TestCaseBundle{Dir: cacheDir, TestCount: meta.Data.TestCount}, nil
+	return &outbound.TestCaseBundle{Dir: cacheDir, TestCount: meta.TestCount}, nil
 }
 
-// fetchMetadata calls the Problem Service internal API.
-func (c *ProblemServiceClient) fetchMetadata(ctx context.Context, problemID int64) (*internalTestCaseResponse, error) {
-	url := fmt.Sprintf("%s/internal/v1/problems/%d/testcases", c.baseURL, problemID)
+// fetchMetadata calls the Problem Service gRPC worker API.
+func (c *ProblemServiceClient) fetchMetadata(ctx context.Context, problemID int64) (testCaseMetadata, error) {
+	callCtx := ctx
+	cancel := func() {}
+	if c.timeout > 0 {
+		callCtx, cancel = context.WithTimeout(ctx, c.timeout)
+	}
+	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	resp, err := c.client.GetTestCase(callCtx, &problemv1.GetTestCaseRequest{ProblemId: problemID})
 	if err != nil {
-		return nil, fmt.Errorf("build request: %w", err)
+		return testCaseMetadata{}, fmt.Errorf("call problem service gRPC: %w", err)
+	}
+	if resp == nil {
+		return testCaseMetadata{}, fmt.Errorf("problem service returned empty metadata for problem_id=%d", problemID)
 	}
 
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("call problem service: %w", err)
+	meta := testCaseMetadata{
+		TestCount:      int(resp.GetTestCount()),
+		Version:        strconv.Itoa(int(resp.GetVersion())),
+		ZipDownloadURL: strings.TrimSpace(resp.GetZipDownloadUrl()),
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("problem service returned status %d for problem_id=%d", resp.StatusCode, problemID)
+	if meta.TestCount <= 0 {
+		return testCaseMetadata{}, fmt.Errorf("problem service returned invalid test_count=%d for problem_id=%d", meta.TestCount, problemID)
+	}
+	if resp.GetVersion() <= 0 {
+		return testCaseMetadata{}, fmt.Errorf("problem service returned invalid version=%d for problem_id=%d", resp.GetVersion(), problemID)
+	}
+	if meta.ZipDownloadURL == "" {
+		return testCaseMetadata{}, fmt.Errorf("problem service returned empty zip download URL for problem_id=%d", problemID)
 	}
 
-	var apiResp internalTestCaseResponse
-	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
-		return nil, fmt.Errorf("decode response: %w", err)
-	}
-
-	return &apiResp, nil
+	return meta, nil
 }
 
 // downloadToFile streams a URL to a local file without loading into RAM.

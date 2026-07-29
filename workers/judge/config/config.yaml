@@ -23,6 +23,10 @@ judging:
   go_judge_url: ""
   max_concurrent_jobs: 4
 
+problem_grpc:
+  address: "problem-service:9092"
+  timeout: 1s
+
 run_code:
   max_captured_output_bytes: 1048576
   default_output_limit_bytes: 1048576

@@ -45,7 +45,7 @@ kafka:
   job_topic: "judge.submission.jobs"
   result_topic: "judge.submission.results"
   dlt_topic: "judge.submission.jobs.dlt"
-  consumer_group: "judge-worker-v1"
+  consumer_group: "submission-service-v1"
 
 problem_grpc:
   address: "problem-service:9092"
