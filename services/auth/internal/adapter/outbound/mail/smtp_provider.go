@@ -8,6 +8,9 @@ import (
 	"html/template"
 	"net"
 	"net/smtp"
+	"net/url"
+	"strconv"
+	"strings"
 	"time"
 
 	"go-judge-system/pkg/config"
@@ -43,7 +46,7 @@ const verificationTemplateHTML = `
 			<a href="{{.Link}}" class="btn">Xác thực tài khoản</a>
 			<p>Hoặc copy đường link sau vào trình duyệt:</p>
 			<p class="link">{{.Link}}</p>
-			<p>Link này sẽ hết hạn sau <strong>24 giờ</strong>. Nếu bạn không đăng ký tài khoản, hãy bỏ qua email này.</p>
+			<p>Link này sẽ hết hạn sau <strong>7 ngày</strong>. Nếu bạn không đăng ký tài khoản, hãy bỏ qua email này.</p>
 		</div>
 		<div class="footer">
 			<p>&copy; {{.Year}} Go-Judge System. All rights reserved.</p>
@@ -119,7 +122,11 @@ func NewSMTPProvider(smtpCfg config.SMTPConfig, appCfg config.AppConfig, logger 
 }
 
 func (s *smtpProvider) SendVerificationEmail(ctx context.Context, toEmail, token string) error {
-	link := fmt.Sprintf("%s/verify-email?token=%s", s.appCfg.FrontendURL, token)
+	link, err := s.frontendTokenURL("/verify-email", token, true)
+	if err != nil {
+		return err
+	}
+
 	data := struct {
 		Link string
 		Year int
@@ -137,7 +144,11 @@ func (s *smtpProvider) SendVerificationEmail(ctx context.Context, toEmail, token
 }
 
 func (s *smtpProvider) SendForgotPasswordEmail(ctx context.Context, toEmail, token string) error {
-	link := fmt.Sprintf("%s/reset-password?token=%s", s.appCfg.FrontendURL, token)
+	link, err := s.frontendTokenURL("/reset-password", token, false)
+	if err != nil {
+		return err
+	}
+
 	data := struct {
 		Link string
 		Year int
@@ -169,7 +180,7 @@ func (s *smtpProvider) sendMail(toEmail, subject string, htmlBody []byte) error 
 	msg.WriteString("\r\n")
 	msg.Write(htmlBody)
 
-	addr := fmt.Sprintf("%s:%d", s.smtpCfg.Host, s.smtpCfg.Port)
+	addr := net.JoinHostPort(s.smtpCfg.Host, strconv.Itoa(s.smtpCfg.Port))
 
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
@@ -216,4 +227,26 @@ func (s *smtpProvider) sendMail(toEmail, subject string, htmlBody []byte) error 
 	}
 
 	return client.Quit()
+}
+
+func (s *smtpProvider) frontendTokenURL(path string, token string, fragment bool) (string, error) {
+	base := strings.TrimRight(strings.TrimSpace(s.appCfg.FrontendURL), "/")
+	if base == "" {
+		return "", fmt.Errorf("frontend_url is required")
+	}
+
+	parsed, err := url.Parse(base)
+	if err != nil {
+		return "", fmt.Errorf("invalid frontend_url: %w", err)
+	}
+	if parsed.Scheme == "" || parsed.Host == "" {
+		return "", fmt.Errorf("frontend_url must include scheme and host")
+	}
+
+	canonicalPath := "/" + strings.TrimLeft(path, "/")
+	if fragment {
+		return base + canonicalPath + "#token=" + url.QueryEscape(token), nil
+	}
+
+	return base + canonicalPath + "?token=" + url.QueryEscape(token), nil
 }
