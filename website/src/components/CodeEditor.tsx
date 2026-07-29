@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { tokenizeLine } from '@/lib/highlight';
-import type { LanguageCode } from '@/lib/types';
+import { handleCodeEditorKeyDown } from '@/lib/codeEditorKeys';
+import type { CodeDiagnostic, LanguageCode } from '@/lib/types';
 
 interface CodeEditorProps {
   value: string;
@@ -13,6 +14,7 @@ interface CodeEditorProps {
   readOnly?: boolean;
   /** 1-based line to scroll to and highlight (compiler/runtime error jumps). */
   highlightLine?: number | null;
+  diagnostics?: CodeDiagnostic[];
 }
 
 /**
@@ -28,6 +30,7 @@ export function CodeEditor({
   tabSize,
   readOnly = false,
   highlightLine = null,
+  diagnostics = [],
 }: CodeEditorProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -38,6 +41,16 @@ export function CodeEditor({
     () => lines.map((line) => tokenizeLine(line, language)),
     [lines, language],
   );
+  const diagnosticsByLine = useMemo(() => {
+    const byLine = new Map<number, CodeDiagnostic[]>();
+    for (const diagnostic of diagnostics) {
+      if (!diagnostic.line || diagnostic.line < 1) continue;
+      const current = byLine.get(diagnostic.line) ?? [];
+      current.push(diagnostic);
+      byLine.set(diagnostic.line, current);
+    }
+    return byLine;
+  }, [diagnostics]);
 
   const syncCaret = useCallback(() => {
     const el = textareaRef.current;
@@ -61,18 +74,13 @@ export function CodeEditor({
   }, [highlightLine, lines, fontSize, syncCaret]);
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key !== 'Tab' || readOnly) return;
-    event.preventDefault();
-
-    const el = event.currentTarget;
-    const { selectionStart, selectionEnd } = el;
-    const indent = ' '.repeat(tabSize);
-    const next = `${value.slice(0, selectionStart)}${indent}${value.slice(selectionEnd)}`;
-    onChange(next);
-
-    requestAnimationFrame(() => {
-      el.selectionStart = el.selectionEnd = selectionStart + indent.length;
-      syncCaret();
+    if (readOnly) return;
+    handleCodeEditorKeyDown({
+      event,
+      value,
+      onChange,
+      tabSize,
+      syncCaret,
     });
   };
 
@@ -125,15 +133,51 @@ export function CodeEditor({
             }}
           >
             {lines.map((_, index) => (
-              <div
-                key={index}
-                style={{
-                  color: index + 1 === caret.line ? 'var(--accent-fg)' : 'var(--gutter)',
-                  fontWeight: index + 1 === caret.line ? 600 : 400,
-                }}
-              >
-                {index + 1}
-              </div>
+              (() => {
+                const lineNo = index + 1;
+                const lineDiagnostics = diagnosticsByLine.get(lineNo) ?? [];
+                const hasDiagnostic = lineDiagnostics.length > 0;
+                return (
+                  <div
+                    key={index}
+                    title={lineDiagnostics.map((item) => item.message).join('\n')}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'flex-end',
+                      gap: 5,
+                      color: hasDiagnostic
+                        ? 'var(--error)'
+                        : lineNo === caret.line
+                          ? 'var(--accent-fg)'
+                          : 'var(--gutter)',
+                      fontWeight: hasDiagnostic || lineNo === caret.line ? 600 : 400,
+                    }}
+                  >
+                    {hasDiagnostic && (
+                      <span
+                        role="img"
+                        aria-label="Error"
+                        style={{
+                          width: 12,
+                          height: 12,
+                          borderRadius: '50%',
+                          background: 'var(--error-bg)',
+                          color: 'var(--error)',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: 9,
+                          lineHeight: 1,
+                        }}
+                      >
+                        !
+                      </span>
+                    )}
+                    {lineNo}
+                  </div>
+                );
+              })()
             ))}
           </div>
 
@@ -142,8 +186,23 @@ export function CodeEditor({
               {highlighted.map((tokens, index) => (
                 <div
                   key={index}
+                  title={(diagnosticsByLine.get(index + 1) ?? []).map((item) => item.message).join('\n')}
                   style={{
-                    background: index + 1 === caret.line ? 'var(--code-line)' : 'transparent',
+                    background:
+                      (diagnosticsByLine.get(index + 1)?.length ?? 0) > 0
+                        ? 'color-mix(in srgb, var(--error-bg) 45%, transparent)'
+                        : index + 1 === caret.line
+                          ? 'var(--code-line)'
+                          : 'transparent',
+                    boxShadow:
+                      (diagnosticsByLine.get(index + 1)?.length ?? 0) > 0
+                        ? 'inset 3px 0 0 var(--error)'
+                        : 'none',
+                    textDecoration:
+                      (diagnosticsByLine.get(index + 1)?.length ?? 0) > 0
+                        ? 'underline wavy var(--error)'
+                        : 'none',
+                    textDecorationSkipInk: 'none',
                     minHeight: `${fontSize * lineHeight}px`,
                   }}
                 >

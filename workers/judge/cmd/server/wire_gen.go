@@ -14,6 +14,8 @@ import (
 	"go-judge-system/workers/judge/internal/adapter/inbound/grpc/handler"
 	kafka2 "go-judge-system/workers/judge/internal/adapter/inbound/kafka"
 	"go-judge-system/workers/judge/internal/adapter/outbound/judge"
+	"go-judge-system/workers/judge/internal/adapter/outbound/problem"
+	"go-judge-system/workers/judge/internal/adapter/outbound/testcase"
 	judge2 "go-judge-system/workers/judge/internal/application/usecase/judge"
 	"go-judge-system/workers/judge/internal/container"
 )
@@ -36,9 +38,19 @@ func InitializeApp(cfg *config.Config) (*container.App, func(), error) {
 		return nil, nil, err
 	}
 	kafkaResultPublisher := judge.NewKafkaResultPublisher(syncProducer, kafkaConfig, zapLogger)
-	problemServiceURL := container.ProvideProblemServiceURL()
-	problemServiceClient := container.ProvideProblemClient(problemServiceURL, zapLogger)
-	processJudgeJobUseCase := judge2.NewProcessJudgeJobUseCase(goJudgeClient, kafkaResultPublisher, problemServiceClient, zapLogger)
+	problemGRPCConfig, err := container.ProvideProblemGRPCConfig(cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	clientConn, err := container.ProvideProblemClientConn(problemGRPCConfig)
+	if err != nil {
+		return nil, nil, err
+	}
+	problemServiceClient := container.ProvideProblemServiceClient(clientConn)
+	duration := container.ProvideProblemGRPCTimeout(problemGRPCConfig)
+	grpcMetadataReader := problem.NewGRPCMetadataReader(problemServiceClient, duration, zapLogger)
+	officialLoader := testcase.NewOfficialLoader(zapLogger)
+	processJudgeJobUseCase := judge2.NewProcessJudgeJobUseCase(goJudgeClient, kafkaResultPublisher, grpcMetadataReader, officialLoader, zapLogger)
 	dltPublisher := kafka2.NewDLTPublisher(syncProducer, kafkaConfig, zapLogger)
 	judgeJobConsumer := kafka2.NewJudgeJobConsumer(consumerGroup, kafkaConfig, processJudgeJobUseCase, dltPublisher, zapLogger)
 	serverConfig := cfg.Server
@@ -46,7 +58,7 @@ func InitializeApp(cfg *config.Config) (*container.App, func(), error) {
 	runCodeHandler := handler.NewRunCodeHandler(runCodeUseCase)
 	judgeServer := grpc.NewJudgeServer(runCodeHandler)
 	server := grpc.NewServer(serverConfig, judgeServer)
-	app := container.NewApp(cfg, judgeJobConsumer, server, zapLogger, syncProducer)
+	app := container.NewApp(cfg, judgeJobConsumer, server, zapLogger, syncProducer, clientConn)
 	return app, func() {
 	}, nil
 }

@@ -4,10 +4,43 @@ import (
 	"context"
 )
 
+type ProblemTestCaseMetadata struct {
+	ProblemID      int64
+	ZipDownloadURL string
+	TestCount      int
+	Version        int
+}
+
+type ProblemTestCaseMetadataReader interface {
+	GetTestCaseMetadata(ctx context.Context, problemID int64) (ProblemTestCaseMetadata, error)
+}
+
+type OfficialTestCaseLoader interface {
+	Load(ctx context.Context, metadata ProblemTestCaseMetadata) ([]ExecutionTestCase, error)
+}
+
+type ExecutionTestCase struct {
+	Index          int
+	ID             string
+	Kind           string
+	Stdin          string
+	ExpectedOutput *string
+}
+
+type ExecutionRequest struct {
+	Language           string
+	SourceCode         string
+	TestCases          []ExecutionTestCase
+	Limits             ExecutionLimits
+	StopOnFirstFailure bool
+}
+
 // ExecutionResult represents the result of code execution
 type ExecutionResult struct {
 	Status        string // "ACCEPTED", "WRONG_ANSWER", "TLE", "MLE", "RUNTIME_ERROR", "COMPILATION_ERROR"
 	CompileOutput *string
+	ErrorMessage  *string
+	Diagnostics   []CodeDiagnostic
 	TestCases     []TestCaseResult
 	ExecutionTime int // milliseconds
 	MemoryUsed    int // kilobytes
@@ -16,12 +49,27 @@ type ExecutionResult struct {
 
 type TestCaseResult struct {
 	Index          int
+	ID             string
+	Kind           string
 	Status         string
 	ActualOutput   *string
+	Stderr         *string
 	Input          *string // populated for failed tests only
 	ExpectedOutput *string // populated for failed tests only
 	ExecutionTime  int     // milliseconds
 	MemoryUsed     int     // kilobytes
+	Diagnostics    []CodeDiagnostic
+}
+
+type CodeDiagnostic struct {
+	TestCaseID *string
+	Kind       string
+	Severity   string
+	Message    string
+	Line       int
+	Column     int
+	EndLine    *int
+	EndColumn  *int
 }
 
 type ExecutionLimits struct {
@@ -47,6 +95,7 @@ type RunRequest struct {
 type RunResult struct {
 	Status        string
 	CompileOutput string
+	Diagnostics   []CodeDiagnostic
 	TestCases     []RunTestCaseResult
 }
 
@@ -59,27 +108,11 @@ type RunTestCaseResult struct {
 	ExpectedOutput  *string
 	ExecutionTimeMS int64
 	MemoryUsedKB    int64
+	Diagnostics     []CodeDiagnostic
 }
 
-// TestCaseBundle represents a set of testcases cached on local disk.
-// Dir points to the extracted directory containing {N}.in / {N}.out files.
-// Worker does NOT call Cleanup — cache is kept for future requests.
-type TestCaseBundle struct {
-	Dir       string // e.g. /cache/testcases/problem_42/
-	TestCount int
-}
-
-// TestCaseFetcher handles downloading & caching testcases.
-// Uses local disk cache — only downloads from MinIO on cache miss or version change.
-type TestCaseFetcher interface {
-	FetchTestCases(ctx context.Context, problemID int64) (*TestCaseBundle, error)
-}
-
-// CodeExecutor executes submitted code against test cases.
-// Receives a TestCaseBundle (disk path) instead of []TestCase (in-memory).
 type CodeExecutor interface {
-	Execute(ctx context.Context, language, sourceCode string, bundle *TestCaseBundle) (*ExecutionResult, error)
-	RunCode(ctx context.Context, req RunRequest) (*RunResult, error)
+	Execute(ctx context.Context, req ExecutionRequest) (*ExecutionResult, error)
 }
 
 // ResultPublisher publishes judge results back to submission service.

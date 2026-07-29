@@ -240,7 +240,6 @@ services:
     restart: unless-stopped
     volumes:
       - ./services/auth/config:/app/config:ro
-      - ./services/auth/logs:/app/logs
     depends_on:
       postgres:
         condition: service_healthy
@@ -262,7 +261,6 @@ services:
     restart: unless-stopped
     volumes:
       - ./services/problem/config:/app/config:ro
-      - ./services/problem/logs:/app/logs
     depends_on:
       postgres:
         condition: service_healthy
@@ -284,7 +282,6 @@ services:
     restart: unless-stopped
     volumes:
       - ./services/submission/config:/app/config:ro
-      - ./services/submission/logs:/app/logs
     depends_on:
       postgres:
         condition: service_healthy
@@ -309,7 +306,6 @@ services:
     restart: unless-stopped
     volumes:
       - ./workers/judge/config:/app/config:ro
-      - ./workers/judge/logs:/app/logs
       - testcase_cache:/cache/testcases
     tmpfs:
       - /tmp:size=256M,exec,mode=777

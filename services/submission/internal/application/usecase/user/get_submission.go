@@ -55,16 +55,32 @@ func (uc *getSubmissionUseCase) Execute(ctx context.Context, claims auth.Claims,
 		return dto.GetSubmissionResponse{}, domain.ErrSubmissionNotFound
 	}
 
+	summaries, err := uc.submissionRepo.ResultSummaries(ctx, []int64{submission.ID})
+	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return dto.GetSubmissionResponse{}, err
+		}
+		return dto.GetSubmissionResponse{}, domain.ErrInternalServer.Wrap(err)
+	}
+	summary, found := summaries[submission.ID]
+	passed, total := testcaseSummaryForStatus(submission.Status, summary, found)
+
 	return dto.GetSubmissionResponse{
-		ID:           submission.ID,
-		ProblemID:    submission.ProblemID,
-		ProblemTitle: submission.ProblemName,
-		UserID:       submission.UserID,
-		Username:     submission.Username,
-		Language:     string(submission.Language),
-		SourceCode:   submission.SourceCode,
-		Status:       string(submission.Status),
-		CreatedAt:    submission.CreatedAt,
-		UpdatedAt:    submission.UpdatedAt,
+		ID:              submission.ID,
+		ProblemID:       submission.ProblemID,
+		ProblemTitle:    submission.ProblemName,
+		UserID:          submission.UserID,
+		Username:        submission.Username,
+		Language:        string(submission.Language),
+		SourceCode:      submission.SourceCode,
+		Status:          string(submission.Status),
+		ExecutionTimeMS: submission.ExecutionTime,
+		MemoryUsedKB:    submission.MemoryUsed,
+		PassedTestCases: passed,
+		TotalTestCases:  total,
+		CompileOutput:   submission.CompileOutput,
+		ErrorMessage:    submission.ErrorMessage,
+		CreatedAt:       submission.CreatedAt,
+		UpdatedAt:       submission.UpdatedAt,
 	}, nil
 }

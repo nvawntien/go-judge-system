@@ -29,6 +29,8 @@ func submissionListRows(values ...[]driver.Value) driver.Rows {
 			"username",
 			"language",
 			"status",
+			"execution_time",
+			"memory_used",
 			"created_at",
 		},
 		values: values,
@@ -59,8 +61,8 @@ func TestSubmissionRepositoryListAppliesFiltersAndPagination(t *testing.T) {
 			return countRows(3), nil
 		}
 		return submissionListRows(
-			[]driver.Value{int64(123), problemID, "Two Sum", userID, "actor-name", language, status, createdAt},
-			[]driver.Value{int64(122), problemID, "Two Sum", userID, "actor-name", language, status, createdAt},
+			[]driver.Value{int64(123), problemID, "Two Sum", userID, "actor-name", language, status, int64(12), int64(4300), createdAt},
+			[]driver.Value{int64(122), problemID, "Two Sum", userID, "actor-name", language, status, int64(8), int64(4100), createdAt},
 		), nil
 	})
 
@@ -86,7 +88,9 @@ func TestSubmissionRepositoryListAppliesFiltersAndPagination(t *testing.T) {
 		got.Items[0].UserID != userID ||
 		got.Items[0].Username != "actor-name" ||
 		got.Items[0].Language != entity.LanguageGo ||
-		got.Items[0].Status != entity.StatusPending {
+		got.Items[0].Status != entity.StatusPending ||
+		got.Items[0].ExecutionTime == nil || *got.Items[0].ExecutionTime != 12 ||
+		got.Items[0].MemoryUsed == nil || *got.Items[0].MemoryUsed != 4300 {
 		t.Fatalf("first item = %+v, want compact DAO mapping", got.Items[0])
 	}
 	if len(queries) != 2 {
@@ -125,6 +129,9 @@ func TestSubmissionRepositoryListAppliesFiltersAndPagination(t *testing.T) {
 	if !strings.Contains(itemQuery, "USER_ID") || !strings.Contains(itemQuery, "USERNAME") {
 		t.Fatalf("item query must select user identity snapshots: %s", queries[1])
 	}
+	if !strings.Contains(itemQuery, "EXECUTION_TIME") || !strings.Contains(itemQuery, "MEMORY_USED") {
+		t.Fatalf("item query must select execution metadata: %s", queries[1])
+	}
 }
 
 func TestSubmissionRepositoryListWithoutFiltersReturnsAllRows(t *testing.T) {
@@ -140,8 +147,8 @@ func TestSubmissionRepositoryListWithoutFiltersReturnsAllRows(t *testing.T) {
 			return countRows(2), nil
 		}
 		return submissionListRows(
-			[]driver.Value{int64(123), int64(42), "Two Sum", "user-1", "alice", "GO", "PENDING", createdAt},
-			[]driver.Value{int64(122), int64(43), "Three Sum", "user-2", "bob", "CPP", "ACCEPTED", createdAt},
+			[]driver.Value{int64(123), int64(42), "Two Sum", "user-1", "alice", "GO", "PENDING", nil, nil, createdAt},
+			[]driver.Value{int64(122), int64(43), "Three Sum", "user-2", "bob", "CPP", "ACCEPTED", int64(15), int64(4096), createdAt},
 		), nil
 	})
 
@@ -301,6 +308,84 @@ func TestSubmissionRepositoryListPreservesCancellation(t *testing.T) {
 	)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("List() error = %v, want context canceled", err)
+	}
+}
+
+func TestSubmissionRepositoryResultSummariesAggregatesCounts(t *testing.T) {
+	type contextKey struct{}
+	ctx := context.WithValue(context.Background(), contextKey{}, "request-context")
+
+	var query string
+	var queryArgs []driver.NamedValue
+	var contextValue any
+	db := newRepositoryReadGormDB(t, func(
+		queryCtx context.Context,
+		actualQuery string,
+		args []driver.NamedValue,
+	) (driver.Rows, error) {
+		query = actualQuery
+		queryArgs = args
+		contextValue = queryCtx.Value(contextKey{})
+		return &repositoryReadRows{
+			columns: []string{"submission_id", "passed", "total"},
+			values: [][]driver.Value{
+				{int64(123), int64(20), int64(20)},
+				{int64(122), int64(4), int64(20)},
+			},
+		}, nil
+	})
+
+	got, err := (&submissionRepository{db: db}).ResultSummaries(ctx, []int64{123, 122})
+	if err != nil {
+		t.Fatalf("ResultSummaries() error = %v", err)
+	}
+	if contextValue != "request-context" {
+		t.Fatalf("query context value = %v, want request-context", contextValue)
+	}
+	if got[123] != (outbound.SubmissionResultSummary{SubmissionID: 123, Passed: 20, Total: 20}) ||
+		got[122] != (outbound.SubmissionResultSummary{SubmissionID: 122, Passed: 4, Total: 20}) {
+		t.Fatalf("summaries = %+v", got)
+	}
+
+	normalized := strings.ToUpper(query)
+	for _, fragment := range []string{
+		"SUBMISSION_ID",
+		"SUM(CASE WHEN STATUS =",
+		"COUNT(*) AS TOTAL",
+		"GROUP BY",
+	} {
+		if !strings.Contains(normalized, fragment) {
+			t.Fatalf("summary query missing %q: %s", fragment, query)
+		}
+	}
+	for _, sensitive := range []string{"INPUT", "EXPECTED", "ACTUAL_OUTPUT", "STDOUT", "STDERR"} {
+		if strings.Contains(normalized, sensitive) {
+			t.Fatalf("summary query selects hidden/sensitive testcase data: %s", query)
+		}
+	}
+	if !containsDriverValue(queryArgs, string(entity.ResultAccepted)) ||
+		!containsDriverValue(queryArgs, int64(123)) ||
+		!containsDriverValue(queryArgs, int64(122)) {
+		t.Fatalf("summary query args = %+v, want accepted status and submission IDs", queryArgs)
+	}
+}
+
+func TestSubmissionRepositoryResultSummariesSkipsEmptyIDs(t *testing.T) {
+	db := newRepositoryReadGormDB(t, func(
+		context.Context,
+		string,
+		[]driver.NamedValue,
+	) (driver.Rows, error) {
+		t.Fatal("database query must not run for empty ID slice")
+		return nil, nil
+	})
+
+	got, err := (&submissionRepository{db: db}).ResultSummaries(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("ResultSummaries() error = %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("summaries = %+v, want empty map", got)
 	}
 }
 

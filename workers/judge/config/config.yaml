@@ -4,7 +4,7 @@ server:
 
 logger:
   level: debug
-  filename: logs/worker.log
+  filename: ""
   max_size: 10
   max_backups: 5
   max_age: 30
@@ -16,6 +16,10 @@ kafka:
   job_topic: "judge.submission.jobs"
   result_topic: "judge.submission.results"
   dlt_topic: "judge.submission.jobs.dlt"
+
+problem_grpc:
+  address: "problem-service:9092"
+  timeout: 5s
 
 judging:
   timeout_seconds: 30

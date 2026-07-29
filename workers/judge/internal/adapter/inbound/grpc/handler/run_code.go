@@ -55,6 +55,7 @@ func (h *RunCodeHandler) Handle(ctx context.Context, req *judgev1.RunCodeRequest
 		Status:        result.Status,
 		CompileOutput: result.CompileOutput,
 		Tests:         make([]*judgev1.RunTestCaseResult, 0, len(result.TestCases)),
+		Diagnostics:   mapDiagnostics(result.Diagnostics),
 	}
 	for _, tc := range result.TestCases {
 		response.Tests = append(response.Tests, &judgev1.RunTestCaseResult{
@@ -66,8 +67,35 @@ func (h *RunCodeHandler) Handle(ctx context.Context, req *judgev1.RunCodeRequest
 			ExpectedOutput:  tc.ExpectedOutput,
 			ExecutionTimeMs: tc.ExecutionTimeMS,
 			MemoryUsedKb:    tc.MemoryUsedKB,
+			Diagnostics:     mapDiagnostics(tc.Diagnostics),
 		})
 	}
 
 	return response, nil
+}
+
+func mapDiagnostics(items []outbound.CodeDiagnostic) []*judgev1.CodeDiagnostic {
+	diagnostics := make([]*judgev1.CodeDiagnostic, 0, len(items))
+	for _, item := range items {
+		diagnostic := &judgev1.CodeDiagnostic{
+			Kind:     item.Kind,
+			Severity: item.Severity,
+			Message:  item.Message,
+			Line:     int32(item.Line),
+			Column:   int32(item.Column),
+		}
+		if item.EndLine != nil {
+			value := int32(*item.EndLine)
+			diagnostic.EndLine = &value
+		}
+		if item.EndColumn != nil {
+			value := int32(*item.EndColumn)
+			diagnostic.EndColumn = &value
+		}
+		if item.TestCaseID != nil {
+			diagnostic.TestcaseId = item.TestCaseID
+		}
+		diagnostics = append(diagnostics, diagnostic)
+	}
+	return diagnostics
 }

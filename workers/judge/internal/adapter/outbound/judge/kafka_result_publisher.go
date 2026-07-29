@@ -53,6 +53,7 @@ func (p *KafkaResultPublisher) PublishResult(ctx context.Context, submissionID i
 		AttemptID:     attemptID,
 		Status:        result.Status,
 		CompileOutput: result.CompileOutput,
+		ErrorMessage:  result.ErrorMessage,
 		ExecutionTime: intPtr(result.ExecutionTime),
 		MemoryUsed:    intPtr(result.MemoryUsed),
 		Error:         result.Error,
@@ -100,4 +101,3 @@ func intPtr(v int) *int {
 	}
 	return &v
 }
-

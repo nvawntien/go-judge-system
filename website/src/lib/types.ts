@@ -179,6 +179,12 @@ export interface Submission {
   language: string;
   source_code: string;
   status: SubmissionStatus;
+  execution_time_ms: number | null;
+  memory_used_kb: number | null;
+  passed_testcases: number | null;
+  total_testcases: number | null;
+  compile_output: string | null;
+  error_message: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -189,8 +195,14 @@ export interface SubmissionListItem {
   problem_title: string;
   language: string;
   status: SubmissionStatus;
+  execution_time_ms: number | null;
+  memory_used_kb: number | null;
+  passed_testcases: number | null;
+  total_testcases: number | null;
   created_at: string;
 }
+
+export type SubmissionDetail = Submission;
 
 export interface Pagination {
   page: number;
@@ -232,6 +244,17 @@ export interface RunCodeRequest {
 
 export type RunCodeStatus = 'completed' | 'compile_error' | 'system_error';
 
+export interface CodeDiagnostic {
+  testcase_id?: string | null;
+  kind: 'compile' | 'runtime' | string;
+  severity: 'error' | 'warning' | string;
+  message: string;
+  line: number;
+  column: number;
+  end_line?: number | null;
+  end_column?: number | null;
+}
+
 export type RunTestCaseStatus =
   | 'accepted'
   | 'wrong_answer'
@@ -251,11 +274,13 @@ export interface RunTestCaseResult {
   expected_output: string | null;
   execution_time_ms: number;
   memory_used_kb: number;
+  diagnostics: CodeDiagnostic[];
 }
 
 export interface RunCodeResponse {
   status: RunCodeStatus;
   compile_output: string;
+  diagnostics: CodeDiagnostic[];
   tests: RunTestCaseResult[];
 }
 

@@ -27,6 +27,7 @@ type SubmissionDAO struct {
 	ExecutionTime    *int      `gorm:"type:int"`
 	MemoryUsed       *int      `gorm:"type:int"`
 	CompileOutput    *string   `gorm:"type:text"`
+	ErrorMessage     *string   `gorm:"type:text"`
 	CreatedAt        time.Time `gorm:"autoCreateTime;index"`
 	UpdatedAt        time.Time `gorm:"autoUpdateTime"`
 }
@@ -84,6 +85,7 @@ func (r *submissionRepository) Update(ctx context.Context, submission *entity.Su
 		"execution_time":     submission.ExecutionTime,
 		"memory_used":        submission.MemoryUsed,
 		"compile_output":     submission.CompileOutput,
+		"error_message":      submission.ErrorMessage,
 		"updated_at":         submission.UpdatedAt,
 	}
 
@@ -118,7 +120,7 @@ func (r *submissionRepository) List(
 		filter,
 	)
 	if err := itemQuery.
-		Select("id", "problem_id", "problem_name", "user_id", "username", "language", "status", "created_at").
+		Select("id", "problem_id", "problem_name", "user_id", "username", "language", "status", "execution_time", "memory_used", "created_at").
 		Order("created_at DESC, id DESC").
 		Offset(filter.Offset).
 		Limit(filter.Limit).
@@ -130,6 +132,46 @@ func (r *submissionRepository) List(
 		Items: toSubmissionEntities(daos),
 		Total: total,
 	}, nil
+}
+
+func (r *submissionRepository) ResultSummaries(
+	ctx context.Context,
+	submissionIDs []int64,
+) (map[int64]outbound.SubmissionResultSummary, error) {
+	if len(submissionIDs) == 0 {
+		return map[int64]outbound.SubmissionResultSummary{}, nil
+	}
+
+	type resultSummaryRow struct {
+		SubmissionID int64
+		Passed       int
+		Total        int
+	}
+
+	var rows []resultSummaryRow
+	if err := r.db.WithContext(ctx).
+		Model(&SubmissionResultDAO{}).
+		Select(
+			"submission_id, "+
+				"SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS passed, "+
+				"COUNT(*) AS total",
+			string(entity.ResultAccepted),
+		).
+		Where("submission_id IN ?", submissionIDs).
+		Group("submission_id").
+		Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("summarize submission results: %w", err)
+	}
+
+	summaries := make(map[int64]outbound.SubmissionResultSummary, len(rows))
+	for _, row := range rows {
+		summaries[row.SubmissionID] = outbound.SubmissionResultSummary{
+			SubmissionID: row.SubmissionID,
+			Passed:       row.Passed,
+			Total:        row.Total,
+		}
+	}
+	return summaries, nil
 }
 
 func applyListFilters(
@@ -165,6 +207,7 @@ func toSubmissionDAO(s *entity.Submission) *SubmissionDAO {
 		ExecutionTime:    s.ExecutionTime,
 		MemoryUsed:       s.MemoryUsed,
 		CompileOutput:    s.CompileOutput,
+		ErrorMessage:     s.ErrorMessage,
 		CreatedAt:        s.CreatedAt,
 		UpdatedAt:        s.UpdatedAt,
 	}
@@ -184,6 +227,7 @@ func toSubmissionEntity(dao *SubmissionDAO) *entity.Submission {
 		ExecutionTime:    dao.ExecutionTime,
 		MemoryUsed:       dao.MemoryUsed,
 		CompileOutput:    dao.CompileOutput,
+		ErrorMessage:     dao.ErrorMessage,
 		CreatedAt:        dao.CreatedAt,
 		UpdatedAt:        dao.UpdatedAt,
 	}
