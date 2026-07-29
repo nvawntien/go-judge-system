@@ -4,6 +4,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"go-judge-system/workers/judge/internal/application/port/outbound"
 )
@@ -12,6 +13,7 @@ const (
 	diagnosticKindCompile = "compile"
 	diagnosticKindRuntime = "runtime"
 	diagnosticSeverityErr = "error"
+	maxRuntimeErrorBytes  = 4096
 )
 
 var (
@@ -142,6 +144,47 @@ func runtimeHeadline(output string) string {
 		return line
 	}
 	return strings.TrimSpace(output)
+}
+
+func runtimeErrorMessage(stderr string, diagnostics []outbound.CodeDiagnostic) string {
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Kind == diagnosticKindRuntime {
+			if message := publicErrorMessage(diagnostic.Message); message != "" {
+				return message
+			}
+		}
+	}
+	return publicErrorMessage(runtimeHeadline(sanitizeOutput(stderr)))
+}
+
+func publicErrorMessage(message string) string {
+	message = sanitizeOutput(message)
+	message = strings.ToValidUTF8(message, "")
+	message = stripControlCharacters(message)
+	message = strings.TrimSpace(message)
+	if message == "" {
+		return ""
+	}
+	if len(message) <= maxRuntimeErrorBytes {
+		return message
+	}
+	truncated := message[:maxRuntimeErrorBytes]
+	for !utf8.ValidString(truncated) && len(truncated) > 0 {
+		truncated = truncated[:len(truncated)-1]
+	}
+	return strings.TrimSpace(truncated) + "…"
+}
+
+func stripControlCharacters(value string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\r' || r == '\t' {
+			return r
+		}
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, value)
 }
 
 func parsePositiveInt(raw string, fallback int) int {

@@ -64,6 +64,9 @@ func TestRunCodeCompilesOnceAndRunsAllCases(t *testing.T) {
 	if len(res.TestCases[1].Diagnostics) != 1 || res.TestCases[1].Diagnostics[0].Line != 9 {
 		t.Fatalf("runtime diagnostics = %+v, want line 9", res.TestCases[1].Diagnostics)
 	}
+	if res.ErrorMessage == nil || *res.ErrorMessage != "panic: boom" {
+		t.Fatalf("error message = %v, want runtime panic headline", res.ErrorMessage)
+	}
 }
 
 func TestRunCodeCompileErrorReturnsNoTests(t *testing.T) {
@@ -90,6 +93,9 @@ func TestRunCodeCompileErrorReturnsNoTests(t *testing.T) {
 	}
 	if len(res.Diagnostics) != 1 || res.Diagnostics[0].Line != 19 || res.Diagnostics[0].Column != 9 {
 		t.Fatalf("compile diagnostics = %+v, want line 19 column 9", res.Diagnostics)
+	}
+	if res.ErrorMessage != nil {
+		t.Fatalf("compile error message = %q, want nil", *res.ErrorMessage)
 	}
 }
 

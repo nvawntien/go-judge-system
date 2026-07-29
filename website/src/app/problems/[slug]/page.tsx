@@ -468,8 +468,8 @@ export default function WorkspacePage() {
         memory_used_kb: null,
         passed_testcases: null,
         total_testcases: null,
-        compile_output: '',
-        error_message: '',
+        compile_output: null,
+        error_message: null,
         created_at: created.created_at,
         updated_at: created.created_at,
       });
@@ -1730,7 +1730,7 @@ function ResultPanel({
 
   if (submission && !isPendingStatus(submission.status)) {
     const verdict = verdictMeta(submission.status);
-    const diagnosticOutput = submission.compile_output || submission.error_message;
+    const diagnosticOutput = submissionDetailOutput(submission);
 
     return (
       <div style={{ animation: 'acFadeUp .3s ease' }}>
@@ -1799,7 +1799,10 @@ function ResultPanel({
         </div>
 
         {diagnosticOutput && (
-          <pre style={{ ...runOutputBlock, marginBottom: 12 }}>{diagnosticOutput}</pre>
+          <div style={{ marginBottom: 12 }}>
+            <div style={settingsLabel}>{diagnosticOutput.label}</div>
+            <pre style={runOutputBlock}>{diagnosticOutput.output}</pre>
+          </div>
         )}
 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
@@ -2048,6 +2051,27 @@ function formatRunStatus(status: string): string {
     .split('_')
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
+}
+
+function submissionDetailOutput(
+  submission: Pick<Submission | SubmissionDetail, 'status' | 'compile_output' | 'error_message'>,
+): { label: string; output: string } | null {
+  if (submission.status === 'COMPILATION_ERROR' && submission.compile_output) {
+    return { label: 'Compilation output', output: submission.compile_output };
+  }
+  if (submission.status === 'RUNTIME_ERROR' && submission.error_message) {
+    return { label: 'Runtime error', output: submission.error_message };
+  }
+  if (submission.status === 'SYSTEM_ERROR' && submission.error_message) {
+    return { label: 'System error', output: submission.error_message };
+  }
+  if (
+    (submission.status === 'TIME_LIMIT_EXCEEDED' || submission.status === 'MEMORY_LIMIT_EXCEEDED') &&
+    submission.error_message
+  ) {
+    return { label: 'Message', output: submission.error_message };
+  }
+  return null;
 }
 
 function collectRunDiagnostics(result: RunResponse): CodeDiagnostic[] {

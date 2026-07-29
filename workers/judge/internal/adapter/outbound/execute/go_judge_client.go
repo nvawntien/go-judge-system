@@ -93,6 +93,7 @@ func (c *GoJudgeClient) Execute(ctx context.Context, req outbound.ExecutionReque
 
 			if tcResult.Status != "ACCEPTED" && result.Status == "ACCEPTED" {
 				result.Status = tcResult.Status
+				result.ErrorMessage = errorMessageForTestCase(tcResult)
 			}
 			if req.StopOnFirstFailure && tcResult.Status != "ACCEPTED" {
 				c.logger.Info(
@@ -243,6 +244,7 @@ func mapTestCaseResult(language string, testCase outbound.ExecutionTestCase, res
 	status := mapJudgeStatus(res.Status, res.ExitStatus)
 	stdout := res.Files["stdout"]
 	stderr := sanitizeOutput(res.Files["stderr"])
+	diagnostics := parseRuntimeDiagnostics(language, testCase.ID, stderr)
 
 	if status == "ACCEPTED" && testCase.ExpectedOutput != nil && !workerdomain.OutputEqual(stdout, *testCase.ExpectedOutput) {
 		status = "WRONG_ANSWER"
@@ -268,8 +270,30 @@ func mapTestCaseResult(language string, testCase outbound.ExecutionTestCase, res
 		ExpectedOutput: testCase.ExpectedOutput,
 		ExecutionTime:  int(res.Time / uint64(time.Millisecond)),
 		MemoryUsed:     int(res.Memory / 1024),
-		Diagnostics:    parseRuntimeDiagnostics(language, testCase.ID, stderr),
+		Diagnostics:    diagnostics,
 	}
+}
+
+func errorMessageForTestCase(testCase outbound.TestCaseResult) *string {
+	var message string
+	switch testCase.Status {
+	case "RUNTIME_ERROR":
+		stderr := ""
+		if testCase.Stderr != nil {
+			stderr = *testCase.Stderr
+		}
+		message = runtimeErrorMessage(stderr, testCase.Diagnostics)
+	case "TIME_LIMIT_EXCEEDED":
+		message = "Execution exceeded the time limit."
+	case "MEMORY_LIMIT_EXCEEDED":
+		message = "Execution exceeded the memory limit."
+	case "SYSTEM_ERROR":
+		message = "The judge could not complete this submission."
+	}
+	if strings.TrimSpace(message) == "" {
+		return nil
+	}
+	return &message
 }
 
 func mapJudgeStatus(status string, exitStatus int) string {

@@ -3,6 +3,7 @@ package result
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -156,6 +157,108 @@ func TestApplyJudgeResultMatchingAttemptAppliesTerminalStatuses(t *testing.T) {
 	}
 }
 
+func TestApplyJudgeResultMapsOutputFieldsByVerdict(t *testing.T) {
+	compileOutput := "main.go:8:2: undefined: value"
+	runtimeError := "panic: runtime error: index out of range"
+	unsafeSystemMessage := "/tmp/judge/internal stack"
+	longRuntimeError := "/tmp/judge/run/main.go:7 " + strings.Repeat("x", maxStoredErrorMessageBytes+4)
+
+	tests := []struct {
+		name              string
+		msg               pkgjudge.ResultMessage
+		wantCompileOutput *string
+		wantErrorMessage  *string
+	}{
+		{
+			name: "compilation error keeps compile output only",
+			msg: pkgjudge.ResultMessage{
+				Status:        string(entity.StatusCompilationError),
+				CompileOutput: &compileOutput,
+				ErrorMessage:  &runtimeError,
+			},
+			wantCompileOutput: &compileOutput,
+		},
+		{
+			name: "runtime error stores sanitized error message only",
+			msg: pkgjudge.ResultMessage{
+				Status:        string(entity.StatusRuntimeError),
+				CompileOutput: &compileOutput,
+				ErrorMessage:  &runtimeError,
+			},
+			wantErrorMessage: &runtimeError,
+		},
+		{
+			name: "accepted clears stale outputs",
+			msg:  pkgjudge.ResultMessage{Status: string(entity.StatusAccepted), CompileOutput: &compileOutput, ErrorMessage: &runtimeError},
+		},
+		{
+			name: "wrong answer clears stale outputs",
+			msg:  pkgjudge.ResultMessage{Status: string(entity.StatusWrongAnswer), CompileOutput: &compileOutput, ErrorMessage: &runtimeError},
+		},
+		{
+			name:             "time limit gets public default message",
+			msg:              pkgjudge.ResultMessage{Status: string(entity.StatusTimeLimitExceed)},
+			wantErrorMessage: stringPointer(publicTimeLimitMessage),
+		},
+		{
+			name:             "memory limit gets public default message",
+			msg:              pkgjudge.ResultMessage{Status: string(entity.StatusMemoryLimitExceed)},
+			wantErrorMessage: stringPointer(publicMemoryLimitMessage),
+		},
+		{
+			name:             "system error ignores unsafe incoming message",
+			msg:              pkgjudge.ResultMessage{Status: string(entity.StatusSystemError), ErrorMessage: &unsafeSystemMessage},
+			wantErrorMessage: stringPointer(publicSystemErrorMessage),
+		},
+		{
+			name: "runtime error sanitizes and truncates incoming message",
+			msg:  pkgjudge.ResultMessage{Status: string(entity.StatusRuntimeError), ErrorMessage: &longRuntimeError},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			submission := matchingSubmission()
+			staleCompile := "old compile"
+			staleError := "old error"
+			submission.CompileOutput = &staleCompile
+			submission.ErrorMessage = &staleError
+			subRepo := &fakeSubmissionRepo{submission: submission}
+			resultRepo := &fakeSubmissionResultRepo{}
+			uc := NewApplyJudgeResultUseCase(subRepo, resultRepo, &fakeTxManager{})
+
+			tt.msg.SubmissionID = 77
+			tt.msg.AttemptID = "attempt-77"
+			err := uc.Execute(context.Background(), tt.msg)
+			if err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+			if len(subRepo.updates) != 1 {
+				t.Fatalf("updates = %d, want 1", len(subRepo.updates))
+			}
+			got := subRepo.updates[0]
+			if !sameStringPtr(got.CompileOutput, tt.wantCompileOutput) {
+				t.Fatalf("compile_output = %v, want %v", got.CompileOutput, tt.wantCompileOutput)
+			}
+			if tt.name == "runtime error sanitizes and truncates incoming message" {
+				if got.ErrorMessage == nil {
+					t.Fatal("error_message = nil, want truncated sanitized message")
+				}
+				if len(*got.ErrorMessage) > maxStoredErrorMessageBytes+len("…") {
+					t.Fatalf("error_message length = %d, want truncated", len(*got.ErrorMessage))
+				}
+				if strings.Contains(*got.ErrorMessage, "/tmp/") {
+					t.Fatalf("error_message leaked internal path: %q", *got.ErrorMessage)
+				}
+				return
+			}
+			if !sameStringPtr(got.ErrorMessage, tt.wantErrorMessage) {
+				t.Fatalf("error_message = %v, want %v", got.ErrorMessage, tt.wantErrorMessage)
+			}
+		})
+	}
+}
+
 func TestApplyJudgeResultStaleOrLegacyAttemptIsAckNoop(t *testing.T) {
 	for _, tt := range []struct {
 		name             string
@@ -256,4 +359,15 @@ func TestApplyJudgeResultPreservesContextCancellation(t *testing.T) {
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Execute() error = %v, want context canceled", err)
 	}
+}
+
+func stringPointer(value string) *string {
+	return &value
+}
+
+func sameStringPtr(a, b *string) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
 }

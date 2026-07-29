@@ -128,9 +128,10 @@ func TestProcessJudgeJobPublishesUserCodeVerdictsWithoutSystemError(t *testing.T
 	t.Parallel()
 
 	tests := []struct {
-		name   string
-		result *outbound.ExecutionResult
-		want   string
+		name             string
+		result           *outbound.ExecutionResult
+		want             string
+		wantErrorMessage *string
 	}{
 		{
 			name:   "compilation error",
@@ -140,10 +141,12 @@ func TestProcessJudgeJobPublishesUserCodeVerdictsWithoutSystemError(t *testing.T
 		{
 			name: "runtime error",
 			result: &outbound.ExecutionResult{
-				Status:    "RUNTIME_ERROR",
-				TestCases: []outbound.TestCaseResult{{Index: 1, Status: "RUNTIME_ERROR"}},
+				Status:       "RUNTIME_ERROR",
+				ErrorMessage: stringPtr("panic: runtime error: index out of range"),
+				TestCases:    []outbound.TestCaseResult{{Index: 1, Status: "RUNTIME_ERROR"}},
 			},
-			want: "RUNTIME_ERROR",
+			want:             "RUNTIME_ERROR",
+			wantErrorMessage: stringPtr("panic: runtime error: index out of range"),
 		},
 		{
 			name: "time limit",
@@ -187,6 +190,9 @@ func TestProcessJudgeJobPublishesUserCodeVerdictsWithoutSystemError(t *testing.T
 			if publisher.result == nil || publisher.result.Status != tt.want {
 				t.Fatalf("published result = %#v, want %s", publisher.result, tt.want)
 			}
+			if !sameStringPtr(publisher.result.ErrorMessage, tt.wantErrorMessage) {
+				t.Fatalf("published error message = %v, want %v", publisher.result.ErrorMessage, tt.wantErrorMessage)
+			}
 		})
 	}
 }
@@ -210,8 +216,18 @@ func TestProcessJudgeJobPublishesNonRetryableSystemError(t *testing.T) {
 	if publisher.result == nil || publisher.result.Status != "SYSTEM_ERROR" {
 		t.Fatalf("published result = %#v, want SYSTEM_ERROR", publisher.result)
 	}
+	if publisher.result.ErrorMessage == nil || *publisher.result.ErrorMessage != "The judge could not complete this submission." {
+		t.Fatalf("published public error message = %v", publisher.result.ErrorMessage)
+	}
 }
 
 func stringPtr(value string) *string {
 	return &value
+}
+
+func sameStringPtr(a, b *string) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
 }

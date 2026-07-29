@@ -8,6 +8,7 @@ type ResultMessage struct {
 	AttemptID     string               `json:"attempt_id"`
 	Status        string               `json:"status"`
 	CompileOutput *string              `json:"compile_output,omitempty"`
+	ErrorMessage  *string              `json:"error_message,omitempty"`
 	ExecutionTime *int                 `json:"execution_time,omitempty"`
 	MemoryUsed    *int                 `json:"memory_used,omitempty"`
 	Error         *string              `json:"error,omitempty"`

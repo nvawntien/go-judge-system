@@ -1,6 +1,11 @@
 package execute
 
-import "testing"
+import (
+	"strings"
+	"testing"
+
+	"go-judge-system/workers/judge/internal/application/port/outbound"
+)
 
 func TestParseGoCompileDiagnostics(t *testing.T) {
 	output := "./main.go:19:9: make (built-in) must be called\nmain.go:20:2: undefined: value"
@@ -46,5 +51,29 @@ func TestSanitizeOutputRemovesInternalPathPrefixes(t *testing.T) {
 	want := "main.go:6:2: undefined: x\nmain.cpp:7:3: error: boom"
 	if got != want {
 		t.Fatalf("sanitizeOutput() = %q, want %q", got, want)
+	}
+}
+
+func TestRuntimeErrorMessagePrefersDiagnosticAndSanitizes(t *testing.T) {
+	got := runtimeErrorMessage(
+		"panic: fallback\n\t/tmp/judge/run/main.go:24 +0x39\x00",
+		[]outbound.CodeDiagnostic{{Kind: "runtime", Message: "panic: runtime error: index out of range\x00"}},
+	)
+	if got != "panic: runtime error: index out of range" {
+		t.Fatalf("runtimeErrorMessage() = %q", got)
+	}
+}
+
+func TestRuntimeErrorMessageFallsBackToHeadlineAndTruncates(t *testing.T) {
+	stderr := strings.Repeat("x", maxRuntimeErrorBytes+256) + "\n/tmp/judge/run/main.go:24"
+	got := runtimeErrorMessage(stderr, nil)
+	if strings.Contains(got, "/tmp/") {
+		t.Fatalf("runtimeErrorMessage leaked internal path: %q", got)
+	}
+	if len(got) > maxRuntimeErrorBytes+len("…") {
+		t.Fatalf("runtimeErrorMessage length = %d, want truncated", len(got))
+	}
+	if !strings.HasSuffix(got, "…") {
+		t.Fatalf("runtimeErrorMessage() = %q, want ellipsis", got)
 	}
 }

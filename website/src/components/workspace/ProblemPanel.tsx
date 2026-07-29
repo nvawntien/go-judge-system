@@ -875,7 +875,7 @@ function SubmissionDetailContent({
   onCopy: (text: string, message: string) => void;
 }) {
   const verdict = verdictMeta(detail.status);
-  const output = detail.compile_output || detail.error_message;
+  const output = submissionDetailOutput(detail);
 
   return (
     <div style={{ display: 'grid', gap: 12 }}>
@@ -921,8 +921,8 @@ function SubmissionDetailContent({
 
       {output && (
         <div>
-          <div style={detailBlockLabel}>{detail.status === 'COMPILATION_ERROR' ? 'Compilation Error' : 'Message'}</div>
-          <pre style={detailOutputBlock}>{output}</pre>
+          <div style={detailBlockLabel}>{output.label}</div>
+          <pre style={detailOutputBlock}>{output.output}</pre>
         </div>
       )}
 
@@ -950,6 +950,27 @@ function SubmissionDetailContent({
       </div>
     </div>
   );
+}
+
+function submissionDetailOutput(
+  detail: Pick<SubmissionDetail, 'status' | 'compile_output' | 'error_message'>,
+): { label: string; output: string } | null {
+  if (detail.status === 'COMPILATION_ERROR' && detail.compile_output) {
+    return { label: 'Compilation output', output: detail.compile_output };
+  }
+  if (detail.status === 'RUNTIME_ERROR' && detail.error_message) {
+    return { label: 'Runtime error', output: detail.error_message };
+  }
+  if (detail.status === 'SYSTEM_ERROR' && detail.error_message) {
+    return { label: 'System error', output: detail.error_message };
+  }
+  if (
+    (detail.status === 'TIME_LIMIT_EXCEEDED' || detail.status === 'MEMORY_LIMIT_EXCEEDED') &&
+    detail.error_message
+  ) {
+    return { label: 'Message', output: detail.error_message };
+  }
+  return null;
 }
 
 function ResultMeta({ value, label }: { value: string; label: string }) {

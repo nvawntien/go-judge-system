@@ -158,6 +158,31 @@ func TestGetSubmissionAccessMatrix(t *testing.T) {
 	}
 }
 
+func TestGetSubmissionReturnsStoredRuntimeErrorMessage(t *testing.T) {
+	submission := submissionDetailFixture("owner")
+	runtimeError := "panic: runtime error: index out of range"
+	submission.Status = entity.StatusRuntimeError
+	submission.CompileOutput = nil
+	submission.ErrorMessage = &runtimeError
+	repo := newFakeGetSubmissionRepository(submission)
+	uc := NewGetSubmissionUseCase(repo)
+
+	got, err := uc.Execute(
+		context.Background(),
+		auth.Claims{UserID: "owner", Role: rbac.RoleUser},
+		dto.GetSubmissionRequest{SubmissionID: submission.ID},
+	)
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if got.CompileOutput != nil {
+		t.Fatalf("compile_output = %v, want nil for runtime error", got.CompileOutput)
+	}
+	if got.ErrorMessage == nil || *got.ErrorMessage != runtimeError {
+		t.Fatalf("error_message = %v, want %q", got.ErrorMessage, runtimeError)
+	}
+}
+
 func TestGetSubmissionValidation(t *testing.T) {
 	tests := []struct {
 		name    string

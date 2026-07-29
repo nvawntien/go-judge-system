@@ -2,13 +2,28 @@ package result
 
 import (
 	"context"
+	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	pkgjudge "go-judge-system/pkg/judge"
 	inbound "go-judge-system/services/submission/internal/application/port/inbound/result"
 	"go-judge-system/services/submission/internal/application/port/outbound"
 	"go-judge-system/services/submission/internal/domain"
 	"go-judge-system/services/submission/internal/domain/entity"
+)
+
+const (
+	maxStoredErrorMessageBytes = 4096
+	publicSystemErrorMessage   = "The judge could not complete this submission."
+	publicTimeLimitMessage     = "Execution exceeded the time limit."
+	publicMemoryLimitMessage   = "Execution exceeded the memory limit."
+)
+
+var (
+	errorPathWithSource = regexp.MustCompile(`(?:/tmp/|/w/|/workspace/|/app/workspace/|/judge/)[^:\s"]*/(main\.go|main\.cpp|main\.py|Main\.java)`)
+	errorInternalPrefix = regexp.MustCompile(`(?:/tmp/|/w/|/workspace/|/app/workspace/|/judge/)+`)
+	errorRelativeSource = regexp.MustCompile(`\./(main\.go|main\.cpp|main\.py|Main\.java)`)
 )
 
 type applyJudgeResultUseCase struct {
@@ -57,13 +72,86 @@ func (uc *applyJudgeResultUseCase) Execute(ctx context.Context, msg pkgjudge.Res
 			return nil
 		}
 
-		submission.MarkCompleted(status, msg.ExecutionTime, msg.MemoryUsed, msg.CompileOutput)
+		compileOutput, errorMessage := judgeOutputFields(status, msg)
+		submission.MarkCompleted(status, msg.ExecutionTime, msg.MemoryUsed, compileOutput, errorMessage)
 		if err := uc.submissionRepo.Update(txCtx, submission); err != nil {
 			return err
 		}
 
 		return uc.resultRepo.ReplaceBySubmissionIDAndAttemptID(txCtx, msg.SubmissionID, msg.AttemptID, results)
 	})
+}
+
+func judgeOutputFields(status entity.Status, msg pkgjudge.ResultMessage) (*string, *string) {
+	switch status {
+	case entity.StatusCompilationError:
+		return nonBlankString(msg.CompileOutput), nil
+	case entity.StatusRuntimeError:
+		return nil, publicErrorMessage(msg.ErrorMessage)
+	case entity.StatusTimeLimitExceed:
+		if message := publicErrorMessage(msg.ErrorMessage); message != nil {
+			return nil, message
+		}
+		message := publicTimeLimitMessage
+		return nil, &message
+	case entity.StatusMemoryLimitExceed:
+		if message := publicErrorMessage(msg.ErrorMessage); message != nil {
+			return nil, message
+		}
+		message := publicMemoryLimitMessage
+		return nil, &message
+	case entity.StatusSystemError:
+		message := publicSystemErrorMessage
+		return nil, &message
+	default:
+		return nil, nil
+	}
+}
+
+func publicErrorMessage(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	message := errorPathWithSource.ReplaceAllString(*value, "$1")
+	message = errorRelativeSource.ReplaceAllString(message, "$1")
+	message = errorInternalPrefix.ReplaceAllString(message, "")
+	message = strings.ToValidUTF8(message, "")
+	message = stripControlCharacters(message)
+	message = strings.TrimSpace(message)
+	if message == "" {
+		return nil
+	}
+	if len(message) > maxStoredErrorMessageBytes {
+		message = message[:maxStoredErrorMessageBytes]
+		for !utf8.ValidString(message) && len(message) > 0 {
+			message = message[:len(message)-1]
+		}
+		message = strings.TrimSpace(message) + "…"
+	}
+	return &message
+}
+
+func stripControlCharacters(value string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\r' || r == '\t' {
+			return r
+		}
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, value)
+}
+
+func nonBlankString(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil
+	}
+	return value
 }
 
 func mapTerminalSubmissionStatus(raw string) (entity.Status, error) {

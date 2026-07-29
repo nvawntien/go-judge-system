@@ -27,6 +27,7 @@ type SubmissionDAO struct {
 	ExecutionTime    *int      `gorm:"type:int"`
 	MemoryUsed       *int      `gorm:"type:int"`
 	CompileOutput    *string   `gorm:"type:text"`
+	ErrorMessage     *string   `gorm:"type:text"`
 	CreatedAt        time.Time `gorm:"autoCreateTime;index"`
 	UpdatedAt        time.Time `gorm:"autoUpdateTime"`
 }
@@ -84,6 +85,7 @@ func (r *submissionRepository) Update(ctx context.Context, submission *entity.Su
 		"execution_time":     submission.ExecutionTime,
 		"memory_used":        submission.MemoryUsed,
 		"compile_output":     submission.CompileOutput,
+		"error_message":      submission.ErrorMessage,
 		"updated_at":         submission.UpdatedAt,
 	}
 
@@ -205,6 +207,7 @@ func toSubmissionDAO(s *entity.Submission) *SubmissionDAO {
 		ExecutionTime:    s.ExecutionTime,
 		MemoryUsed:       s.MemoryUsed,
 		CompileOutput:    s.CompileOutput,
+		ErrorMessage:     s.ErrorMessage,
 		CreatedAt:        s.CreatedAt,
 		UpdatedAt:        s.UpdatedAt,
 	}
@@ -224,6 +227,7 @@ func toSubmissionEntity(dao *SubmissionDAO) *entity.Submission {
 		ExecutionTime:    dao.ExecutionTime,
 		MemoryUsed:       dao.MemoryUsed,
 		CompileOutput:    dao.CompileOutput,
+		ErrorMessage:     dao.ErrorMessage,
 		CreatedAt:        dao.CreatedAt,
 		UpdatedAt:        dao.UpdatedAt,
 	}

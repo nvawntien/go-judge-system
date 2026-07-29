@@ -79,7 +79,7 @@ func (uc *getSubmissionUseCase) Execute(ctx context.Context, claims auth.Claims,
 		PassedTestCases: passed,
 		TotalTestCases:  total,
 		CompileOutput:   submission.CompileOutput,
-		ErrorMessage:    nil,
+		ErrorMessage:    submission.ErrorMessage,
 		CreatedAt:       submission.CreatedAt,
 		UpdatedAt:       submission.UpdatedAt,
 	}, nil

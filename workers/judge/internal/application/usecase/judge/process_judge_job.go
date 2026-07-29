@@ -99,9 +99,11 @@ func (u *ProcessJudgeJobUseCase) handleProcessingError(
 	}
 
 	errMsg := fmt.Sprintf("%s error: %v", stage, err)
+	publicErrMsg := "The judge could not complete this submission."
 	result := &outbound.ExecutionResult{
-		Status: "SYSTEM_ERROR",
-		Error:  &errMsg,
+		Status:       "SYSTEM_ERROR",
+		Error:        &errMsg,
+		ErrorMessage: &publicErrMsg,
 	}
 	if pubErr := u.resultPublisher.PublishResult(ctx, jobMsg.SubmissionID, jobMsg.AttemptID, result); pubErr != nil {
 		u.logger.Error("failed to publish non-retryable system error result", zap.Error(pubErr))

@@ -120,6 +120,7 @@ func submissionRows(values ...[]driver.Value) driver.Rows {
 			"execution_time",
 			"memory_used",
 			"compile_output",
+			"error_message",
 			"created_at",
 			"updated_at",
 		},
@@ -130,6 +131,7 @@ func submissionRows(values ...[]driver.Value) driver.Rows {
 func TestSubmissionRepositoryGetByID(t *testing.T) {
 	createdAt := time.Date(2026, 7, 23, 14, 0, 0, 0, time.UTC)
 	updatedAt := time.Date(2026, 7, 23, 14, 1, 0, 0, time.UTC)
+	errorMessage := "panic: runtime error: index out of range"
 	type contextKey struct{}
 	ctx := context.WithValue(context.Background(), contextKey{}, "request-context")
 
@@ -157,6 +159,7 @@ func TestSubmissionRepositoryGetByID(t *testing.T) {
 			nil,
 			nil,
 			nil,
+			errorMessage,
 			createdAt,
 			updatedAt,
 		}), nil
@@ -179,6 +182,10 @@ func TestSubmissionRepositoryGetByID(t *testing.T) {
 		CreatedAt:        createdAt,
 		UpdatedAt:        updatedAt,
 	}
+	if got.ErrorMessage == nil || *got.ErrorMessage != errorMessage {
+		t.Fatalf("error message = %v, want %q", got.ErrorMessage, errorMessage)
+	}
+	got.ErrorMessage = nil
 	if *got != *want {
 		t.Fatalf("submission = %+v, want %+v", got, want)
 	}

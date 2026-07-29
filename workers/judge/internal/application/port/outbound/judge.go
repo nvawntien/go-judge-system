@@ -39,6 +39,7 @@ type ExecutionRequest struct {
 type ExecutionResult struct {
 	Status        string // "ACCEPTED", "WRONG_ANSWER", "TLE", "MLE", "RUNTIME_ERROR", "COMPILATION_ERROR"
 	CompileOutput *string
+	ErrorMessage  *string
 	Diagnostics   []CodeDiagnostic
 	TestCases     []TestCaseResult
 	ExecutionTime int // milliseconds
