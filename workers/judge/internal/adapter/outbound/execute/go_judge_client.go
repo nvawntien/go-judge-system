@@ -82,7 +82,7 @@ func (c *GoJudgeClient) Execute(ctx context.Context, req outbound.ExecutionReque
 		}
 
 		for i, raw := range runResp {
-			tcResult := mapTestCaseResult(req.Language, batch[i], raw)
+			tcResult := mapTestCaseResult(req.Language, batch[i], raw, req.StopOnFirstFailure)
 			result.TestCases = append(result.TestCases, tcResult)
 			if tcResult.ExecutionTime > result.ExecutionTime {
 				result.ExecutionTime = tcResult.ExecutionTime
@@ -240,8 +240,16 @@ func (c *GoJudgeClient) runBatch(
 	return runResp, nil
 }
 
-func mapTestCaseResult(language string, testCase outbound.ExecutionTestCase, res gojudge.Result) outbound.TestCaseResult {
+func mapTestCaseResult(
+	language string,
+	testCase outbound.ExecutionTestCase,
+	res gojudge.Result,
+	officialSubmission bool,
+) outbound.TestCaseResult {
 	status := mapJudgeStatus(res.Status, res.ExitStatus)
+	if officialSubmission {
+		status = mapOfficialSubmissionStatus(status)
+	}
 	stdout := res.Files["stdout"]
 	stderr := sanitizeOutput(res.Files["stderr"])
 	diagnostics := parseRuntimeDiagnostics(language, testCase.ID, stderr)
@@ -316,6 +324,13 @@ func mapJudgeStatus(status string, exitStatus int) string {
 	default:
 		return "SYSTEM_ERROR"
 	}
+}
+
+func mapOfficialSubmissionStatus(status string) string {
+	if status == "OUTPUT_LIMIT_EXCEEDED" {
+		return "WRONG_ANSWER"
+	}
+	return status
 }
 
 func normalizeLimits(limits outbound.ExecutionLimits) outbound.ExecutionLimits {

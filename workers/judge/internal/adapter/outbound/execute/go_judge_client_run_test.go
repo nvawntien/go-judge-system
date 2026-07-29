@@ -151,3 +151,12 @@ func TestExecutePropagatesContextCancellationToGoJudge(t *testing.T) {
 		t.Fatal("context was not cancelled")
 	}
 }
+
+func TestSubmissionOutputLimitMapsToWrongAnswerWithoutChangingRunCodeContract(t *testing.T) {
+	if got := mapOfficialSubmissionStatus(mapJudgeStatus("Output Limit Exceeded", 0)); got != "WRONG_ANSWER" {
+		t.Fatalf("submission status = %q, want WRONG_ANSWER", got)
+	}
+	if got := mapJudgeStatus("Output Limit Exceeded", 0); got != "OUTPUT_LIMIT_EXCEEDED" {
+		t.Fatalf("raw judge status = %q, want OUTPUT_LIMIT_EXCEEDED for run-code mapper", got)
+	}
+}
