@@ -12,14 +12,14 @@ x-healthcheck-defaults: &healthcheck-defaults
   start_period: 15s
 
 services:
-  nginx:
-    container_name: judge_nginx
-    image: nginx:1.27.4-alpine
+  envoy:
+    container_name: judge_envoy
+    image: envoyproxy/envoy:v1.34.2
     restart: unless-stopped
     ports:
       - "8080:8080"
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro
     depends_on:
       gateway:
         condition: service_started
@@ -28,9 +28,10 @@ services:
     networks:
       - judge_internal
     logging: *default-logging
+    command: [ "envoy", "-c", "/etc/envoy/envoy.yaml", "--log-level", "warn" ]
     healthcheck:
       <<: *healthcheck-defaults
-      test: [ "CMD-SHELL", "wget -qO- http://127.0.0.1:8080/nginx-health | grep -qx ok" ]
+      test: [ "CMD", "bash", "-ec", "exec 3<>/dev/tcp/127.0.0.1/8080; printf 'GET /envoy-health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3; grep -q '^ok$' <&3" ]
 
   gateway:
     container_name: judge_gateway
