@@ -545,7 +545,7 @@ function ProblemSubmissions({
         else setFailed('Submission history request failed.');
       });
     return () => controller.abort();
-  }, [page, problemId, retryKey, signedIn]);
+  }, [page, problemId, refreshKey, retryKey, signedIn]);
 
   const updateListItem = useCallback((detail: SubmissionDetail) => {
     setItems((current) => {
