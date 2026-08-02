@@ -14,12 +14,16 @@ import (
 )
 
 type fakeTxManager struct {
-	called bool
+	called    bool
+	commitErr error
 }
 
 func (m *fakeTxManager) ExecuteInTx(ctx context.Context, fn func(context.Context) error) error {
 	m.called = true
-	return fn(ctx)
+	if err := fn(ctx); err != nil {
+		return err
+	}
+	return m.commitErr
 }
 
 type fakeSubmissionRepo struct {
@@ -54,6 +58,7 @@ func (r *fakeSubmissionRepo) Update(ctx context.Context, submission *entity.Subm
 	}
 	copy := *submission
 	r.updates = append(r.updates, &copy)
+	r.submission = &copy
 	return nil
 }
 func (r *fakeSubmissionRepo) List(context.Context, outbound.ListSubmissionsFilter) (outbound.ListSubmissionsResult, error) {
@@ -92,6 +97,18 @@ func (r *fakeSubmissionResultRepo) ReplaceBySubmissionIDAndAttemptID(ctx context
 	return nil
 }
 
+type fakeSubmissionEventHub struct {
+	events []entity.SubmissionEvent
+}
+
+func (h *fakeSubmissionEventHub) Subscribe(int64) (<-chan entity.SubmissionEvent, func()) {
+	return make(chan entity.SubmissionEvent), func() {}
+}
+
+func (h *fakeSubmissionEventHub) Publish(event entity.SubmissionEvent) {
+	h.events = append(h.events, event)
+}
+
 func matchingSubmission() *entity.Submission {
 	return &entity.Submission{
 		ID:               77,
@@ -121,7 +138,8 @@ func TestApplyJudgeResultMatchingAttemptAppliesTerminalStatuses(t *testing.T) {
 		t.Run(string(status), func(t *testing.T) {
 			subRepo := &fakeSubmissionRepo{submission: matchingSubmission()}
 			resultRepo := &fakeSubmissionResultRepo{}
-			uc := NewApplyJudgeResultUseCase(subRepo, resultRepo, &fakeTxManager{})
+			eventHub := &fakeSubmissionEventHub{}
+			uc := NewApplyJudgeResultUseCase(subRepo, resultRepo, &fakeTxManager{}, eventHub, nil)
 			execTime := 12
 			memory := 128
 
@@ -152,6 +170,16 @@ func TestApplyJudgeResultMatchingAttemptAppliesTerminalStatuses(t *testing.T) {
 			}
 			if resultRepo.results[0].AttemptID != "attempt-77" {
 				t.Fatalf("result attempt = %q, want attempt-77", resultRepo.results[0].AttemptID)
+			}
+			if len(eventHub.events) != 1 {
+				t.Fatalf("published events = %d, want 1", len(eventHub.events))
+			}
+			event := eventHub.events[0]
+			if event.SubmissionID != 77 || event.AttemptID != "attempt-77" || event.Status != string(status) {
+				t.Fatalf("event = %+v, want committed submission status", event)
+			}
+			if !event.UpdatedAt.Equal(subRepo.updates[0].UpdatedAt) {
+				t.Fatalf("event updated_at = %s, want committed %s", event.UpdatedAt, subRepo.updates[0].UpdatedAt)
 			}
 		})
 	}
@@ -225,7 +253,7 @@ func TestApplyJudgeResultMapsOutputFieldsByVerdict(t *testing.T) {
 			submission.ErrorMessage = &staleError
 			subRepo := &fakeSubmissionRepo{submission: submission}
 			resultRepo := &fakeSubmissionResultRepo{}
-			uc := NewApplyJudgeResultUseCase(subRepo, resultRepo, &fakeTxManager{})
+			uc := NewApplyJudgeResultUseCase(subRepo, resultRepo, &fakeTxManager{}, nil, nil)
 
 			tt.msg.SubmissionID = 77
 			tt.msg.AttemptID = "attempt-77"
@@ -273,7 +301,8 @@ func TestApplyJudgeResultStaleOrLegacyAttemptIsAckNoop(t *testing.T) {
 			submission.CurrentAttemptID = tt.currentAttemptID
 			subRepo := &fakeSubmissionRepo{submission: submission}
 			resultRepo := &fakeSubmissionResultRepo{}
-			uc := NewApplyJudgeResultUseCase(subRepo, resultRepo, &fakeTxManager{})
+			eventHub := &fakeSubmissionEventHub{}
+			uc := NewApplyJudgeResultUseCase(subRepo, resultRepo, &fakeTxManager{}, eventHub, nil)
 
 			err := uc.Execute(context.Background(), pkgjudge.ResultMessage{
 				SubmissionID: 77,
@@ -286,13 +315,17 @@ func TestApplyJudgeResultStaleOrLegacyAttemptIsAckNoop(t *testing.T) {
 			if len(subRepo.updates) != 0 || resultRepo.calls != 0 {
 				t.Fatalf("stale/legacy result must not write, updates=%d replacements=%d", len(subRepo.updates), resultRepo.calls)
 			}
+			if len(eventHub.events) != 0 {
+				t.Fatalf("stale/legacy result must not publish, events=%d", len(eventHub.events))
+			}
 		})
 	}
 }
 
 func TestApplyJudgeResultRejectsInvalidTransportFieldsBeforeTransaction(t *testing.T) {
 	tx := &fakeTxManager{}
-	uc := NewApplyJudgeResultUseCase(&fakeSubmissionRepo{submission: matchingSubmission()}, &fakeSubmissionResultRepo{}, tx)
+	eventHub := &fakeSubmissionEventHub{}
+	uc := NewApplyJudgeResultUseCase(&fakeSubmissionRepo{submission: matchingSubmission()}, &fakeSubmissionResultRepo{}, tx, eventHub, nil)
 
 	if err := uc.Execute(context.Background(), pkgjudge.ResultMessage{SubmissionID: 77, Status: string(entity.StatusAccepted)}); !errors.Is(err, domain.ErrInvalidJudgeResult) {
 		t.Fatalf("Execute() error = %v, want invalid judge result", err)
@@ -300,13 +333,17 @@ func TestApplyJudgeResultRejectsInvalidTransportFieldsBeforeTransaction(t *testi
 	if tx.called {
 		t.Fatal("transaction must not start for missing incoming attempt")
 	}
+	if len(eventHub.events) != 0 {
+		t.Fatalf("invalid transport fields must not publish, events=%d", len(eventHub.events))
+	}
 }
 
 func TestApplyJudgeResultRejectsNonTerminalOrUnknownStatus(t *testing.T) {
 	for _, status := range []string{"PENDING", "JUDGING", "BOGUS"} {
 		t.Run(status, func(t *testing.T) {
 			tx := &fakeTxManager{}
-			uc := NewApplyJudgeResultUseCase(&fakeSubmissionRepo{submission: matchingSubmission()}, &fakeSubmissionResultRepo{}, tx)
+			eventHub := &fakeSubmissionEventHub{}
+			uc := NewApplyJudgeResultUseCase(&fakeSubmissionRepo{submission: matchingSubmission()}, &fakeSubmissionResultRepo{}, tx, eventHub, nil)
 
 			err := uc.Execute(context.Background(), pkgjudge.ResultMessage{SubmissionID: 77, AttemptID: "attempt-77", Status: status})
 			if !errors.Is(err, domain.ErrInvalidSubmissionStatus) {
@@ -315,14 +352,18 @@ func TestApplyJudgeResultRejectsNonTerminalOrUnknownStatus(t *testing.T) {
 			if tx.called {
 				t.Fatal("transaction must not start for invalid status")
 			}
+			if len(eventHub.events) != 0 {
+				t.Fatalf("invalid status must not publish, events=%d", len(eventHub.events))
+			}
 		})
 	}
 }
 
-func TestApplyJudgeResultDuplicateMatchingResultIsDeterministicReplace(t *testing.T) {
+func TestApplyJudgeResultDuplicateMatchingResultIsAckNoopAfterTerminalCommit(t *testing.T) {
 	subRepo := &fakeSubmissionRepo{submission: matchingSubmission()}
 	resultRepo := &fakeSubmissionResultRepo{}
-	uc := NewApplyJudgeResultUseCase(subRepo, resultRepo, &fakeTxManager{})
+	eventHub := &fakeSubmissionEventHub{}
+	uc := NewApplyJudgeResultUseCase(subRepo, resultRepo, &fakeTxManager{}, eventHub, nil)
 	msg := pkgjudge.ResultMessage{SubmissionID: 77, AttemptID: "attempt-77", Status: string(entity.StatusAccepted)}
 
 	if err := uc.Execute(context.Background(), msg); err != nil {
@@ -331,33 +372,87 @@ func TestApplyJudgeResultDuplicateMatchingResultIsDeterministicReplace(t *testin
 	if err := uc.Execute(context.Background(), msg); err != nil {
 		t.Fatalf("second Execute() error = %v", err)
 	}
-	if len(subRepo.updates) != 2 || resultRepo.calls != 2 || resultRepo.attemptID != "attempt-77" {
-		t.Fatalf("duplicate should converge through replace, updates=%d calls=%d attempt=%q", len(subRepo.updates), resultRepo.calls, resultRepo.attemptID)
+	if len(subRepo.updates) != 1 || resultRepo.calls != 1 || resultRepo.attemptID != "attempt-77" {
+		t.Fatalf("duplicate should no-op after terminal commit, updates=%d calls=%d attempt=%q", len(subRepo.updates), resultRepo.calls, resultRepo.attemptID)
+	}
+	if len(eventHub.events) != 1 {
+		t.Fatalf("duplicate should not publish a second event, events=%d", len(eventHub.events))
 	}
 }
 
 func TestApplyJudgeResultPropagatesRepositoryErrors(t *testing.T) {
 	wantErr := errors.New("replace failed")
+	eventHub := &fakeSubmissionEventHub{}
 	uc := NewApplyJudgeResultUseCase(
 		&fakeSubmissionRepo{submission: matchingSubmission()},
 		&fakeSubmissionResultRepo{replaceErr: wantErr},
 		&fakeTxManager{},
+		eventHub,
+		nil,
 	)
 
 	err := uc.Execute(context.Background(), pkgjudge.ResultMessage{SubmissionID: 77, AttemptID: "attempt-77", Status: string(entity.StatusAccepted)})
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("Execute() error = %v, want %v", err, wantErr)
 	}
+	if len(eventHub.events) != 0 {
+		t.Fatalf("repository error must not publish, events=%d", len(eventHub.events))
+	}
+}
+
+func TestApplyJudgeResultDoesNotPublishOnTransactionCommitFailure(t *testing.T) {
+	wantErr := errors.New("commit failed")
+	eventHub := &fakeSubmissionEventHub{}
+	uc := NewApplyJudgeResultUseCase(
+		&fakeSubmissionRepo{submission: matchingSubmission()},
+		&fakeSubmissionResultRepo{},
+		&fakeTxManager{commitErr: wantErr},
+		eventHub,
+		nil,
+	)
+
+	err := uc.Execute(context.Background(), pkgjudge.ResultMessage{SubmissionID: 77, AttemptID: "attempt-77", Status: string(entity.StatusAccepted)})
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("Execute() error = %v, want %v", err, wantErr)
+	}
+	if len(eventHub.events) != 0 {
+		t.Fatalf("commit failure must not publish, events=%d", len(eventHub.events))
+	}
+}
+
+func TestApplyJudgeResultAlreadyTerminalSubmissionIsAckNoop(t *testing.T) {
+	submission := matchingSubmission()
+	submission.Status = entity.StatusAccepted
+	subRepo := &fakeSubmissionRepo{submission: submission}
+	resultRepo := &fakeSubmissionResultRepo{}
+	eventHub := &fakeSubmissionEventHub{}
+	uc := NewApplyJudgeResultUseCase(subRepo, resultRepo, &fakeTxManager{}, eventHub, nil)
+
+	err := uc.Execute(context.Background(), pkgjudge.ResultMessage{
+		SubmissionID: 77,
+		AttemptID:    "attempt-77",
+		Status:       string(entity.StatusAccepted),
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if len(subRepo.updates) != 0 || resultRepo.calls != 0 || len(eventHub.events) != 0 {
+		t.Fatalf("terminal duplicate must be no-op, updates=%d replacements=%d events=%d", len(subRepo.updates), resultRepo.calls, len(eventHub.events))
+	}
 }
 
 func TestApplyJudgeResultPreservesContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	uc := NewApplyJudgeResultUseCase(&fakeSubmissionRepo{submission: matchingSubmission()}, &fakeSubmissionResultRepo{}, &fakeTxManager{})
+	eventHub := &fakeSubmissionEventHub{}
+	uc := NewApplyJudgeResultUseCase(&fakeSubmissionRepo{submission: matchingSubmission()}, &fakeSubmissionResultRepo{}, &fakeTxManager{}, eventHub, nil)
 
 	err := uc.Execute(ctx, pkgjudge.ResultMessage{SubmissionID: 77, AttemptID: "attempt-77", Status: string(entity.StatusAccepted)})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Execute() error = %v, want context canceled", err)
+	}
+	if len(eventHub.events) != 0 {
+		t.Fatalf("canceled context must not publish, events=%d", len(eventHub.events))
 	}
 }
 

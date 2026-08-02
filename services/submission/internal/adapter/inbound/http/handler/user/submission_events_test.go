@@ -25,6 +25,7 @@ type fakeEventsSnapshotRepository struct {
 	err      error
 	calls    int
 	id       int64
+	calledCh chan struct{}
 }
 
 func (r *fakeEventsSnapshotRepository) GetStreamSnapshot(
@@ -33,6 +34,9 @@ func (r *fakeEventsSnapshotRepository) GetStreamSnapshot(
 ) (*entity.SubmissionStreamSnapshot, error) {
 	r.calls++
 	r.id = submissionID
+	if r.calledCh != nil && r.calls == 1 {
+		close(r.calledCh)
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

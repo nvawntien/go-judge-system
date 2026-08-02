@@ -112,7 +112,7 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 		return nil, err
 	}
 	submissionResultRepository := postgres.NewSubmissionResultRepository(db)
-	applyJudgeResultUseCase := result.NewApplyJudgeResultUseCase(submissionRepository, submissionResultRepository, transactionManager)
+	applyJudgeResultUseCase := result.NewApplyJudgeResultUseCase(submissionRepository, submissionResultRepository, transactionManager, submissionEventHub, zapLogger)
 	dltPublisher := kafka2.NewDLTPublisher(syncProducer, kafkaConfig, zapLogger)
 	judgeResultConsumer := kafka2.NewJudgeResultConsumer(consumerGroup, kafkaConfig, applyJudgeResultUseCase, dltPublisher, zapLogger)
 	app := container.NewApp(cfg, db, router, outboxRelay, judgeResultConsumer, zapLogger, syncProducer, consumerGroup, clientConn, judgeClientConn)

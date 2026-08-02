@@ -134,3 +134,12 @@ func (s *Submission) ResetForRejudge() {
 	s.ErrorMessage = nil
 	s.UpdatedAt = time.Now()
 }
+
+func (s *Submission) Event() SubmissionEvent {
+	return SubmissionEvent{
+		SubmissionID: s.ID,
+		AttemptID:    s.CurrentAttemptID,
+		Status:       string(s.Status),
+		UpdatedAt:    s.UpdatedAt,
+	}
+}

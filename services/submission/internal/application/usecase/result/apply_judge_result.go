@@ -11,6 +11,8 @@ import (
 	"go-judge-system/services/submission/internal/application/port/outbound"
 	"go-judge-system/services/submission/internal/domain"
 	"go-judge-system/services/submission/internal/domain/entity"
+
+	"go.uber.org/zap"
 )
 
 const (
@@ -30,17 +32,23 @@ type applyJudgeResultUseCase struct {
 	submissionRepo outbound.SubmissionRepository
 	resultRepo     outbound.SubmissionResultRepository
 	txManager      outbound.TransactionManager
+	eventHub       outbound.SubmissionEventHub
+	logger         *zap.Logger
 }
 
 func NewApplyJudgeResultUseCase(
 	submissionRepo outbound.SubmissionRepository,
 	resultRepo outbound.SubmissionResultRepository,
 	txManager outbound.TransactionManager,
+	eventHub outbound.SubmissionEventHub,
+	logger *zap.Logger,
 ) inbound.ApplyJudgeResultUseCase {
 	return &applyJudgeResultUseCase{
 		submissionRepo: submissionRepo,
 		resultRepo:     resultRepo,
 		txManager:      txManager,
+		eventHub:       eventHub,
+		logger:         logger,
 	}
 }
 
@@ -59,7 +67,8 @@ func (uc *applyJudgeResultUseCase) Execute(ctx context.Context, msg pkgjudge.Res
 		return err
 	}
 
-	return uc.txManager.ExecuteInTx(ctx, func(txCtx context.Context) error {
+	var eventToPublish *entity.SubmissionEvent
+	err = uc.txManager.ExecuteInTx(ctx, func(txCtx context.Context) error {
 		submission, err := uc.submissionRepo.GetByIDForUpdate(txCtx, msg.SubmissionID)
 		if err != nil {
 			return err
@@ -71,6 +80,9 @@ func (uc *applyJudgeResultUseCase) Execute(ctx context.Context, msg pkgjudge.Res
 		if submission.CurrentAttemptID != msg.AttemptID {
 			return nil
 		}
+		if entity.IsTerminalStatus(submission.Status) {
+			return nil
+		}
 
 		compileOutput, errorMessage := judgeOutputFields(status, msg)
 		submission.MarkCompleted(status, msg.ExecutionTime, msg.MemoryUsed, compileOutput, errorMessage)
@@ -78,8 +90,30 @@ func (uc *applyJudgeResultUseCase) Execute(ctx context.Context, msg pkgjudge.Res
 			return err
 		}
 
-		return uc.resultRepo.ReplaceBySubmissionIDAndAttemptID(txCtx, msg.SubmissionID, msg.AttemptID, results)
+		if err := uc.resultRepo.ReplaceBySubmissionIDAndAttemptID(txCtx, msg.SubmissionID, msg.AttemptID, results); err != nil {
+			return err
+		}
+
+		event := submission.Event()
+		eventToPublish = &event
+		return nil
 	})
+	if err != nil {
+		return err
+	}
+
+	if eventToPublish != nil && uc.eventHub != nil {
+		uc.eventHub.Publish(*eventToPublish)
+		if uc.logger != nil {
+			uc.logger.Debug(
+				"published submission event after judge result commit",
+				zap.Int64("submission_id", eventToPublish.SubmissionID),
+				zap.String("attempt_id", eventToPublish.AttemptID),
+				zap.String("status", eventToPublish.Status),
+			)
+		}
+	}
+	return nil
 }
 
 func judgeOutputFields(status entity.Status, msg pkgjudge.ResultMessage) (*string, *string) {
