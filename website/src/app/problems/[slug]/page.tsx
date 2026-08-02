@@ -22,11 +22,13 @@ import {
   formatRuntimeMs,
   formatTestcaseCount,
   isPendingStatus,
+  isTerminalSubmissionStatus,
   languageMeta,
   verdictMeta,
 } from '@/lib/format';
 import { useDismissable, useOnline, useViewportWidth } from '@/lib/hooks';
 import { fetchProgress, invalidateProgress } from '@/lib/progress';
+import { useSubmissionStream, type SubmissionStreamState } from '@/lib/submission-stream';
 import { CODE_TEMPLATES, draftKey } from '@/lib/templates';
 import type {
   CodeDiagnostic,
@@ -36,6 +38,7 @@ import type {
   RunTestCaseResult,
   Submission,
   SubmissionDetail,
+  SubmissionStreamEvent,
 } from '@/lib/types';
 
 type BottomTab = 'tests' | 'console' | 'result';
@@ -50,9 +53,6 @@ interface TestCase {
   /** Examples come from the problem and cannot be removed. */
   fromExample: boolean;
 }
-
-const POLL_INTERVAL_MS = 1500;
-const POLL_TIMEOUT_MS = 120_000;
 
 export default function WorkspacePage() {
   const params = useParams<{ slug: string }>();
@@ -308,16 +308,40 @@ export default function WorkspacePage() {
   const [runResult, setRunResult] = useState<RunResponse | null>(null);
   const [consoleLines, setConsoleLines] = useState<{ text: string; color: string }[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [checkingResult, setCheckingResult] = useState(false);
   const [submission, setSubmission] = useState<Submission | null>(null);
-  const [pollTimedOut, setPollTimedOut] = useState(false);
-  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [activeSubmissionId, setActiveSubmissionId] = useState<number | null>(null);
+  const [liveUpdateError, setLiveUpdateError] = useState('');
+  const [detailFetchError, setDetailFetchError] = useState('');
+  const terminalDetailHandledRef = useRef(false);
+  const terminalDetailAbortRef = useRef<AbortController | null>(null);
 
   useEffect(
     () => () => {
-      if (pollRef.current) clearTimeout(pollRef.current);
+      terminalDetailAbortRef.current?.abort();
     },
     [],
   );
+
+  useEffect(() => {
+    terminalDetailAbortRef.current?.abort();
+    terminalDetailHandledRef.current = false;
+    setActiveSubmissionId(null);
+    setSubmitting(false);
+    setCheckingResult(false);
+    setSubmission(null);
+    setLiveUpdateError('');
+    setDetailFetchError('');
+  }, [slug]);
+
+  useEffect(() => {
+    if (user) return;
+    terminalDetailAbortRef.current?.abort();
+    terminalDetailHandledRef.current = false;
+    setActiveSubmissionId(null);
+    setSubmitting(false);
+    setCheckingResult(false);
+  }, [user]);
 
   const requireAuth = (action: string): boolean => {
     if (user) return true;
@@ -383,46 +407,124 @@ export default function WorkspacePage() {
     }
   };
 
-  const pollSubmission = useCallback(
-    (id: number, startedAt: number) => {
-      pollRef.current = setTimeout(async () => {
-        try {
-          const latest = await submissionApi.get(id);
-          pollRef.current = null;
-          setSubmission(latest);
+  const applyStreamStatus = useCallback((event: SubmissionStreamEvent) => {
+    setSubmission((current) => {
+      if (!current || current.id !== event.submission_id) return current;
+      return {
+        ...current,
+        status: event.status,
+        updated_at: event.updated_at,
+      };
+    });
+  }, []);
 
-          if (isPendingStatus(latest.status)) {
-            if (Date.now() - startedAt > POLL_TIMEOUT_MS) {
-              setPollTimedOut(true);
-              setSubmitting(false);
-              return;
-            }
-            pollSubmission(id, startedAt);
-            return;
-          }
-
-          setSubmitting(false);
-          setHistoryRefreshKey((current) => current + 1);
-          const verdict = verdictMeta(latest.status);
-          showToast(
-            latest.status === 'ACCEPTED' ? 'Accepted' : `Verdict: ${verdict.label}`,
-            latest.status === 'ACCEPTED' ? 'success' : 'error',
-          );
-          invalidateProgress();
-          void syncProgress(true);
-        } catch (err) {
-          pollRef.current = null;
-          setSubmitting(false);
-          if (err instanceof NetworkError) {
-            showToast('Lost connection while polling the judge', 'error');
-          } else if (err instanceof ApiError) {
-            showToast(err.message || 'Could not read the submission', 'error');
-          }
-        }
-      }, POLL_INTERVAL_MS);
+  const finishSubmissionFromDetail = useCallback(
+    (detail: Submission) => {
+      setSubmission(detail);
+      setSubmitting(false);
+      setActiveSubmissionId(null);
+      setLiveUpdateError('');
+      setDetailFetchError('');
+      setHistoryRefreshKey((current) => current + 1);
+      const verdict = verdictMeta(detail.status);
+      showToast(
+        detail.status === 'ACCEPTED' ? 'Accepted' : `Verdict: ${verdict.label}`,
+        detail.status === 'ACCEPTED' ? 'success' : 'error',
+      );
+      invalidateProgress();
+      void syncProgress(true);
     },
     [showToast, syncProgress],
   );
+
+  const fetchTerminalSubmissionDetail = useCallback(
+    async (id: number, terminalEvent?: SubmissionStreamEvent) => {
+      if (terminalDetailHandledRef.current) return;
+      terminalDetailHandledRef.current = true;
+      terminalDetailAbortRef.current?.abort();
+      const controller = new AbortController();
+      terminalDetailAbortRef.current = controller;
+
+      if (terminalEvent) {
+        setSubmission((current) => {
+          if (!current || current.id !== terminalEvent.submission_id) return current;
+          return {
+            ...current,
+            status: terminalEvent.status,
+            updated_at: terminalEvent.updated_at,
+          };
+        });
+      }
+
+      try {
+        const detail = await submissionApi.get(id, controller.signal);
+        if (controller.signal.aborted) return;
+        finishSubmissionFromDetail(detail);
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        setSubmitting(false);
+        setActiveSubmissionId(null);
+        setDetailFetchError(
+          err instanceof NetworkError
+            ? 'Verdict received, but the detail request could not reach the API gateway.'
+            : err instanceof ApiError
+              ? err.message || 'Verdict received, but submission detail could not be loaded.'
+              : 'Verdict received, but submission detail could not be loaded.',
+        );
+      } finally {
+        if (terminalDetailAbortRef.current === controller) {
+          terminalDetailAbortRef.current = null;
+        }
+      }
+    },
+    [finishSubmissionFromDetail],
+  );
+
+  const checkResultOnce = useCallback(async () => {
+    if (!submission || checkingResult) return;
+    setCheckingResult(true);
+    setDetailFetchError('');
+    try {
+      const latest = await submissionApi.get(submission.id);
+      setSubmission(latest);
+      if (isTerminalSubmissionStatus(latest.status)) {
+        finishSubmissionFromDetail(latest);
+      } else {
+        showToast(`Submission #${latest.id} is still ${verdictMeta(latest.status).label.toLowerCase()}.`, 'success');
+      }
+    } catch (err) {
+      if (err instanceof NetworkError) {
+        setDetailFetchError('Cannot reach the API gateway.');
+      } else if (err instanceof ApiError) {
+        setDetailFetchError(err.message || 'Could not read the submission.');
+      } else {
+        setDetailFetchError('Could not read the submission.');
+      }
+    } finally {
+      setCheckingResult(false);
+    }
+  }, [checkingResult, finishSubmissionFromDetail, showToast, submission]);
+
+  const handleStreamTerminal = useCallback(
+    (event: SubmissionStreamEvent) => {
+      applyStreamStatus(event);
+      void fetchTerminalSubmissionDetail(event.submission_id, event);
+    },
+    [applyStreamStatus, fetchTerminalSubmissionDetail],
+  );
+
+  const handleStreamError = useCallback((error: { message: string }) => {
+    setLiveUpdateError(error.message);
+    setSubmitting(false);
+  }, []);
+
+  const stream = useSubmissionStream({
+    submissionId: activeSubmissionId,
+    enabled: Boolean(activeSubmissionId && submission && isPendingStatus(submission.status)),
+    onStatus: applyStreamStatus,
+    onTerminal: handleStreamTerminal,
+    onError: handleStreamError,
+  });
 
   const submit = async () => {
     if (!problem || submitting || running) return;
@@ -437,11 +539,11 @@ export default function WorkspacePage() {
     }
 
     setSubmitting(true);
-    if (pollRef.current) {
-      clearTimeout(pollRef.current);
-      pollRef.current = null;
-    }
-    setPollTimedOut(false);
+    terminalDetailAbortRef.current?.abort();
+    terminalDetailHandledRef.current = false;
+    setActiveSubmissionId(null);
+    setLiveUpdateError('');
+    setDetailFetchError('');
     setSubmission(null);
     setRunResult(null);
     setCodeDiagnostics([]);
@@ -473,7 +575,11 @@ export default function WorkspacePage() {
         created_at: created.created_at,
         updated_at: created.created_at,
       });
-      pollSubmission(created.id, Date.now());
+      if (isTerminalSubmissionStatus(created.status)) {
+        void fetchTerminalSubmissionDetail(created.id);
+      } else {
+        setActiveSubmissionId(created.id);
+      }
     } catch (err) {
       setSubmitting(false);
       if (err instanceof NetworkError) {
@@ -560,7 +666,7 @@ export default function WorkspacePage() {
   /* -------------------------------------------------------------- derived */
 
   const langMeta = languageMeta(language);
-  const busy = running || submitting;
+  const busy = running || submitting || checkingResult;
   const runResultsByID = useMemo(() => {
     const entries = runResult?.tests.map((test) => [test.id, test] as const) ?? [];
     return new Map(entries);
@@ -1186,11 +1292,16 @@ export default function WorkspacePage() {
                     {bottomTab === 'result' && (
                       <ResultPanel
                         submitting={submitting}
+                        checkingResult={checkingResult}
                         submission={submission}
-                        pollTimedOut={pollTimedOut}
+                        streamState={stream.state}
+                        liveUpdateError={liveUpdateError || stream.error?.message || ''}
+                        detailFetchError={detailFetchError}
                         runResult={runResult}
                         running={running}
                         diagnostics={codeDiagnostics}
+                        onReconnectStream={stream.reconnect}
+                        onCheckResult={checkResultOnce}
                         onSelectDiagnostic={(diagnostic) => {
                           if (diagnostic.line > 0) {
                             setJumpLine(diagnostic.line);
@@ -1627,20 +1738,30 @@ function RunCaseDetails({
 
 function ResultPanel({
   submitting,
+  checkingResult,
   submission,
-  pollTimedOut,
+  streamState,
+  liveUpdateError,
+  detailFetchError,
   runResult,
   running,
   diagnostics,
+  onReconnectStream,
+  onCheckResult,
   onSelectDiagnostic,
   onOpenSubmissions,
 }: {
   submitting: boolean;
+  checkingResult: boolean;
   submission: Submission | null;
-  pollTimedOut: boolean;
+  streamState: SubmissionStreamState;
+  liveUpdateError: string;
+  detailFetchError: string;
   runResult: RunResponse | null;
   running: boolean;
   diagnostics: CodeDiagnostic[];
+  onReconnectStream: () => void;
+  onCheckResult: () => void;
   onSelectDiagnostic: (diagnostic: CodeDiagnostic) => void;
   onOpenSubmissions: () => void;
 }) {
@@ -1655,75 +1776,93 @@ function ResultPanel({
     );
   }
 
-  if (submitting && submission) {
+  if (submission && isPendingStatus(submission.status) && (submitting || liveUpdateError)) {
     const queued = submission.status === 'PENDING';
+    const reconnecting = streamState === 'reconnecting';
+    const connecting =
+      streamState === 'requesting_ticket' || streamState === 'connecting' || streamState === 'open';
     return (
-      <div role="status" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0' }}>
-        <Spinner color={queued ? 'var(--accent)' : 'var(--success)'} />
-        <span style={{ fontSize: 12.5, color: 'var(--text2)', fontFamily: 'var(--font-mono)' }}>
-          {queued
-            ? `Submission #${submission.id} queued — waiting for a judge worker…`
-            : `Submission #${submission.id} is being judged…`}
-        </span>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div role="status" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0' }}>
+          {!liveUpdateError && <Spinner color={queued ? 'var(--accent)' : 'var(--success)'} />}
+          <span style={{ fontSize: 12.5, color: 'var(--text2)', fontFamily: 'var(--font-mono)' }}>
+            {liveUpdateError
+              ? `Submission #${submission.id} is saved, but live updates are unavailable.`
+              : reconnecting
+                ? `Submission #${submission.id} reconnecting to live updates…`
+                : connecting
+                  ? `Submission #${submission.id} connecting to live updates…`
+                  : queued
+                    ? `Submission #${submission.id} queued — waiting for a judge worker…`
+                    : `Submission #${submission.id} is being judged…`}
+          </span>
+        </div>
+
+        {liveUpdateError && (
+          <div
+            role="alert"
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              gap: 10,
+              padding: '10px 12px',
+              border: '1px solid var(--warn)',
+              borderRadius: 10,
+              background: 'var(--warn-bg)',
+            }}
+          >
+            <span style={{ flex: 1, minWidth: 200, fontSize: 12.5 }}>
+              {liveUpdateError} You can reconnect live updates or check the result once.
+            </span>
+            <button type="button" onClick={onReconnectStream} className="ac-hover-surface2" style={smallActionButton}>
+              Reconnect
+            </button>
+            <button
+              type="button"
+              onClick={onCheckResult}
+              disabled={checkingResult}
+              className="ac-hover-surface2"
+              style={{ ...smallActionButton, opacity: checkingResult ? 0.6 : 1 }}
+            >
+              {checkingResult ? 'Checking…' : 'Check result'}
+            </button>
+            <button type="button" onClick={onOpenSubmissions} className="ac-hover-surface2" style={smallActionButton}>
+              View submissions
+            </button>
+          </div>
+        )}
       </div>
     );
   }
 
-  if (pollTimedOut && submission) {
+  if (detailFetchError && submission) {
     return (
-      <div
-        role="alert"
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'center',
-          gap: 12,
-          padding: '12px 14px',
-          border: '1px solid var(--warn)',
-          borderRadius: 10,
-          background: 'var(--warn-bg)',
-        }}
-      >
-        <span
-          aria-hidden="true"
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div
+          role="alert"
           style={{
-            width: 22,
-            height: 22,
-            borderRadius: 6,
-            background: 'var(--surface)',
-            color: 'var(--warn)',
             display: 'flex',
+            flexWrap: 'wrap',
             alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 12,
-            fontWeight: 700,
-            flexShrink: 0,
+            gap: 10,
+            padding: '10px 12px',
+            border: '1px solid var(--warn)',
+            borderRadius: 10,
+            background: 'var(--warn-bg)',
           }}
         >
-          !
-        </span>
-        <span style={{ flex: 1, minWidth: 200, fontSize: 12.5 }}>
-          Submission #{submission.id} is still queued after two minutes. It is saved and will run when
-          a judge worker picks it up.
-        </span>
-        <button
-          type="button"
-          onClick={onOpenSubmissions}
-          className="ac-hover-surface2"
-          style={{
-            height: 32,
-            padding: '0 13px',
-            border: '1px solid var(--border2)',
-            borderRadius: 8,
-            background: 'var(--surface)',
-            color: 'var(--text)',
-            fontSize: 12,
-            fontWeight: 600,
-            cursor: 'pointer',
-          }}
-        >
-          View submissions
-        </button>
+          <span style={{ flex: 1, minWidth: 200, fontSize: 12.5 }}>{detailFetchError}</span>
+          <button
+            type="button"
+            onClick={onCheckResult}
+            disabled={checkingResult}
+            className="ac-hover-surface2"
+            style={{ ...smallActionButton, opacity: checkingResult ? 0.6 : 1 }}
+          >
+            {checkingResult ? 'Checking…' : 'Retry detail'}
+          </button>
+        </div>
       </div>
     );
   }
@@ -2122,6 +2261,18 @@ const iconButton: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
+};
+
+const smallActionButton: React.CSSProperties = {
+  height: 32,
+  padding: '0 13px',
+  border: '1px solid var(--border2)',
+  borderRadius: 8,
+  background: 'var(--surface)',
+  color: 'var(--text)',
+  fontSize: 12,
+  fontWeight: 600,
+  cursor: 'pointer',
 };
 
 const settingsLabel: React.CSSProperties = {

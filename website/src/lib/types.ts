@@ -174,6 +174,18 @@ export interface CreateSubmissionResponse {
   created_at: string;
 }
 
+export interface SubmissionStreamTicketResponse {
+  ticket: string;
+  expires_at: string;
+}
+
+export interface SubmissionStreamEvent {
+  submission_id: number;
+  attempt_id: string;
+  status: SubmissionStatus;
+  updated_at: string;
+}
+
 export interface Submission {
   id: number;
   problem_id: number;

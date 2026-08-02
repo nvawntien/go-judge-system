@@ -16,6 +16,7 @@ import type {
   RunCodeRequest,
   RunResponse,
   Submission,
+  SubmissionStreamTicketResponse,
   UpdateProfileRequest,
   VerifyEmailRequest,
 } from './types';
@@ -252,6 +253,12 @@ export const submissionApi = {
 
   get: (id: number, signal?: AbortSignal) =>
     apiRequest<Submission>(`/api/v1/submissions/${id}`, { signal }),
+
+  issueStreamTicket: (id: number, signal?: AbortSignal) =>
+    apiRequest<SubmissionStreamTicketResponse>(`/api/v1/submissions/${id}/events/ticket`, {
+      method: 'POST',
+      signal,
+    }),
 
   listMine: (params: ListSubmissionsParams = {}, signal?: AbortSignal) =>
     apiRequest<ListSubmissionsResponse>('/api/v1/me/submissions', {
