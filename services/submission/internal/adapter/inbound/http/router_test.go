@@ -6,13 +6,16 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"go-judge-system/pkg/auth"
+	"go-judge-system/pkg/config"
 	"go-judge-system/pkg/response"
 	"go-judge-system/services/submission/internal/adapter/inbound/http/handler"
 	adminhandler "go-judge-system/services/submission/internal/adapter/inbound/http/handler/admin"
 	userhandler "go-judge-system/services/submission/internal/adapter/inbound/http/handler/user"
 	"go-judge-system/services/submission/internal/application/dto"
+	"go-judge-system/services/submission/internal/domain/entity"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -87,17 +90,76 @@ func (f *fakeRouterListAdminSubmissionsUseCase) Execute(
 	return f.response, nil
 }
 
+type fakeRouterIssueStreamTicketUseCase struct{}
+
+func (*fakeRouterIssueStreamTicketUseCase) Execute(
+	context.Context,
+	auth.Claims,
+	dto.IssueSubmissionStreamTicketRequest,
+) (dto.IssueSubmissionStreamTicketResponse, error) {
+	return dto.IssueSubmissionStreamTicketResponse{}, nil
+}
+
+type fakeRouterSnapshotRepository struct{}
+
+func (*fakeRouterSnapshotRepository) GetStreamSnapshot(
+	context.Context,
+	int64,
+) (*entity.SubmissionStreamSnapshot, error) {
+	return nil, nil
+}
+
+type fakeRouterStreamTicketService struct{}
+
+func (*fakeRouterStreamTicketService) Issue(string, int64) (string, time.Time, error) {
+	return "", time.Time{}, nil
+}
+
+func (*fakeRouterStreamTicketService) Verify(string) (entity.SubmissionStreamTicketClaims, error) {
+	return entity.SubmissionStreamTicketClaims{}, nil
+}
+
+type fakeRouterEventHub struct{}
+
+func (*fakeRouterEventHub) Subscribe(int64) (<-chan entity.SubmissionEvent, func()) {
+	return make(chan entity.SubmissionEvent), func() {}
+}
+
+func (*fakeRouterEventHub) Publish(entity.SubmissionEvent) {}
+
+func newTestUserHandler(
+	createUseCase *fakeRouterCreateSubmissionUseCase,
+	runUseCase *fakeRouterRunCodeUseCase,
+	getUseCase *fakeRouterGetSubmissionUseCase,
+	listUseCase *fakeRouterListMySubmissionsUseCase,
+) *handler.UserHandler {
+	return handler.NewUserHandler(
+		userhandler.NewCreateSubmissionHandler(createUseCase),
+		userhandler.NewRunCodeHandler(runUseCase),
+		userhandler.NewGetSubmissionHandler(getUseCase),
+		userhandler.NewListMySubmissionsHandler(listUseCase),
+		userhandler.NewIssueSubmissionStreamTicketHandler(&fakeRouterIssueStreamTicketUseCase{}),
+		userhandler.NewSubmissionEventsHandler(
+			&fakeRouterSnapshotRepository{},
+			&fakeRouterStreamTicketService{},
+			&fakeRouterEventHub{},
+			config.SSEConfig{HeartbeatInterval: time.Second, AllowedOrigin: "http://localhost:3000"},
+			zap.NewNop(),
+		),
+	)
+}
+
 func TestRouterRegistersAuthenticatedSubmissionRoutes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	getUseCase := &fakeRouterGetSubmissionUseCase{}
 	listUseCase := &fakeRouterListMySubmissionsUseCase{}
 	adminListUseCase := &fakeRouterListAdminSubmissionsUseCase{}
-	userHandler := handler.NewUserHandler(
-		userhandler.NewCreateSubmissionHandler(&fakeRouterCreateSubmissionUseCase{}),
-		userhandler.NewRunCodeHandler(&fakeRouterRunCodeUseCase{}),
-		userhandler.NewGetSubmissionHandler(getUseCase),
-		userhandler.NewListMySubmissionsHandler(listUseCase),
+	userHandler := newTestUserHandler(
+		&fakeRouterCreateSubmissionUseCase{},
+		&fakeRouterRunCodeUseCase{},
+		getUseCase,
+		listUseCase,
 	)
 	adminHandler := handler.NewAdminHandler(
 		adminhandler.NewListSubmissionsHandler(adminListUseCase),
@@ -135,6 +197,18 @@ func TestRouterRegistersAuthenticatedSubmissionRoutes(t *testing.T) {
 		t.Fatalf(
 			"GET admin submissions route count = %d, want 1",
 			routeCounts[http.MethodGet+" /api/v1/admin/submissions"],
+		)
+	}
+	if routeCounts[http.MethodPost+" /api/v1/submissions/:submission_id/events/ticket"] != 1 {
+		t.Fatalf(
+			"POST stream ticket route count = %d, want 1",
+			routeCounts[http.MethodPost+" /api/v1/submissions/:submission_id/events/ticket"],
+		)
+	}
+	if routeCounts[http.MethodGet+" /events/submissions/:submission_id"] != 1 {
+		t.Fatalf(
+			"SSE route count = %d, want 1",
+			routeCounts[http.MethodGet+" /events/submissions/:submission_id"],
 		)
 	}
 	for _, staleRoute := range []string{
@@ -180,11 +254,11 @@ func TestRouterListMySubmissionsUsesGenericHandler(t *testing.T) {
 			},
 		},
 	}
-	userHandler := handler.NewUserHandler(
-		userhandler.NewCreateSubmissionHandler(&fakeRouterCreateSubmissionUseCase{}),
-		userhandler.NewRunCodeHandler(&fakeRouterRunCodeUseCase{}),
-		userhandler.NewGetSubmissionHandler(&fakeRouterGetSubmissionUseCase{}),
-		userhandler.NewListMySubmissionsHandler(listUseCase),
+	userHandler := newTestUserHandler(
+		&fakeRouterCreateSubmissionUseCase{},
+		&fakeRouterRunCodeUseCase{},
+		&fakeRouterGetSubmissionUseCase{},
+		listUseCase,
 	)
 	adminHandler := handler.NewAdminHandler(
 		adminhandler.NewListSubmissionsHandler(&fakeRouterListAdminSubmissionsUseCase{}),
@@ -256,11 +330,11 @@ func TestRouterListAdminSubmissionsUsesGenericHandler(t *testing.T) {
 			},
 		},
 	}
-	userHandler := handler.NewUserHandler(
-		userhandler.NewCreateSubmissionHandler(&fakeRouterCreateSubmissionUseCase{}),
-		userhandler.NewRunCodeHandler(&fakeRouterRunCodeUseCase{}),
-		userhandler.NewGetSubmissionHandler(&fakeRouterGetSubmissionUseCase{}),
-		userhandler.NewListMySubmissionsHandler(&fakeRouterListMySubmissionsUseCase{}),
+	userHandler := newTestUserHandler(
+		&fakeRouterCreateSubmissionUseCase{},
+		&fakeRouterRunCodeUseCase{},
+		&fakeRouterGetSubmissionUseCase{},
+		&fakeRouterListMySubmissionsUseCase{},
 	)
 	adminHandler := handler.NewAdminHandler(
 		adminhandler.NewListSubmissionsHandler(adminListUseCase),

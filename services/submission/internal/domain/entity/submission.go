@@ -54,6 +54,21 @@ func ParseStatus(value string) (Status, bool) {
 	}
 }
 
+func IsTerminalStatus(status Status) bool {
+	switch status {
+	case StatusAccepted,
+		StatusWrongAnswer,
+		StatusTimeLimitExceed,
+		StatusMemoryLimitExceed,
+		StatusRuntimeError,
+		StatusCompilationError,
+		StatusSystemError:
+		return true
+	default:
+		return false
+	}
+}
+
 type Submission struct {
 	ID               int64
 	ProblemID        int64

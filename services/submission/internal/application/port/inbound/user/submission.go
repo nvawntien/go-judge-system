@@ -22,3 +22,7 @@ type GetSubmissionUseCase interface {
 type ListMySubmissionsUseCase interface {
 	Execute(ctx context.Context, claims auth.Claims, req dto.ListMySubmissionsRequest) (dto.ListMySubmissionsResponse, error)
 }
+
+type IssueSubmissionStreamTicketUseCase interface {
+	Execute(ctx context.Context, claims auth.Claims, req dto.IssueSubmissionStreamTicketRequest) (dto.IssueSubmissionStreamTicketResponse, error)
+}

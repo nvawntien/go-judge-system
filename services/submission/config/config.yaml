@@ -68,3 +68,9 @@ run_code:
   compile_time_limit: 15s
   compile_memory_limit_kb: 524288
   request_timeout: 30s
+
+sse:
+  ticket_secret: "local-dev-submission-sse-ticket-secret-change-me"
+  ticket_ttl: 2m
+  heartbeat_interval: 15s
+  allowed_origin: "http://localhost:3000"

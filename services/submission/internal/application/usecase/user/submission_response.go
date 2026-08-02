@@ -16,24 +16,9 @@ func testcaseSummaryForStatus(
 		return &passed, &total
 	}
 
-	if isTerminalSubmissionStatus(status) {
+	if entity.IsTerminalStatus(status) {
 		zero := 0
 		return &zero, &zero
 	}
 	return nil, nil
-}
-
-func isTerminalSubmissionStatus(status entity.Status) bool {
-	switch status {
-	case entity.StatusAccepted,
-		entity.StatusWrongAnswer,
-		entity.StatusTimeLimitExceed,
-		entity.StatusMemoryLimitExceed,
-		entity.StatusRuntimeError,
-		entity.StatusCompilationError,
-		entity.StatusSystemError:
-		return true
-	default:
-		return false
-	}
 }

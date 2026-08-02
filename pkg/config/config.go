@@ -20,6 +20,7 @@ type Config struct {
 	ProblemGRPC ProblemGRPCConfig `mapstructure:"problem_grpc"`
 	JudgeGRPC   JudgeGRPCConfig   `mapstructure:"judge_grpc"`
 	RunCode     RunCodeConfig     `mapstructure:"run_code"`
+	SSE         SSEConfig         `mapstructure:"sse"`
 }
 
 type AppConfig struct {
@@ -106,6 +107,13 @@ type RunCodeConfig struct {
 	CompileTimeLimit        time.Duration `mapstructure:"compile_time_limit"`
 	CompileMemoryLimitKB    int64         `mapstructure:"compile_memory_limit_kb"`
 	RequestTimeout          time.Duration `mapstructure:"request_timeout"`
+}
+
+type SSEConfig struct {
+	TicketSecret      string        `mapstructure:"ticket_secret"`
+	TicketTTL         time.Duration `mapstructure:"ticket_ttl"`
+	HeartbeatInterval time.Duration `mapstructure:"heartbeat_interval"`
+	AllowedOrigin     string        `mapstructure:"allowed_origin"`
 }
 
 type SMTPConfig struct {

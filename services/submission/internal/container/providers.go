@@ -25,6 +25,7 @@ import (
 	"go-judge-system/services/submission/internal/adapter/outbound/outbox"
 	"go-judge-system/services/submission/internal/adapter/outbound/persistence/postgres"
 	problemreader "go-judge-system/services/submission/internal/adapter/outbound/problem"
+	streamadapter "go-judge-system/services/submission/internal/adapter/outbound/stream"
 	"go-judge-system/services/submission/internal/application/dto"
 	adminusecase "go-judge-system/services/submission/internal/application/usecase/admin"
 	resultusecase "go-judge-system/services/submission/internal/application/usecase/result"
@@ -112,6 +113,28 @@ func ProvideRunCodeLimits(cfg *config.Config) dto.RunCodeLimits {
 	}
 }
 
+func ProvideSSEConfig(cfg *config.Config) (config.SSEConfig, error) {
+	sseCfg := cfg.SSE
+	sseCfg.TicketSecret = strings.TrimSpace(sseCfg.TicketSecret)
+	sseCfg.AllowedOrigin = strings.TrimSpace(sseCfg.AllowedOrigin)
+	if sseCfg.TicketSecret == "" {
+		return config.SSEConfig{}, fmt.Errorf("sse ticket secret is required")
+	}
+	if sseCfg.TicketTTL <= 0 {
+		return config.SSEConfig{}, fmt.Errorf("sse ticket ttl must be greater than zero")
+	}
+	if sseCfg.HeartbeatInterval <= 0 {
+		return config.SSEConfig{}, fmt.Errorf("sse heartbeat interval must be greater than zero")
+	}
+	if sseCfg.HeartbeatInterval >= 75*time.Second {
+		return config.SSEConfig{}, fmt.Errorf("sse heartbeat interval must be less than edge proxy read timeout")
+	}
+	if sseCfg.AllowedOrigin == "" {
+		sseCfg.AllowedOrigin = "http://localhost:3000"
+	}
+	return sseCfg, nil
+}
+
 var InfrastructureProviderSet = wire.NewSet(
 	database.ConnectDatabase,
 	cache.ConnectRedis,
@@ -126,6 +149,7 @@ var InfrastructureProviderSet = wire.NewSet(
 	ProvideJudgeClientConn,
 	ProvideJudgeServiceClient,
 	ProvideRunCodeLimits,
+	ProvideSSEConfig,
 )
 
 var MiddlewareProviderSet = wire.NewSet(
@@ -134,6 +158,7 @@ var MiddlewareProviderSet = wire.NewSet(
 
 var OutboundProviderSet = wire.NewSet(
 	postgres.NewSubmissionRepository,
+	postgres.NewSubmissionStreamSnapshotRepository,
 	postgres.NewSubmissionResultRepository,
 	postgres.NewTransactionManager,
 	postgres.NewOutboxRepository,
@@ -144,6 +169,8 @@ var OutboundProviderSet = wire.NewSet(
 	resultconsumer.NewDLTPublisher,
 	problemreader.NewGRPCProblemReader,
 	judgepublisher.NewGRPCRunner,
+	streamadapter.NewHMACSubmissionStreamTicketService,
+	streamadapter.NewSubmissionEventHub,
 )
 
 var UseCaseProviderSet = wire.NewSet(
@@ -153,6 +180,7 @@ var UseCaseProviderSet = wire.NewSet(
 	userusecase.NewRunCodeUseCase,
 	userusecase.NewGetSubmissionUseCase,
 	userusecase.NewListMySubmissionsUseCase,
+	userusecase.NewIssueSubmissionStreamTicketUseCase,
 )
 
 var InboundProviderSet = wire.NewSet(
@@ -161,6 +189,8 @@ var InboundProviderSet = wire.NewSet(
 	userhandler.NewRunCodeHandler,
 	userhandler.NewGetSubmissionHandler,
 	userhandler.NewListMySubmissionsHandler,
+	userhandler.NewIssueSubmissionStreamTicketHandler,
+	userhandler.NewSubmissionEventsHandler,
 	handler.NewAdminHandler,
 	handler.NewUserHandler,
 	http.NewRouter,

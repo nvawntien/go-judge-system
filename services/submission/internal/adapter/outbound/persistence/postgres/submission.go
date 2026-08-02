@@ -43,6 +43,10 @@ func NewSubmissionRepository(db *gorm.DB) outbound.SubmissionRepository {
 	return &submissionRepository{db: db}
 }
 
+func NewSubmissionStreamSnapshotRepository(db *gorm.DB) outbound.SubmissionStreamSnapshotRepository {
+	return &submissionRepository{db: db}
+}
+
 func (r *submissionRepository) Create(ctx context.Context, submission *entity.Submission) error {
 	dao := toSubmissionDAO(submission)
 	db := getDB(ctx, r.db)
@@ -60,6 +64,30 @@ func (r *submissionRepository) GetByID(ctx context.Context, id int64) (*entity.S
 
 func (r *submissionRepository) GetByIDForUpdate(ctx context.Context, id int64) (*entity.Submission, error) {
 	return r.getByID(ctx, id, true)
+}
+
+func (r *submissionRepository) GetStreamSnapshot(
+	ctx context.Context,
+	submissionID int64,
+) (*entity.SubmissionStreamSnapshot, error) {
+	var dao SubmissionDAO
+	if err := r.db.WithContext(ctx).
+		Model(&SubmissionDAO{}).
+		Select("id", "user_id", "current_attempt_id", "status", "updated_at").
+		First(&dao, submissionID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, domain.ErrSubmissionNotFound
+		}
+		return nil, fmt.Errorf("get submission stream snapshot %d: %w", submissionID, err)
+	}
+
+	return &entity.SubmissionStreamSnapshot{
+		SubmissionID: dao.ID,
+		UserID:       dao.UserID,
+		AttemptID:    dao.CurrentAttemptID,
+		Status:       entity.Status(dao.Status),
+		UpdatedAt:    dao.UpdatedAt,
+	}, nil
 }
 
 func (r *submissionRepository) getByID(ctx context.Context, id int64, forUpdate bool) (*entity.Submission, error) {
