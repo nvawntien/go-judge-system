@@ -12,11 +12,32 @@ x-healthcheck-defaults: &healthcheck-defaults
   start_period: 15s
 
 services:
+  envoy:
+    container_name: judge_envoy
+    image: envoyproxy/envoy:v1.34.2
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro
+    depends_on:
+      gateway:
+        condition: service_started
+      submission-service:
+        condition: service_healthy
+    networks:
+      - judge_internal
+    logging: *default-logging
+    command: [ "envoy", "-c", "/etc/envoy/envoy.yaml", "--log-level", "warn" ]
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: [ "CMD", "bash", "-ec", "exec 3<>/dev/tcp/127.0.0.1/8080; printf 'GET /envoy-health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3; grep -q '^ok$' <&3" ]
+
   gateway:
     container_name: judge_gateway
     image: devopsfaith/krakend:2.6.0
-    ports:
-      - "8080:8080"
+    expose:
+      - "8080"
     volumes:
       - ./gateway/krakend.tmpl:/etc/krakend/krakend.tmpl:ro
       - ./gateway/settings:/etc/krakend/settings:ro

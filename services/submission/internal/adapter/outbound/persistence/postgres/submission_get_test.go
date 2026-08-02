@@ -255,3 +255,87 @@ func TestSubmissionRepositoryGetByIDPreservesCancellation(t *testing.T) {
 		t.Fatalf("GetByID() error = %v, want context canceled", err)
 	}
 }
+
+func submissionStreamSnapshotRows(values ...[]driver.Value) driver.Rows {
+	return &repositoryReadRows{
+		columns: []string{
+			"id",
+			"user_id",
+			"current_attempt_id",
+			"status",
+			"updated_at",
+		},
+		values: values,
+	}
+}
+
+func TestSubmissionRepositoryGetStreamSnapshot(t *testing.T) {
+	updatedAt := time.Date(2026, 7, 30, 9, 0, 0, 0, time.UTC)
+	type contextKey struct{}
+	ctx := context.WithValue(context.Background(), contextKey{}, "request-context")
+
+	queryCalls := 0
+	var gotQuery string
+	var gotContextValue any
+	db := newRepositoryReadGormDB(t, func(
+		queryCtx context.Context,
+		query string,
+		_ []driver.NamedValue,
+	) (driver.Rows, error) {
+		queryCalls++
+		gotQuery = query
+		gotContextValue = queryCtx.Value(contextKey{})
+		return submissionStreamSnapshotRows([]driver.Value{
+			int64(77),
+			"owner",
+			"attempt-77",
+			"JUDGING",
+			updatedAt,
+		}), nil
+	})
+
+	got, err := (&submissionRepository{db: db}).GetStreamSnapshot(ctx, 77)
+	if err != nil {
+		t.Fatalf("GetStreamSnapshot() error = %v", err)
+	}
+	want := &entity.SubmissionStreamSnapshot{
+		SubmissionID: 77,
+		UserID:       "owner",
+		AttemptID:    "attempt-77",
+		Status:       entity.StatusJudging,
+		UpdatedAt:    updatedAt,
+	}
+	if *got != *want {
+		t.Fatalf("snapshot = %+v, want %+v", got, want)
+	}
+	if queryCalls != 1 {
+		t.Fatalf("query calls = %d, want 1", queryCalls)
+	}
+	if gotContextValue != "request-context" {
+		t.Fatalf("query context value = %v, want propagated value", gotContextValue)
+	}
+	upperQuery := strings.ToUpper(gotQuery)
+	for _, forbidden := range []string{"SOURCE_CODE", "COMPILE_OUTPUT", "ERROR_MESSAGE"} {
+		if strings.Contains(upperQuery, forbidden) {
+			t.Fatalf("snapshot query selects hidden/detail field %q: %s", forbidden, gotQuery)
+		}
+	}
+}
+
+func TestSubmissionRepositoryGetStreamSnapshotNotFound(t *testing.T) {
+	db := newRepositoryReadGormDB(t, func(
+		context.Context,
+		string,
+		[]driver.NamedValue,
+	) (driver.Rows, error) {
+		return submissionStreamSnapshotRows(), nil
+	})
+
+	got, err := (&submissionRepository{db: db}).GetStreamSnapshot(context.Background(), 404)
+	if got != nil {
+		t.Fatalf("snapshot = %+v, want nil", got)
+	}
+	if !errors.Is(err, domain.ErrSubmissionNotFound) {
+		t.Fatalf("GetStreamSnapshot() error = %v, want submission not found", err)
+	}
+}

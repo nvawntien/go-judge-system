@@ -24,6 +24,7 @@ import (
 	"go-judge-system/services/submission/internal/adapter/outbound/outbox"
 	"go-judge-system/services/submission/internal/adapter/outbound/persistence/postgres"
 	"go-judge-system/services/submission/internal/adapter/outbound/problem"
+	"go-judge-system/services/submission/internal/adapter/outbound/stream"
 	"go-judge-system/services/submission/internal/application/usecase/admin"
 	"go-judge-system/services/submission/internal/application/usecase/result"
 	"go-judge-system/services/submission/internal/application/usecase/user"
@@ -74,7 +75,21 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	getSubmissionHandler := user2.NewGetSubmissionHandler(getSubmissionUseCase)
 	listMySubmissionsUseCase := user.NewListMySubmissionsUseCase(submissionRepository)
 	listMySubmissionsHandler := user2.NewListMySubmissionsHandler(listMySubmissionsUseCase)
-	userHandler := handler.NewUserHandler(createSubmissionHandler, runCodeHandler, getSubmissionHandler, listMySubmissionsHandler)
+	submissionStreamSnapshotRepository := postgres.NewSubmissionStreamSnapshotRepository(db)
+	sseConfig, err := container.ProvideSSEConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
+	submissionStreamTicketService := stream.NewHMACSubmissionStreamTicketService(sseConfig)
+	issueSubmissionStreamTicketUseCase := user.NewIssueSubmissionStreamTicketUseCase(submissionStreamSnapshotRepository, submissionStreamTicketService)
+	issueSubmissionStreamTicketHandler := user2.NewIssueSubmissionStreamTicketHandler(issueSubmissionStreamTicketUseCase)
+	submissionEventHub := stream.NewSubmissionEventHub()
+	loggerConfig := cfg.Logger
+	serverConfig := cfg.Server
+	string2 := provideServerMode(serverConfig)
+	zapLogger := logger.NewLogger(loggerConfig, string2)
+	submissionEventsHandler := user2.NewSubmissionEventsHandler(submissionStreamSnapshotRepository, submissionStreamTicketService, submissionEventHub, sseConfig, zapLogger)
+	userHandler := handler.NewUserHandler(createSubmissionHandler, runCodeHandler, getSubmissionHandler, listMySubmissionsHandler, issueSubmissionStreamTicketHandler, submissionEventsHandler)
 	listAdminSubmissionsUseCase := admin.NewListAdminSubmissionsUseCase(submissionRepository)
 	listSubmissionsHandler := admin2.NewListSubmissionsHandler(listAdminSubmissionsUseCase)
 	adminHandler := handler.NewAdminHandler(listSubmissionsHandler)
@@ -86,10 +101,6 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	jwtConfig := cfg.JWT
 	logoutAllIATStore := auth.NewRedisLogoutAllIATStore(client, jwtConfig)
 	handlerFunc := middleware.NewAuthMiddleware(logoutAllIATStore)
-	loggerConfig := cfg.Logger
-	serverConfig := cfg.Server
-	string2 := provideServerMode(serverConfig)
-	zapLogger := logger.NewLogger(loggerConfig, string2)
 	router := http.NewRouter(userHandler, adminHandler, handlerFunc, zapLogger)
 	syncProducer, err := kafka.NewSyncProducer(kafkaConfig, zapLogger)
 	if err != nil {
@@ -101,7 +112,7 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 		return nil, err
 	}
 	submissionResultRepository := postgres.NewSubmissionResultRepository(db)
-	applyJudgeResultUseCase := result.NewApplyJudgeResultUseCase(submissionRepository, submissionResultRepository, transactionManager)
+	applyJudgeResultUseCase := result.NewApplyJudgeResultUseCase(submissionRepository, submissionResultRepository, transactionManager, submissionEventHub, zapLogger)
 	dltPublisher := kafka2.NewDLTPublisher(syncProducer, kafkaConfig, zapLogger)
 	judgeResultConsumer := kafka2.NewJudgeResultConsumer(consumerGroup, kafkaConfig, applyJudgeResultUseCase, dltPublisher, zapLogger)
 	app := container.NewApp(cfg, db, router, outboxRelay, judgeResultConsumer, zapLogger, syncProducer, consumerGroup, clientConn, judgeClientConn)

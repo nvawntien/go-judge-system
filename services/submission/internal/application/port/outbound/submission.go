@@ -2,6 +2,7 @@ package outbound
 
 import (
 	"context"
+	"time"
 
 	pkgjudge "go-judge-system/pkg/judge"
 	"go-judge-system/services/submission/internal/domain/entity"
@@ -14,6 +15,10 @@ type SubmissionRepository interface {
 	Update(ctx context.Context, submission *entity.Submission) error
 	List(ctx context.Context, filter ListSubmissionsFilter) (ListSubmissionsResult, error)
 	ResultSummaries(ctx context.Context, submissionIDs []int64) (map[int64]SubmissionResultSummary, error)
+}
+
+type SubmissionStreamSnapshotRepository interface {
+	GetStreamSnapshot(ctx context.Context, submissionID int64) (*entity.SubmissionStreamSnapshot, error)
 }
 
 type ListSubmissionsFilter struct {
@@ -59,4 +64,14 @@ type JudgePublisher interface {
 
 type AttemptIDGenerator interface {
 	NewAttemptID() string
+}
+
+type SubmissionStreamTicketService interface {
+	Issue(userID string, submissionID int64) (ticket string, expiresAt time.Time, err error)
+	Verify(ticket string) (entity.SubmissionStreamTicketClaims, error)
+}
+
+type SubmissionEventHub interface {
+	Subscribe(submissionID int64) (events <-chan entity.SubmissionEvent, unsubscribe func())
+	Publish(event entity.SubmissionEvent)
 }

@@ -54,6 +54,21 @@ func ParseStatus(value string) (Status, bool) {
 	}
 }
 
+func IsTerminalStatus(status Status) bool {
+	switch status {
+	case StatusAccepted,
+		StatusWrongAnswer,
+		StatusTimeLimitExceed,
+		StatusMemoryLimitExceed,
+		StatusRuntimeError,
+		StatusCompilationError,
+		StatusSystemError:
+		return true
+	default:
+		return false
+	}
+}
+
 type Submission struct {
 	ID               int64
 	ProblemID        int64
@@ -118,4 +133,13 @@ func (s *Submission) ResetForRejudge() {
 	s.CompileOutput = nil
 	s.ErrorMessage = nil
 	s.UpdatedAt = time.Now()
+}
+
+func (s *Submission) Event() SubmissionEvent {
+	return SubmissionEvent{
+		SubmissionID: s.ID,
+		AttemptID:    s.CurrentAttemptID,
+		Status:       string(s.Status),
+		UpdatedAt:    s.UpdatedAt,
+	}
 }

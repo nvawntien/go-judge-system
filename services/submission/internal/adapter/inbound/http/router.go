@@ -45,9 +45,12 @@ func (r *Router) SetupRoutes() {
 	v1 := r.engine.Group("/api/v1")
 	v1.POST("/submissions", r.authMiddleware, r.userHandler.CreateSubmission.Handle)
 	v1.POST("/submissions/run", r.authMiddleware, r.userHandler.RunCode.Handle)
+	v1.POST("/submissions/:submission_id/events/ticket", r.authMiddleware, r.userHandler.IssueStreamTicket.Handle)
 	v1.GET("/submissions/:submission_id", r.authMiddleware, r.userHandler.GetSubmission.Handle)
 	v1.GET("/me/submissions", r.authMiddleware, r.userHandler.ListMySubmissions.Handle)
 	v1.GET("/admin/submissions", r.authMiddleware, r.adminHandler.ListSubmissions.Handle)
+
+	r.engine.GET("/events/submissions/:submission_id", r.userHandler.SubmissionEvents.Handle)
 }
 
 func (r *Router) Start(port string) error {

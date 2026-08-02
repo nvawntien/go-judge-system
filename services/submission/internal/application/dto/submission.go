@@ -73,6 +73,15 @@ type GetSubmissionRequest struct {
 	SubmissionID int64 `uri:"submission_id" binding:"required,gt=0"`
 }
 
+type IssueSubmissionStreamTicketRequest struct {
+	SubmissionID int64 `uri:"submission_id" binding:"required,gt=0"`
+}
+
+type IssueSubmissionStreamTicketResponse struct {
+	Ticket    string    `json:"ticket"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
 type GetSubmissionResponse struct {
 	ID              int64     `json:"id"`
 	ProblemID       int64     `json:"problem_id"`
