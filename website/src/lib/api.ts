@@ -1,8 +1,17 @@
 import type {
+  AdminListProblemsParams,
+  AdminListProblemsResponse,
+  AdminListTagsResponse,
+  AdminProblemDetail,
+  AssignUserRoleRequest,
   ApiEnvelope,
   ChangePasswordRequest,
+  CreateAdminProblemRequest,
+  CreateAdminTagRequest,
   CreateSubmissionRequest,
   CreateSubmissionResponse,
+  ListAdminSubmissionsParams,
+  ListAdminSubmissionsResponse,
   ListProblemsParams,
   ListProblemsResponse,
   ListSubmissionsParams,
@@ -17,6 +26,8 @@ import type {
   RunResponse,
   Submission,
   SubmissionStreamTicketResponse,
+  UpdateAdminProblemRequest,
+  UpdateAdminTagRequest,
   UpdateProfileRequest,
   VerifyEmailRequest,
 } from './types';
@@ -243,6 +254,95 @@ export const problemApi = {
     apiRequest<Problem>(`/api/v1/problems/${encodeURIComponent(slug)}`, { signal }),
 
   tags: (signal?: AbortSignal) => apiRequest<ListTagsResponse>('/api/v1/tags', { signal }),
+};
+
+/* --------------------------------------------------------------- admin */
+
+export const adminProblemApi = {
+  list: (params: AdminListProblemsParams = {}, signal?: AbortSignal) =>
+    apiRequest<AdminListProblemsResponse>('/api/v1/admin/problems', {
+      query: {
+        page: params.page,
+        limit: params.limit,
+        difficulty: params.difficulty,
+        search: params.search,
+        tag_slug: params.tag_slug,
+      },
+      signal,
+    }),
+
+  get: (id: number, signal?: AbortSignal) =>
+    apiRequest<AdminProblemDetail>(`/api/v1/admin/problems/${id}`, { signal }),
+
+  create: (body: CreateAdminProblemRequest) =>
+    apiRequest<Problem>('/api/v1/admin/problems', { method: 'POST', body }),
+
+  update: (id: number, body: UpdateAdminProblemRequest) =>
+    apiRequest<Problem>(`/api/v1/admin/problems/${id}`, { method: 'PUT', body }),
+
+  publish: (id: number) =>
+    apiRequest<Problem>(`/api/v1/admin/problems/${id}/publish`, { method: 'PATCH' }),
+
+  setHidden: (id: number) =>
+    apiRequest<Problem>(`/api/v1/admin/problems/${id}/hidden`, { method: 'PATCH' }),
+
+  delete: (id: number) =>
+    apiRequest<void>(`/api/v1/admin/problems/${id}`, { method: 'DELETE' }),
+
+  getTestCase: (problemId: number, signal?: AbortSignal) =>
+    apiRequest<AdminProblemDetail['testcase']>(`/api/v1/admin/problems/${problemId}/testcases`, {
+      signal,
+    }),
+
+  uploadTestCase: (problemId: number, file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return apiRequest<AdminProblemDetail['testcase']>(`/api/v1/admin/problems/${problemId}/testcases`, {
+      method: 'POST',
+      formData,
+    });
+  },
+
+  deleteTestCase: (problemId: number) =>
+    apiRequest<void>(`/api/v1/admin/problems/${problemId}/testcases`, { method: 'DELETE' }),
+};
+
+export const adminTagApi = {
+  list: (signal?: AbortSignal) => apiRequest<AdminListTagsResponse>('/api/v1/admin/tags', { signal }),
+
+  create: (body: CreateAdminTagRequest) =>
+    apiRequest<AdminListTagsResponse['items'][number]>('/api/v1/admin/tags', { method: 'POST', body }),
+
+  update: (id: number, body: UpdateAdminTagRequest) =>
+    apiRequest<AdminListTagsResponse['items'][number]>(`/api/v1/admin/tags/${id}`, {
+      method: 'PUT',
+      body,
+    }),
+
+  delete: (id: number) => apiRequest<void>(`/api/v1/admin/tags/${id}`, { method: 'DELETE' }),
+};
+
+export const adminSubmissionApi = {
+  list: (params: ListAdminSubmissionsParams = {}, signal?: AbortSignal) =>
+    apiRequest<ListAdminSubmissionsResponse>('/api/v1/admin/submissions', {
+      query: {
+        page: params.page,
+        limit: params.limit,
+        status: params.status,
+        language: params.language,
+        problem_id: params.problem_id,
+        user_id: params.user_id,
+      },
+      signal,
+    }),
+};
+
+export const adminUserApi = {
+  assignRole: (id: string, body: AssignUserRoleRequest) =>
+    apiRequest<void>(`/api/v1/admin/users/${encodeURIComponent(id)}/role`, {
+      method: 'PUT',
+      body,
+    }),
 };
 
 /* ------------------------------------------------------------ submission */

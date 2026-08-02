@@ -121,6 +121,7 @@ export interface Problem {
   author_id?: string;
   is_hidden?: boolean;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface ListProblemsParams {
@@ -140,6 +141,91 @@ export interface ListProblemsResponse {
 
 export interface ListTagsResponse {
   items: Tag[];
+}
+
+export interface ProblemWriteExample {
+  input: string;
+  expected_output: string;
+  explanation?: string;
+}
+
+export interface CreateAdminProblemRequest {
+  title: string;
+  description: string;
+  difficulty: Difficulty;
+  tag_ids?: number[];
+  examples: ProblemWriteExample[];
+  constraints: string[];
+  hints: string[];
+  time_limit: number;
+  memory_limit: number;
+}
+
+export interface UpdateAdminProblemRequest {
+  title?: string;
+  slug?: string;
+  description?: string;
+  difficulty?: Difficulty;
+  tag_ids?: number[];
+  examples?: ProblemWriteExample[];
+  constraints?: string[];
+  hints?: string[];
+  time_limit?: number;
+  memory_limit?: number;
+}
+
+export interface AdminTestCaseMetadata {
+  has_testcase: boolean;
+  id?: number;
+  problem_id?: number;
+  zip_object_key?: string;
+  test_count?: number;
+  version?: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface AdminProblemDetail extends Required<Omit<Problem, 'tags' | 'examples' | 'constraints' | 'hints' | 'updated_at'>> {
+  tags: Tag[];
+  examples: ProblemExample[];
+  constraints: string[];
+  hints: string[];
+  updated_at: string;
+  deleted_at?: string | null;
+  testcase: AdminTestCaseMetadata;
+}
+
+export interface AdminListProblemsParams extends ListProblemsParams {}
+
+export interface AdminListProblemsResponse {
+  items: Problem[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface AdminTag extends Tag {
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminListTagsResponse {
+  items: AdminTag[];
+}
+
+export interface CreateAdminTagRequest {
+  name: string;
+  slug?: string;
+  description?: string;
+  is_active?: boolean;
+}
+
+export interface UpdateAdminTagRequest {
+  name?: string;
+  slug?: string;
+  description?: string;
+  is_active?: boolean;
 }
 
 /* ------------------------------------------------------------ submission */
@@ -216,6 +302,35 @@ export interface SubmissionListItem {
   passed_testcases: number | null;
   total_testcases: number | null;
   created_at: string;
+}
+
+export interface AdminSubmissionListItem {
+  id: number;
+  problem_id: number;
+  problem_title: string;
+  user_id: string;
+  username: string;
+  language: string;
+  status: SubmissionStatus;
+  created_at: string;
+}
+
+export interface ListAdminSubmissionsResponse {
+  items: AdminSubmissionListItem[];
+  pagination: Pagination;
+}
+
+export interface ListAdminSubmissionsParams {
+  page?: number;
+  limit?: number;
+  status?: SubmissionStatus | '';
+  language?: LanguageCode | '';
+  problem_id?: number;
+  user_id?: string;
+}
+
+export interface AssignUserRoleRequest {
+  role: Role;
 }
 
 export type SubmissionDetail = Submission;

@@ -8,6 +8,9 @@
 !.yarn/releases
 !.yarn/versions
 
+# ux-ui-pro-max-skill
+/.codex
+
 # testing
 /coverage
 
