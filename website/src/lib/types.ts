@@ -315,6 +315,35 @@ export interface AdminSubmissionListItem {
   created_at: string;
 }
 
+export interface AdminSubmissionTestResult {
+  index: number;
+  status: string;
+  runtime_ms: number | null;
+  memory_kb: number | null;
+}
+
+export interface AdminSubmissionDetail {
+  id: number;
+  problem_id: number;
+  problem_title: string;
+  user_id: string;
+  username: string;
+  language: string;
+  source_code: string;
+  status: SubmissionStatus;
+  current_attempt_id: string;
+  passed_test_count: number;
+  executed_test_count: number;
+  total_test_count: number | null;
+  runtime_ms: number | null;
+  memory_kb: number | null;
+  compile_message: string | null;
+  judge_message: string | null;
+  created_at: string;
+  updated_at: string;
+  test_results: AdminSubmissionTestResult[];
+}
+
 export interface ListAdminSubmissionsResponse {
   items: AdminSubmissionListItem[];
   pagination: Pagination;

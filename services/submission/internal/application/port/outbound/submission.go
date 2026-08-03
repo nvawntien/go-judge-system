@@ -43,6 +43,7 @@ type SubmissionResultSummary struct {
 
 type SubmissionResultRepository interface {
 	GetBySubmissionID(ctx context.Context, submissionID int64) ([]*entity.SubmissionResult, error)
+	GetBySubmissionIDAndAttemptID(ctx context.Context, submissionID int64, attemptID string) ([]*entity.SubmissionResult, error)
 	DeleteBySubmissionID(ctx context.Context, submissionID int64) error
 	ReplaceBySubmissionIDAndAttemptID(ctx context.Context, submissionID int64, attemptID string, results []*entity.SubmissionResult) error
 }

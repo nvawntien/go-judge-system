@@ -101,6 +101,39 @@ type GetSubmissionResponse struct {
 	UpdatedAt       time.Time `json:"updated_at"`
 }
 
+type GetAdminSubmissionDetailRequest struct {
+	SubmissionID int64 `uri:"submission_id" binding:"required,gt=0"`
+}
+
+type AdminSubmissionTestResult struct {
+	Index     int    `json:"index"`
+	Status    string `json:"status"`
+	RuntimeMS *int   `json:"runtime_ms"`
+	MemoryKB  *int   `json:"memory_kb"`
+}
+
+type GetAdminSubmissionDetailResponse struct {
+	ID                int64                       `json:"id"`
+	ProblemID         int64                       `json:"problem_id"`
+	ProblemTitle      string                      `json:"problem_title"`
+	UserID            string                      `json:"user_id"`
+	Username          string                      `json:"username"`
+	Language          string                      `json:"language"`
+	SourceCode        string                      `json:"source_code"`
+	Status            string                      `json:"status"`
+	CurrentAttemptID  string                      `json:"current_attempt_id"`
+	PassedTestCount   int                         `json:"passed_test_count"`
+	ExecutedTestCount int                         `json:"executed_test_count"`
+	TotalTestCount    *int                        `json:"total_test_count"`
+	RuntimeMS         *int                        `json:"runtime_ms"`
+	MemoryKB          *int                        `json:"memory_kb"`
+	CompileMessage    *string                     `json:"compile_message"`
+	JudgeMessage      *string                     `json:"judge_message"`
+	CreatedAt         time.Time                   `json:"created_at"`
+	UpdatedAt         time.Time                   `json:"updated_at"`
+	TestResults       []AdminSubmissionTestResult `json:"test_results"`
+}
+
 type ListMySubmissionsRequest struct {
 	Page      *int   `form:"page"`
 	Limit     *int   `form:"limit"`

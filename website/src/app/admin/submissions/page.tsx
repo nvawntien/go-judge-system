@@ -95,7 +95,7 @@ export default function AdminSubmissionsPage() {
     <>
       <AdminPageHeader
         title="Submissions"
-        description="System-wide submission list from the submission-service admin API. Detail and rejudge APIs are not available in service yet."
+        description="System-wide submission list from the submission-service admin API. Rejudge is reserved for a later phase."
       />
 
       <form

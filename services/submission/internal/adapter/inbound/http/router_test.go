@@ -90,6 +90,24 @@ func (f *fakeRouterListAdminSubmissionsUseCase) Execute(
 	return f.response, nil
 }
 
+type fakeRouterGetAdminSubmissionDetailUseCase struct {
+	response dto.GetAdminSubmissionDetailResponse
+	claims   auth.Claims
+	req      dto.GetAdminSubmissionDetailRequest
+	calls    int
+}
+
+func (f *fakeRouterGetAdminSubmissionDetailUseCase) Execute(
+	_ context.Context,
+	claims auth.Claims,
+	req dto.GetAdminSubmissionDetailRequest,
+) (dto.GetAdminSubmissionDetailResponse, error) {
+	f.calls++
+	f.claims = claims
+	f.req = req
+	return f.response, nil
+}
+
 type fakeRouterIssueStreamTicketUseCase struct{}
 
 func (*fakeRouterIssueStreamTicketUseCase) Execute(
@@ -155,6 +173,7 @@ func TestRouterRegistersAuthenticatedSubmissionRoutes(t *testing.T) {
 	getUseCase := &fakeRouterGetSubmissionUseCase{}
 	listUseCase := &fakeRouterListMySubmissionsUseCase{}
 	adminListUseCase := &fakeRouterListAdminSubmissionsUseCase{}
+	adminDetailUseCase := &fakeRouterGetAdminSubmissionDetailUseCase{}
 	userHandler := newTestUserHandler(
 		&fakeRouterCreateSubmissionUseCase{},
 		&fakeRouterRunCodeUseCase{},
@@ -163,6 +182,7 @@ func TestRouterRegistersAuthenticatedSubmissionRoutes(t *testing.T) {
 	)
 	adminHandler := handler.NewAdminHandler(
 		adminhandler.NewListSubmissionsHandler(adminListUseCase),
+		adminhandler.NewGetSubmissionDetailHandler(adminDetailUseCase),
 	)
 
 	authCalls := 0
@@ -197,6 +217,12 @@ func TestRouterRegistersAuthenticatedSubmissionRoutes(t *testing.T) {
 		t.Fatalf(
 			"GET admin submissions route count = %d, want 1",
 			routeCounts[http.MethodGet+" /api/v1/admin/submissions"],
+		)
+	}
+	if routeCounts[http.MethodGet+" /api/v1/admin/submissions/:submission_id"] != 1 {
+		t.Fatalf(
+			"GET admin submission detail route count = %d, want 1",
+			routeCounts[http.MethodGet+" /api/v1/admin/submissions/:submission_id"],
 		)
 	}
 	if routeCounts[http.MethodPost+" /api/v1/submissions/:submission_id/events/ticket"] != 1 {
@@ -241,6 +267,9 @@ func TestRouterRegistersAuthenticatedSubmissionRoutes(t *testing.T) {
 	if adminListUseCase.calls != 0 {
 		t.Fatalf("admin list use case calls = %d, want 0", adminListUseCase.calls)
 	}
+	if adminDetailUseCase.calls != 0 {
+		t.Fatalf("admin detail use case calls = %d, want 0", adminDetailUseCase.calls)
+	}
 }
 
 func TestRouterListMySubmissionsUsesGenericHandler(t *testing.T) {
@@ -262,6 +291,7 @@ func TestRouterListMySubmissionsUsesGenericHandler(t *testing.T) {
 	)
 	adminHandler := handler.NewAdminHandler(
 		adminhandler.NewListSubmissionsHandler(&fakeRouterListAdminSubmissionsUseCase{}),
+		adminhandler.NewGetSubmissionDetailHandler(&fakeRouterGetAdminSubmissionDetailUseCase{}),
 	)
 
 	claims := auth.Claims{
@@ -338,6 +368,7 @@ func TestRouterListAdminSubmissionsUsesGenericHandler(t *testing.T) {
 	)
 	adminHandler := handler.NewAdminHandler(
 		adminhandler.NewListSubmissionsHandler(adminListUseCase),
+		adminhandler.NewGetSubmissionDetailHandler(&fakeRouterGetAdminSubmissionDetailUseCase{}),
 	)
 
 	claims := auth.Claims{
@@ -393,5 +424,62 @@ func TestRouterListAdminSubmissionsUsesGenericHandler(t *testing.T) {
 		envelope.Code != response.CodeSuccess ||
 		envelope.Data.Items == nil {
 		t.Fatalf("unexpected envelope: %+v", envelope)
+	}
+}
+
+func TestRouterGetAdminSubmissionDetailUsesGenericHandler(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	adminDetailUseCase := &fakeRouterGetAdminSubmissionDetailUseCase{
+		response: dto.GetAdminSubmissionDetailResponse{
+			ID:           77,
+			ProblemID:    42,
+			ProblemTitle: "Two Sum",
+			UserID:       "user-123",
+			Username:     "alice",
+			Language:     "CPP",
+			Status:       "ACCEPTED",
+			TestResults:  []dto.AdminSubmissionTestResult{},
+		},
+	}
+	userHandler := newTestUserHandler(
+		&fakeRouterCreateSubmissionUseCase{},
+		&fakeRouterRunCodeUseCase{},
+		&fakeRouterGetSubmissionUseCase{},
+		&fakeRouterListMySubmissionsUseCase{},
+	)
+	adminHandler := handler.NewAdminHandler(
+		adminhandler.NewListSubmissionsHandler(&fakeRouterListAdminSubmissionsUseCase{}),
+		adminhandler.NewGetSubmissionDetailHandler(adminDetailUseCase),
+	)
+
+	claims := auth.Claims{
+		UserID:   "verified-moderator",
+		Username: "moderator-name",
+		Role:     "moderator",
+	}
+	authMiddleware := func(c *gin.Context) {
+		auth.SetClaims(c, claims)
+		c.Next()
+	}
+
+	router := NewRouter(userHandler, adminHandler, authMiddleware, zap.NewNop())
+	router.SetupRoutes()
+
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/submissions/77", nil)
+	router.engine.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", recorder.Code, recorder.Body.String())
+	}
+	if adminDetailUseCase.calls != 1 {
+		t.Fatalf("admin detail use case calls = %d, want 1", adminDetailUseCase.calls)
+	}
+	if adminDetailUseCase.claims.UserID != claims.UserID || adminDetailUseCase.claims.Role != claims.Role {
+		t.Fatalf("claims = %+v, want verified claims %+v", adminDetailUseCase.claims, claims)
+	}
+	if adminDetailUseCase.req.SubmissionID != 77 {
+		t.Fatalf("submission ID = %d, want 77", adminDetailUseCase.req.SubmissionID)
 	}
 }

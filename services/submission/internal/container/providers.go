@@ -175,6 +175,7 @@ var OutboundProviderSet = wire.NewSet(
 
 var UseCaseProviderSet = wire.NewSet(
 	adminusecase.NewListAdminSubmissionsUseCase,
+	adminusecase.NewGetAdminSubmissionDetailUseCase,
 	resultusecase.NewApplyJudgeResultUseCase,
 	userusecase.NewCreateSubmissionUseCase,
 	userusecase.NewRunCodeUseCase,
@@ -185,6 +186,7 @@ var UseCaseProviderSet = wire.NewSet(
 
 var InboundProviderSet = wire.NewSet(
 	adminhandler.NewListSubmissionsHandler,
+	adminhandler.NewGetSubmissionDetailHandler,
 	userhandler.NewCreateSubmissionHandler,
 	userhandler.NewRunCodeHandler,
 	userhandler.NewGetSubmissionHandler,

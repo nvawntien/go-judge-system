@@ -61,6 +61,9 @@ type integrationSubmissionResultRepo struct {
 func (r *integrationSubmissionResultRepo) GetBySubmissionID(context.Context, int64) ([]*entity.SubmissionResult, error) {
 	return nil, nil
 }
+func (r *integrationSubmissionResultRepo) GetBySubmissionIDAndAttemptID(context.Context, int64, string) ([]*entity.SubmissionResult, error) {
+	return nil, nil
+}
 func (r *integrationSubmissionResultRepo) DeleteBySubmissionID(context.Context, int64) error {
 	return nil
 }

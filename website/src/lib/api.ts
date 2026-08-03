@@ -3,6 +3,7 @@ import type {
   AdminListProblemsResponse,
   AdminListTagsResponse,
   AdminProblemDetail,
+  AdminSubmissionDetail,
   AssignUserRoleRequest,
   ApiEnvelope,
   ChangePasswordRequest,
@@ -335,6 +336,9 @@ export const adminSubmissionApi = {
       },
       signal,
     }),
+
+  get: (id: number, signal?: AbortSignal) =>
+    apiRequest<AdminSubmissionDetail>(`/api/v1/admin/submissions/${id}`, { signal }),
 };
 
 export const adminUserApi = {

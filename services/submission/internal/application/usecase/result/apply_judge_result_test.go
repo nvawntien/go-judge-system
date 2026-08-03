@@ -82,6 +82,9 @@ type fakeSubmissionResultRepo struct {
 func (r *fakeSubmissionResultRepo) GetBySubmissionID(context.Context, int64) ([]*entity.SubmissionResult, error) {
 	return nil, nil
 }
+func (r *fakeSubmissionResultRepo) GetBySubmissionIDAndAttemptID(context.Context, int64, string) ([]*entity.SubmissionResult, error) {
+	return nil, nil
+}
 func (r *fakeSubmissionResultRepo) DeleteBySubmissionID(context.Context, int64) error { return nil }
 func (r *fakeSubmissionResultRepo) ReplaceBySubmissionIDAndAttemptID(ctx context.Context, submissionID int64, attemptID string, results []*entity.SubmissionResult) error {
 	if err := ctx.Err(); err != nil {
