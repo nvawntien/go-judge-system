@@ -14,3 +14,7 @@ type ListAdminSubmissionsUseCase interface {
 type GetAdminSubmissionDetailUseCase interface {
 	Execute(ctx context.Context, claims auth.Claims, req dto.GetAdminSubmissionDetailRequest) (dto.GetAdminSubmissionDetailResponse, error)
 }
+
+type RejudgeAdminSubmissionUseCase interface {
+	Execute(ctx context.Context, claims auth.Claims, req dto.RejudgeAdminSubmissionRequest) (dto.RejudgeAdminSubmissionResponse, error)
+}

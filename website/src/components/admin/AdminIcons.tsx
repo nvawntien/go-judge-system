@@ -69,4 +69,20 @@ export const AdminIcon = {
       <path d="M12 5v14M5 12h14" />
     </svg>
   ),
+  Refresh: ({ size = 16 }: AdminIconProps) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...strokeProps}>
+      <path d="M21 12a9 9 0 0 1-15.3 6.4L3 16" />
+      <path d="M3 21v-5h5" />
+      <path d="M3 12A9 9 0 0 1 18.3 5.6L21 8" />
+      <path d="M21 3v5h-5" />
+    </svg>
+  ),
+  Rejudge: ({ size = 16 }: AdminIconProps) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...strokeProps}>
+      <path d="M4 4v6h6" />
+      <path d="M20 20v-6h-6" />
+      <path d="M20 9A8 8 0 0 0 6.3 4.7L4 7" />
+      <path d="M4 15a8 8 0 0 0 13.7 4.3L20 17" />
+    </svg>
+  ),
 };

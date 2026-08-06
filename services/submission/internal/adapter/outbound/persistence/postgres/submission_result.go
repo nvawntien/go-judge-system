@@ -92,7 +92,7 @@ func (r *submissionResultRepository) ReplaceBySubmissionIDAndAttemptID(ctx conte
 	}
 
 	db := getDB(ctx, r.db)
-	if err := db.Where("submission_id = ?", submissionID).Delete(&SubmissionResultDAO{}).Error; err != nil {
+	if err := db.Where("submission_id = ? AND attempt_id = ?", submissionID, attemptID).Delete(&SubmissionResultDAO{}).Error; err != nil {
 		return err
 	}
 

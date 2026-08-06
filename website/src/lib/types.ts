@@ -332,6 +332,11 @@ export interface AdminSubmissionDetail {
   source_code: string;
   status: SubmissionStatus;
   current_attempt_id: string;
+  attempt_trigger: string | null;
+  attempt_triggered_by_user_id: string | null;
+  attempt_created_at: string | null;
+  testcase_version: number | null;
+  dataset_checksum: string | null;
   passed_test_count: number;
   executed_test_count: number;
   total_test_count: number | null;
@@ -342,6 +347,15 @@ export interface AdminSubmissionDetail {
   created_at: string;
   updated_at: string;
   test_results: AdminSubmissionTestResult[];
+}
+
+export interface RejudgeAdminSubmissionResponse {
+  submission_id: number;
+  attempt_id: string;
+  status: SubmissionStatus;
+  attempt_trigger: string;
+  attempt_triggered_by_user_id: string;
+  enqueued_at: string;
 }
 
 export interface ListAdminSubmissionsResponse {

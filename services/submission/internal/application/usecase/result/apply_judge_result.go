@@ -26,11 +26,13 @@ var (
 	errorPathWithSource = regexp.MustCompile(`(?:/tmp/|/w/|/workspace/|/app/workspace/|/judge/)[^:\s"]*/(main\.go|main\.cpp|main\.py|Main\.java)`)
 	errorInternalPrefix = regexp.MustCompile(`(?:/tmp/|/w/|/workspace/|/app/workspace/|/judge/)+`)
 	errorRelativeSource = regexp.MustCompile(`\./(main\.go|main\.cpp|main\.py|Main\.java)`)
+	datasetSHA256Hex    = regexp.MustCompile(`^[a-f0-9]{64}$`)
 )
 
 type applyJudgeResultUseCase struct {
 	submissionRepo outbound.SubmissionRepository
 	resultRepo     outbound.SubmissionResultRepository
+	attemptRepo    outbound.SubmissionAttemptRepository
 	txManager      outbound.TransactionManager
 	eventHub       outbound.SubmissionEventHub
 	logger         *zap.Logger
@@ -42,10 +44,16 @@ func NewApplyJudgeResultUseCase(
 	txManager outbound.TransactionManager,
 	eventHub outbound.SubmissionEventHub,
 	logger *zap.Logger,
+	attemptRepos ...outbound.SubmissionAttemptRepository,
 ) inbound.ApplyJudgeResultUseCase {
+	var attemptRepo outbound.SubmissionAttemptRepository
+	if len(attemptRepos) > 0 {
+		attemptRepo = attemptRepos[0]
+	}
 	return &applyJudgeResultUseCase{
 		submissionRepo: submissionRepo,
 		resultRepo:     resultRepo,
+		attemptRepo:    attemptRepo,
 		txManager:      txManager,
 		eventHub:       eventHub,
 		logger:         logger,
@@ -59,6 +67,9 @@ func (uc *applyJudgeResultUseCase) Execute(ctx context.Context, msg pkgjudge.Res
 
 	status, err := mapTerminalSubmissionStatus(msg.Status)
 	if err != nil {
+		return err
+	}
+	if err := validateDatasetChecksum(msg.DatasetChecksum); err != nil {
 		return err
 	}
 
@@ -93,6 +104,18 @@ func (uc *applyJudgeResultUseCase) Execute(ctx context.Context, msg pkgjudge.Res
 		if err := uc.resultRepo.ReplaceBySubmissionIDAndAttemptID(txCtx, msg.SubmissionID, msg.AttemptID, results); err != nil {
 			return err
 		}
+		if uc.attemptRepo != nil {
+			if err := uc.attemptRepo.MarkCompleted(
+				txCtx,
+				msg.AttemptID,
+				status,
+				msg.TestcaseVersion,
+				msg.TestCount,
+				msg.DatasetChecksum,
+			); err != nil {
+				return err
+			}
+		}
 
 		event := submission.Event()
 		eventToPublish = &event
@@ -112,6 +135,16 @@ func (uc *applyJudgeResultUseCase) Execute(ctx context.Context, msg pkgjudge.Res
 				zap.String("status", eventToPublish.Status),
 			)
 		}
+	}
+	return nil
+}
+
+func validateDatasetChecksum(value *string) error {
+	if value == nil {
+		return nil
+	}
+	if !datasetSHA256Hex.MatchString(*value) {
+		return domain.ErrInvalidJudgeResult
 	}
 	return nil
 }

@@ -27,11 +27,16 @@ import (
 	problemreader "go-judge-system/services/submission/internal/adapter/outbound/problem"
 	streamadapter "go-judge-system/services/submission/internal/adapter/outbound/stream"
 	"go-judge-system/services/submission/internal/application/dto"
+	admininbound "go-judge-system/services/submission/internal/application/port/inbound/admin"
+	resultinbound "go-judge-system/services/submission/internal/application/port/inbound/result"
+	userinbound "go-judge-system/services/submission/internal/application/port/inbound/user"
+	"go-judge-system/services/submission/internal/application/port/outbound"
 	adminusecase "go-judge-system/services/submission/internal/application/usecase/admin"
 	resultusecase "go-judge-system/services/submission/internal/application/usecase/result"
 	userusecase "go-judge-system/services/submission/internal/application/usecase/user"
 
 	"github.com/google/wire"
+	"go.uber.org/zap"
 	googlegrpc "google.golang.org/grpc"
 )
 
@@ -135,6 +140,44 @@ func ProvideSSEConfig(cfg *config.Config) (config.SSEConfig, error) {
 	return sseCfg, nil
 }
 
+func ProvideGetAdminSubmissionDetailUseCase(
+	submissionRepo outbound.SubmissionRepository,
+	resultRepo outbound.SubmissionResultRepository,
+	attemptRepo outbound.SubmissionAttemptRepository,
+) admininbound.GetAdminSubmissionDetailUseCase {
+	return adminusecase.NewGetAdminSubmissionDetailUseCase(submissionRepo, resultRepo, attemptRepo)
+}
+
+func ProvideApplyJudgeResultUseCase(
+	submissionRepo outbound.SubmissionRepository,
+	resultRepo outbound.SubmissionResultRepository,
+	txManager outbound.TransactionManager,
+	eventHub outbound.SubmissionEventHub,
+	logger *zap.Logger,
+	attemptRepo outbound.SubmissionAttemptRepository,
+) resultinbound.ApplyJudgeResultUseCase {
+	return resultusecase.NewApplyJudgeResultUseCase(submissionRepo, resultRepo, txManager, eventHub, logger, attemptRepo)
+}
+
+func ProvideCreateSubmissionUseCase(
+	submissionRepo outbound.SubmissionRepository,
+	txManager outbound.TransactionManager,
+	judgePublisher outbound.JudgePublisher,
+	attemptIDs outbound.AttemptIDGenerator,
+	problemReader outbound.ProblemReader,
+	attemptRepo outbound.SubmissionAttemptRepository,
+) userinbound.CreateSubmissionUseCase {
+	return userusecase.NewCreateSubmissionUseCase(submissionRepo, txManager, judgePublisher, attemptIDs, problemReader, attemptRepo)
+}
+
+func ProvideAdminHandler(
+	listSubmissions *adminhandler.ListSubmissionsHandler,
+	getSubmissionDetail *adminhandler.GetSubmissionDetailHandler,
+	rejudgeSubmission *adminhandler.RejudgeSubmissionHandler,
+) *handler.AdminHandler {
+	return handler.NewAdminHandler(listSubmissions, getSubmissionDetail, rejudgeSubmission)
+}
+
 var InfrastructureProviderSet = wire.NewSet(
 	database.ConnectDatabase,
 	cache.ConnectRedis,
@@ -160,6 +203,7 @@ var OutboundProviderSet = wire.NewSet(
 	postgres.NewSubmissionRepository,
 	postgres.NewSubmissionStreamSnapshotRepository,
 	postgres.NewSubmissionResultRepository,
+	postgres.NewSubmissionAttemptRepository,
 	postgres.NewTransactionManager,
 	postgres.NewOutboxRepository,
 	attemptid.NewUUIDAttemptIDGenerator,
@@ -175,9 +219,10 @@ var OutboundProviderSet = wire.NewSet(
 
 var UseCaseProviderSet = wire.NewSet(
 	adminusecase.NewListAdminSubmissionsUseCase,
-	adminusecase.NewGetAdminSubmissionDetailUseCase,
-	resultusecase.NewApplyJudgeResultUseCase,
-	userusecase.NewCreateSubmissionUseCase,
+	ProvideGetAdminSubmissionDetailUseCase,
+	adminusecase.NewRejudgeAdminSubmissionUseCase,
+	ProvideApplyJudgeResultUseCase,
+	ProvideCreateSubmissionUseCase,
 	userusecase.NewRunCodeUseCase,
 	userusecase.NewGetSubmissionUseCase,
 	userusecase.NewListMySubmissionsUseCase,
@@ -187,13 +232,14 @@ var UseCaseProviderSet = wire.NewSet(
 var InboundProviderSet = wire.NewSet(
 	adminhandler.NewListSubmissionsHandler,
 	adminhandler.NewGetSubmissionDetailHandler,
+	adminhandler.NewRejudgeSubmissionHandler,
 	userhandler.NewCreateSubmissionHandler,
 	userhandler.NewRunCodeHandler,
 	userhandler.NewGetSubmissionHandler,
 	userhandler.NewListMySubmissionsHandler,
 	userhandler.NewIssueSubmissionStreamTicketHandler,
 	userhandler.NewSubmissionEventsHandler,
-	handler.NewAdminHandler,
+	ProvideAdminHandler,
 	handler.NewUserHandler,
 	http.NewRouter,
 	resultconsumer.NewJudgeResultConsumer,

@@ -14,3 +14,9 @@ type ProblemMetadata struct {
 	TimeLimit   float64
 	MemoryLimit int
 }
+
+type ProblemTestCaseMetadata struct {
+	ProblemID int64
+	TestCount int
+	Version   int
+}

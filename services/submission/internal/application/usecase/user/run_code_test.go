@@ -97,6 +97,10 @@ func (s *stubProblemReader) GetProblem(context.Context, int64, dto.ProblemActor)
 	return dto.ProblemMetadata{ID: 1, Title: "Two Sum", Slug: "two-sum", TimeLimit: 2, MemoryLimit: 256}, nil
 }
 
+func (s *stubProblemReader) GetTestCaseMetadata(context.Context, int64) (dto.ProblemTestCaseMetadata, error) {
+	return dto.ProblemTestCaseMetadata{}, nil
+}
+
 type stubJudgeRunner struct{}
 
 func (s *stubJudgeRunner) RunCode(_ context.Context, req outbound.JudgeRunRequest) (dto.RunCodeResponse, error) {

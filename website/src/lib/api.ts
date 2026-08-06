@@ -23,6 +23,7 @@ import type {
   Problem,
   PublicProfile,
   RegisterRequest,
+  RejudgeAdminSubmissionResponse,
   RunCodeRequest,
   RunResponse,
   Submission,
@@ -339,6 +340,9 @@ export const adminSubmissionApi = {
 
   get: (id: number, signal?: AbortSignal) =>
     apiRequest<AdminSubmissionDetail>(`/api/v1/admin/submissions/${id}`, { signal }),
+
+  rejudge: (id: number) =>
+    apiRequest<RejudgeAdminSubmissionResponse>(`/api/v1/admin/submissions/${id}/rejudge`, { method: 'POST' }),
 };
 
 export const adminUserApi = {

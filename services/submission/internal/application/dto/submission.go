@@ -105,6 +105,19 @@ type GetAdminSubmissionDetailRequest struct {
 	SubmissionID int64 `uri:"submission_id" binding:"required,gt=0"`
 }
 
+type RejudgeAdminSubmissionRequest struct {
+	SubmissionID int64 `uri:"submission_id" binding:"required,gt=0"`
+}
+
+type RejudgeAdminSubmissionResponse struct {
+	SubmissionID             int64     `json:"submission_id"`
+	AttemptID                string    `json:"attempt_id"`
+	Status                   string    `json:"status"`
+	AttemptTrigger           string    `json:"attempt_trigger"`
+	AttemptTriggeredByUserID string    `json:"attempt_triggered_by_user_id"`
+	EnqueuedAt               time.Time `json:"enqueued_at"`
+}
+
 type AdminSubmissionTestResult struct {
 	Index     int    `json:"index"`
 	Status    string `json:"status"`
@@ -113,25 +126,30 @@ type AdminSubmissionTestResult struct {
 }
 
 type GetAdminSubmissionDetailResponse struct {
-	ID                int64                       `json:"id"`
-	ProblemID         int64                       `json:"problem_id"`
-	ProblemTitle      string                      `json:"problem_title"`
-	UserID            string                      `json:"user_id"`
-	Username          string                      `json:"username"`
-	Language          string                      `json:"language"`
-	SourceCode        string                      `json:"source_code"`
-	Status            string                      `json:"status"`
-	CurrentAttemptID  string                      `json:"current_attempt_id"`
-	PassedTestCount   int                         `json:"passed_test_count"`
-	ExecutedTestCount int                         `json:"executed_test_count"`
-	TotalTestCount    *int                        `json:"total_test_count"`
-	RuntimeMS         *int                        `json:"runtime_ms"`
-	MemoryKB          *int                        `json:"memory_kb"`
-	CompileMessage    *string                     `json:"compile_message"`
-	JudgeMessage      *string                     `json:"judge_message"`
-	CreatedAt         time.Time                   `json:"created_at"`
-	UpdatedAt         time.Time                   `json:"updated_at"`
-	TestResults       []AdminSubmissionTestResult `json:"test_results"`
+	ID                       int64                       `json:"id"`
+	ProblemID                int64                       `json:"problem_id"`
+	ProblemTitle             string                      `json:"problem_title"`
+	UserID                   string                      `json:"user_id"`
+	Username                 string                      `json:"username"`
+	Language                 string                      `json:"language"`
+	SourceCode               string                      `json:"source_code"`
+	Status                   string                      `json:"status"`
+	CurrentAttemptID         string                      `json:"current_attempt_id"`
+	AttemptTrigger           *string                     `json:"attempt_trigger"`
+	AttemptTriggeredByUserID *string                     `json:"attempt_triggered_by_user_id"`
+	AttemptCreatedAt         *time.Time                  `json:"attempt_created_at"`
+	TestcaseVersion          *int                        `json:"testcase_version"`
+	DatasetChecksum          *string                     `json:"dataset_checksum"`
+	PassedTestCount          int                         `json:"passed_test_count"`
+	ExecutedTestCount        int                         `json:"executed_test_count"`
+	TotalTestCount           *int                        `json:"total_test_count"`
+	RuntimeMS                *int                        `json:"runtime_ms"`
+	MemoryKB                 *int                        `json:"memory_kb"`
+	CompileMessage           *string                     `json:"compile_message"`
+	JudgeMessage             *string                     `json:"judge_message"`
+	CreatedAt                time.Time                   `json:"created_at"`
+	UpdatedAt                time.Time                   `json:"updated_at"`
+	TestResults              []AdminSubmissionTestResult `json:"test_results"`
 }
 
 type ListMySubmissionsRequest struct {

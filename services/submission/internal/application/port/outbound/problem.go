@@ -7,4 +7,5 @@ import (
 
 type ProblemReader interface {
 	GetProblem(ctx context.Context, problemID int64, actor dto.ProblemActor) (dto.ProblemMetadata, error)
+	GetTestCaseMetadata(ctx context.Context, problemID int64) (dto.ProblemTestCaseMetadata, error)
 }

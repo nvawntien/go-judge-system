@@ -3,8 +3,9 @@
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { AdminApiError, AdminForbiddenState, AdminLoadingState, AdminPageHeader, adminCard } from '@/components/admin/AdminStates';
+import { AdminApiError, AdminDialog, AdminForbiddenState, AdminLoadingState, AdminPageHeader, adminCard } from '@/components/admin/AdminStates';
 import { DateText, LanguageText, StatusPill, adminTd, adminTh } from '@/components/admin/AdminData';
+import { AdminIcon } from '@/components/admin/AdminIcons';
 import { buttonStyles } from '@/components/ui';
 import { formatDateTime } from '@/lib/format';
 import { ApiError, NetworkError, adminSubmissionApi } from '@/lib/api';
@@ -50,6 +51,18 @@ function noResultsMessage(status: SubmissionStatus) {
   return 'No testcase metadata is stored for this submission.';
 }
 
+function isTerminalStatus(status: SubmissionStatus) {
+  return (
+    status === 'ACCEPTED' ||
+    status === 'WRONG_ANSWER' ||
+    status === 'COMPILATION_ERROR' ||
+    status === 'RUNTIME_ERROR' ||
+    status === 'TIME_LIMIT_EXCEEDED' ||
+    status === 'MEMORY_LIMIT_EXCEEDED' ||
+    status === 'SYSTEM_ERROR'
+  );
+}
+
 function DetailStat({ label, value, children }: { label: string; value?: ReactNode; children?: ReactNode }) {
   return (
     <div style={{ ...adminCard, padding: 14 }}>
@@ -91,6 +104,32 @@ function DetailSection({ title, children, actions }: { title: string; children: 
       </div>
       <div style={{ padding: 14 }}>{children}</div>
     </section>
+  );
+}
+
+function ProvenanceSection({ detail }: { detail: AdminSubmissionDetail }) {
+  return (
+    <DetailSection title="Attempt provenance">
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(178px, 1fr))', gap: 10 }}>
+        <JudgeMetric label="Attempt ID" value={<span style={{ fontFamily: 'var(--font-mono)' }}>{shortAttempt(detail.current_attempt_id)}</span>} />
+        <JudgeMetric label="Trigger" value={detail.attempt_trigger ?? 'unknown'} />
+        <JudgeMetric label="Triggered by" value={<span style={{ fontFamily: 'var(--font-mono)' }}>{detail.attempt_triggered_by_user_id ?? 'unknown'}</span>} />
+        <JudgeMetric label="Attempt created" value={detail.attempt_created_at ? formatDateTime(detail.attempt_created_at) : 'unknown'} />
+        <JudgeMetric label="Testcase version" value={detail.testcase_version === null ? 'unknown' : `v${detail.testcase_version}`} />
+        <JudgeMetric
+          label="Dataset checksum"
+          value={
+            detail.dataset_checksum ? (
+              <span title={detail.dataset_checksum} style={{ fontFamily: 'var(--font-mono)' }}>
+                {shortAttempt(detail.dataset_checksum)}
+              </span>
+            ) : (
+              'unknown'
+            )
+          }
+        />
+      </div>
+    </DetailSection>
   );
 }
 
@@ -238,6 +277,9 @@ export default function AdminSubmissionDetailPage() {
   const [detail, setDetail] = useState<AdminSubmissionDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<LoadError | null>(null);
+  const [rejudgeDialogOpen, setRejudgeDialogOpen] = useState(false);
+  const [rejudgePending, setRejudgePending] = useState(false);
+  const [rejudgeError, setRejudgeError] = useState<string | null>(null);
 
   const submissionId = useMemo(() => {
     const id = Number(params.id);
@@ -281,6 +323,46 @@ export default function AdminSubmissionDetailPage() {
     load(controller.signal);
     return () => controller.abort();
   }, [load]);
+
+  const handleRefresh = useCallback(() => {
+    load();
+  }, [load]);
+
+  const handleRejudge = useCallback(async () => {
+    if (submissionId === null || rejudgePending) return;
+    setRejudgePending(true);
+    setRejudgeError(null);
+    try {
+      const result = await adminSubmissionApi.rejudge(submissionId);
+      setDetail((current) => {
+        if (!current || current.id !== result.submission_id) return current;
+        return {
+          ...current,
+          status: result.status,
+          current_attempt_id: result.attempt_id,
+          attempt_trigger: result.attempt_trigger,
+          attempt_triggered_by_user_id: result.attempt_triggered_by_user_id,
+          attempt_created_at: result.enqueued_at,
+          testcase_version: null,
+          dataset_checksum: null,
+          passed_test_count: 0,
+          executed_test_count: 0,
+          total_test_count: null,
+          runtime_ms: null,
+          memory_kb: null,
+          compile_message: null,
+          judge_message: null,
+          updated_at: result.enqueued_at,
+          test_results: [],
+        };
+      });
+      setRejudgeDialogOpen(false);
+    } catch (err) {
+      setRejudgeError(errorFromUnknown(err).message);
+    } finally {
+      setRejudgePending(false);
+    }
+  }, [rejudgePending, submissionId]);
 
   if (loading) {
     return (
@@ -332,9 +414,29 @@ export default function AdminSubmissionDetailPage() {
           </span>
         }
         actions={
-          <Link href="/admin/submissions" className="ac-hover-surface2" style={buttonStyles.secondary(38)}>
-            Back to Submissions
-          </Link>
+          <>
+            <button type="button" onClick={handleRefresh} className="ac-hover-surface2" style={{ ...buttonStyles.secondary(38), gap: 7 }}>
+              <AdminIcon.Refresh size={15} />
+              Refresh status
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setRejudgeError(null);
+                setRejudgeDialogOpen(true);
+              }}
+              disabled={!isTerminalStatus(detail.status) || rejudgePending}
+              className="ac-hover-accent"
+              style={{ ...buttonStyles.primary(38), gap: 7, opacity: isTerminalStatus(detail.status) ? 1 : 0.5 }}
+              aria-disabled={!isTerminalStatus(detail.status) || rejudgePending}
+            >
+              <AdminIcon.Rejudge size={15} />
+              Rejudge
+            </button>
+            <Link href="/admin/submissions" className="ac-hover-surface2" style={buttonStyles.secondary(38)}>
+              Back to Submissions
+            </Link>
+          </>
         }
       />
 
@@ -371,11 +473,58 @@ export default function AdminSubmissionDetailPage() {
           </div>
         </DetailSection>
 
+        <ProvenanceSection detail={detail} />
         <SourceViewer detail={detail} />
         {detail.compile_message && <MessageBlock title="Compile message" message={detail.compile_message} />}
         {detail.judge_message && <MessageBlock title="Judge message" message={detail.judge_message} />}
         <TestResults detail={detail} />
       </div>
+
+      {rejudgeDialogOpen && (
+        <AdminDialog title={`Rejudge submission #${detail.id}?`} onClose={() => (rejudgePending ? undefined : setRejudgeDialogOpen(false))}>
+          <p style={{ margin: '0 0 12px', color: 'var(--text2)', fontSize: 13.5, lineHeight: 1.55 }}>
+            This creates a new judge attempt for the stored source code and language. The rejudge will use the currently active testcase
+            dataset for problem #{detail.problem_id}; historical attempt results remain preserved.
+          </p>
+          {rejudgeError && (
+            <div
+              role="alert"
+              style={{
+                marginBottom: 12,
+                border: '1px solid var(--danger)',
+                borderRadius: 8,
+                background: 'var(--danger-bg)',
+                color: 'var(--danger)',
+                padding: '9px 10px',
+                fontSize: 12.5,
+              }}
+            >
+              {rejudgeError}
+            </div>
+          )}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <button
+              type="button"
+              disabled={rejudgePending}
+              onClick={() => setRejudgeDialogOpen(false)}
+              className="ac-hover-surface2"
+              style={{ ...buttonStyles.secondary(38), opacity: rejudgePending ? 0.55 : 1 }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={rejudgePending}
+              onClick={handleRejudge}
+              className="ac-hover-accent"
+              style={{ ...buttonStyles.primary(38), gap: 7, opacity: rejudgePending ? 0.65 : 1 }}
+            >
+              <AdminIcon.Rejudge size={15} />
+              {rejudgePending ? 'Enqueuing...' : 'Create attempt'}
+            </button>
+          </div>
+        </AdminDialog>
+      )}
     </>
   );
 }

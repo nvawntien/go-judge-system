@@ -18,15 +18,22 @@ import (
 type getAdminSubmissionDetailUseCase struct {
 	submissionRepo outbound.SubmissionRepository
 	resultRepo     outbound.SubmissionResultRepository
+	attemptRepo    outbound.SubmissionAttemptRepository
 }
 
 func NewGetAdminSubmissionDetailUseCase(
 	submissionRepo outbound.SubmissionRepository,
 	resultRepo outbound.SubmissionResultRepository,
+	attemptRepos ...outbound.SubmissionAttemptRepository,
 ) inbound.GetAdminSubmissionDetailUseCase {
+	var attemptRepo outbound.SubmissionAttemptRepository
+	if len(attemptRepos) > 0 {
+		attemptRepo = attemptRepos[0]
+	}
 	return &getAdminSubmissionDetailUseCase{
 		submissionRepo: submissionRepo,
 		resultRepo:     resultRepo,
+		attemptRepo:    attemptRepo,
 	}
 }
 
@@ -55,6 +62,17 @@ func (uc *getAdminSubmissionDetailUseCase) Execute(
 	}
 	if submission == nil {
 		return dto.GetAdminSubmissionDetailResponse{}, domain.ErrSubmissionNotFound
+	}
+
+	var attempt *entity.SubmissionAttempt
+	if uc.attemptRepo != nil && strings.TrimSpace(submission.CurrentAttemptID) != "" {
+		attempt, err = uc.attemptRepo.GetByAttemptID(ctx, submission.CurrentAttemptID)
+		if err != nil && !errors.Is(err, domain.ErrSubmissionNotFound) {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return dto.GetAdminSubmissionDetailResponse{}, err
+			}
+			return dto.GetAdminSubmissionDetailResponse{}, domain.ErrInternalServer.Wrap(err)
+		}
 	}
 
 	results, err := uc.resultRepo.GetBySubmissionIDAndAttemptID(
@@ -96,7 +114,7 @@ func (uc *getAdminSubmissionDetailUseCase) Execute(
 		})
 	}
 
-	return dto.GetAdminSubmissionDetailResponse{
+	response := dto.GetAdminSubmissionDetailResponse{
 		ID:                submission.ID,
 		ProblemID:         submission.ProblemID,
 		ProblemTitle:      submission.ProblemName,
@@ -106,9 +124,11 @@ func (uc *getAdminSubmissionDetailUseCase) Execute(
 		SourceCode:        submission.SourceCode,
 		Status:            string(submission.Status),
 		CurrentAttemptID:  submission.CurrentAttemptID,
+		TotalTestCount:    knownTotalFromAttempt(attempt),
+		TestcaseVersion:   testcaseVersionFromAttempt(attempt),
+		DatasetChecksum:   datasetChecksumFromAttempt(attempt),
 		PassedTestCount:   passed,
 		ExecutedTestCount: len(testResults),
-		TotalTestCount:    inferKnownTotalTestCount(submission.Status, len(testResults)),
 		RuntimeMS:         submission.ExecutionTime,
 		MemoryKB:          submission.MemoryUsed,
 		CompileMessage:    submission.CompileOutput,
@@ -116,20 +136,34 @@ func (uc *getAdminSubmissionDetailUseCase) Execute(
 		CreatedAt:         submission.CreatedAt,
 		UpdatedAt:         submission.UpdatedAt,
 		TestResults:       testResults,
-	}, nil
+	}
+	if attempt != nil {
+		trigger := string(attempt.TriggerType)
+		createdAt := attempt.CreatedAt
+		response.AttemptTrigger = &trigger
+		response.AttemptTriggeredByUserID = attempt.TriggeredByUserID
+		response.AttemptCreatedAt = &createdAt
+	}
+	return response, nil
 }
 
-func inferKnownTotalTestCount(status entity.Status, executed int) *int {
-	switch {
-	case status == entity.StatusAccepted:
-		return intValue(executed)
-	case executed == 0 && status == entity.StatusCompilationError:
-		return intValue(0)
-	default:
+func knownTotalFromAttempt(attempt *entity.SubmissionAttempt) *int {
+	if attempt == nil {
 		return nil
 	}
+	return attempt.TestCount
 }
 
-func intValue(value int) *int {
-	return &value
+func testcaseVersionFromAttempt(attempt *entity.SubmissionAttempt) *int {
+	if attempt == nil {
+		return nil
+	}
+	return attempt.TestcaseVersion
+}
+
+func datasetChecksumFromAttempt(attempt *entity.SubmissionAttempt) *string {
+	if attempt == nil {
+		return nil
+	}
+	return attempt.DatasetChecksum
 }

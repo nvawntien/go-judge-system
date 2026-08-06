@@ -16,7 +16,14 @@ type ProblemTestCaseMetadataReader interface {
 }
 
 type OfficialTestCaseLoader interface {
-	Load(ctx context.Context, metadata ProblemTestCaseMetadata) ([]ExecutionTestCase, error)
+	Load(ctx context.Context, metadata ProblemTestCaseMetadata) (OfficialTestCaseBundle, error)
+}
+
+type OfficialTestCaseBundle struct {
+	TestCases       []ExecutionTestCase
+	TestCount       int
+	Version         int
+	DatasetChecksum string
 }
 
 type ExecutionTestCase struct {
@@ -37,14 +44,17 @@ type ExecutionRequest struct {
 
 // ExecutionResult represents the result of code execution
 type ExecutionResult struct {
-	Status        string // "ACCEPTED", "WRONG_ANSWER", "TLE", "MLE", "RUNTIME_ERROR", "COMPILATION_ERROR"
-	CompileOutput *string
-	ErrorMessage  *string
-	Diagnostics   []CodeDiagnostic
-	TestCases     []TestCaseResult
-	ExecutionTime int // milliseconds
-	MemoryUsed    int // kilobytes
-	Error         *string
+	Status          string // "ACCEPTED", "WRONG_ANSWER", "TLE", "MLE", "RUNTIME_ERROR", "COMPILATION_ERROR"
+	CompileOutput   *string
+	ErrorMessage    *string
+	Diagnostics     []CodeDiagnostic
+	TestCases       []TestCaseResult
+	ExecutionTime   int // milliseconds
+	MemoryUsed      int // kilobytes
+	Error           *string
+	TestcaseVersion *int
+	TestCount       *int
+	DatasetChecksum *string
 }
 
 type TestCaseResult struct {

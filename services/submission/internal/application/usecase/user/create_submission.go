@@ -17,6 +17,7 @@ import (
 
 type createSubmissionUseCase struct {
 	submissionRepo outbound.SubmissionRepository
+	attemptRepo    outbound.SubmissionAttemptRepository
 	txManager      outbound.TransactionManager
 	judgePublisher outbound.JudgePublisher
 	attemptIDs     outbound.AttemptIDGenerator
@@ -29,9 +30,15 @@ func NewCreateSubmissionUseCase(
 	judgePublisher outbound.JudgePublisher,
 	attemptIDs outbound.AttemptIDGenerator,
 	problemReader outbound.ProblemReader,
+	attemptRepos ...outbound.SubmissionAttemptRepository,
 ) inbound.CreateSubmissionUseCase {
+	var attemptRepo outbound.SubmissionAttemptRepository
+	if len(attemptRepos) > 0 {
+		attemptRepo = attemptRepos[0]
+	}
 	return &createSubmissionUseCase{
 		submissionRepo: submissionRepo,
+		attemptRepo:    attemptRepo,
 		txManager:      txManager,
 		judgePublisher: judgePublisher,
 		attemptIDs:     attemptIDs,
@@ -90,6 +97,16 @@ func (uc *createSubmissionUseCase) Execute(
 	err = uc.txManager.ExecuteInTx(ctx, func(txCtx context.Context) error {
 		if err := uc.submissionRepo.Create(txCtx, submission); err != nil {
 			return err
+		}
+		if uc.attemptRepo != nil {
+			if err := uc.attemptRepo.Create(txCtx, entity.NewSubmissionAttempt(
+				submission.ID,
+				submission.CurrentAttemptID,
+				entity.AttemptTriggerSubmission,
+				claims.UserID,
+			)); err != nil {
+				return err
+			}
 		}
 
 		job := pkgjudge.JobMessage{

@@ -137,6 +137,10 @@ func (r *fakeProblemReader) GetProblem(
 	return r.problem, r.err
 }
 
+func (r *fakeProblemReader) GetTestCaseMetadata(context.Context, int64) (dto.ProblemTestCaseMetadata, error) {
+	return dto.ProblemTestCaseMetadata{ProblemID: r.problem.ID, TestCount: 2, Version: 1}, nil
+}
+
 func validProblemReader(problemID int64) *fakeProblemReader {
 	return &fakeProblemReader{problem: dto.ProblemMetadata{
 		ID:    problemID,

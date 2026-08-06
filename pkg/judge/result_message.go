@@ -4,15 +4,18 @@ package judge
 // This typed struct replaces the previous untyped map[string]interface{} to ensure
 // compile-time safety and consistent contract between services.
 type ResultMessage struct {
-	SubmissionID  int64                `json:"submission_id"`
-	AttemptID     string               `json:"attempt_id"`
-	Status        string               `json:"status"`
-	CompileOutput *string              `json:"compile_output,omitempty"`
-	ErrorMessage  *string              `json:"error_message,omitempty"`
-	ExecutionTime *int                 `json:"execution_time,omitempty"`
-	MemoryUsed    *int                 `json:"memory_used,omitempty"`
-	Error         *string              `json:"error,omitempty"`
-	TestCases     []TestCaseResultItem `json:"test_cases"`
+	SubmissionID    int64                `json:"submission_id"`
+	AttemptID       string               `json:"attempt_id"`
+	Status          string               `json:"status"`
+	CompileOutput   *string              `json:"compile_output,omitempty"`
+	ErrorMessage    *string              `json:"error_message,omitempty"`
+	ExecutionTime   *int                 `json:"execution_time,omitempty"`
+	MemoryUsed      *int                 `json:"memory_used,omitempty"`
+	Error           *string              `json:"error,omitempty"`
+	TestcaseVersion *int                 `json:"testcase_version,omitempty"`
+	TestCount       *int                 `json:"test_count,omitempty"`
+	DatasetChecksum *string              `json:"dataset_checksum,omitempty"`
+	TestCases       []TestCaseResultItem `json:"test_cases"`
 }
 
 // TestCaseResultItem represents an individual testcase execution result.

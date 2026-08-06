@@ -153,8 +153,7 @@ func TestGetAdminSubmissionDetailAllowedRoles(t *testing.T) {
 				got.CurrentAttemptID != submission.CurrentAttemptID ||
 				got.PassedTestCount != 2 ||
 				got.ExecutedTestCount != 2 ||
-				got.TotalTestCount == nil ||
-				*got.TotalTestCount != 2 {
+				got.TotalTestCount != nil {
 				t.Fatalf("response summary = %+v", got)
 			}
 			if got.TestResults[0].Index != 1 || got.TestResults[1].Index != 2 {
@@ -274,7 +273,6 @@ func TestGetAdminSubmissionDetailCompilationErrorWithoutResultRows(t *testing.T)
 		CurrentAttemptID:  submission.CurrentAttemptID,
 		PassedTestCount:   0,
 		ExecutedTestCount: 0,
-		TotalTestCount:    intPointer(0),
 		CompileMessage:    &compileMessage,
 		CreatedAt:         submission.CreatedAt,
 		UpdatedAt:         submission.UpdatedAt,

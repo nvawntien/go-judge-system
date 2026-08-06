@@ -108,6 +108,24 @@ func (f *fakeRouterGetAdminSubmissionDetailUseCase) Execute(
 	return f.response, nil
 }
 
+type fakeRouterRejudgeSubmissionUseCase struct {
+	response dto.RejudgeAdminSubmissionResponse
+	claims   auth.Claims
+	req      dto.RejudgeAdminSubmissionRequest
+	calls    int
+}
+
+func (f *fakeRouterRejudgeSubmissionUseCase) Execute(
+	_ context.Context,
+	claims auth.Claims,
+	req dto.RejudgeAdminSubmissionRequest,
+) (dto.RejudgeAdminSubmissionResponse, error) {
+	f.calls++
+	f.claims = claims
+	f.req = req
+	return f.response, nil
+}
+
 type fakeRouterIssueStreamTicketUseCase struct{}
 
 func (*fakeRouterIssueStreamTicketUseCase) Execute(
@@ -174,6 +192,7 @@ func TestRouterRegistersAuthenticatedSubmissionRoutes(t *testing.T) {
 	listUseCase := &fakeRouterListMySubmissionsUseCase{}
 	adminListUseCase := &fakeRouterListAdminSubmissionsUseCase{}
 	adminDetailUseCase := &fakeRouterGetAdminSubmissionDetailUseCase{}
+	rejudgeUseCase := &fakeRouterRejudgeSubmissionUseCase{}
 	userHandler := newTestUserHandler(
 		&fakeRouterCreateSubmissionUseCase{},
 		&fakeRouterRunCodeUseCase{},
@@ -183,6 +202,7 @@ func TestRouterRegistersAuthenticatedSubmissionRoutes(t *testing.T) {
 	adminHandler := handler.NewAdminHandler(
 		adminhandler.NewListSubmissionsHandler(adminListUseCase),
 		adminhandler.NewGetSubmissionDetailHandler(adminDetailUseCase),
+		adminhandler.NewRejudgeSubmissionHandler(rejudgeUseCase),
 	)
 
 	authCalls := 0
@@ -225,6 +245,12 @@ func TestRouterRegistersAuthenticatedSubmissionRoutes(t *testing.T) {
 			routeCounts[http.MethodGet+" /api/v1/admin/submissions/:submission_id"],
 		)
 	}
+	if routeCounts[http.MethodPost+" /api/v1/admin/submissions/:submission_id/rejudge"] != 1 {
+		t.Fatalf(
+			"POST admin rejudge route count = %d, want 1",
+			routeCounts[http.MethodPost+" /api/v1/admin/submissions/:submission_id/rejudge"],
+		)
+	}
 	if routeCounts[http.MethodPost+" /api/v1/submissions/:submission_id/events/ticket"] != 1 {
 		t.Fatalf(
 			"POST stream ticket route count = %d, want 1",
@@ -241,6 +267,7 @@ func TestRouterRegistersAuthenticatedSubmissionRoutes(t *testing.T) {
 		http.MethodGet + " /api/v1/submissions/:id",
 		http.MethodGet + " /api/v1/my/submissions/:id",
 		http.MethodGet + " /api/v1/admin/submissions/:id",
+		http.MethodPost + " /api/v1/admin/submissions/:id/rejudge",
 		http.MethodGet + " /api/v1/my/submissions",
 	} {
 		if routeCounts[staleRoute] != 0 {
@@ -269,6 +296,9 @@ func TestRouterRegistersAuthenticatedSubmissionRoutes(t *testing.T) {
 	}
 	if adminDetailUseCase.calls != 0 {
 		t.Fatalf("admin detail use case calls = %d, want 0", adminDetailUseCase.calls)
+	}
+	if rejudgeUseCase.calls != 0 {
+		t.Fatalf("rejudge use case calls = %d, want 0", rejudgeUseCase.calls)
 	}
 }
 
@@ -481,5 +511,60 @@ func TestRouterGetAdminSubmissionDetailUsesGenericHandler(t *testing.T) {
 	}
 	if adminDetailUseCase.req.SubmissionID != 77 {
 		t.Fatalf("submission ID = %d, want 77", adminDetailUseCase.req.SubmissionID)
+	}
+}
+
+func TestRouterRejudgeSubmissionUsesGenericHandler(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rejudgeUseCase := &fakeRouterRejudgeSubmissionUseCase{
+		response: dto.RejudgeAdminSubmissionResponse{
+			SubmissionID:   77,
+			AttemptID:      "attempt-rejudge",
+			Status:         "PENDING",
+			AttemptTrigger: "ADMIN_REJUDGE",
+			EnqueuedAt:     time.Date(2026, 8, 3, 9, 0, 0, 0, time.UTC),
+		},
+	}
+	userHandler := newTestUserHandler(
+		&fakeRouterCreateSubmissionUseCase{},
+		&fakeRouterRunCodeUseCase{},
+		&fakeRouterGetSubmissionUseCase{},
+		&fakeRouterListMySubmissionsUseCase{},
+	)
+	adminHandler := handler.NewAdminHandler(
+		adminhandler.NewListSubmissionsHandler(&fakeRouterListAdminSubmissionsUseCase{}),
+		adminhandler.NewGetSubmissionDetailHandler(&fakeRouterGetAdminSubmissionDetailUseCase{}),
+		adminhandler.NewRejudgeSubmissionHandler(rejudgeUseCase),
+	)
+
+	claims := auth.Claims{
+		UserID:   "verified-moderator",
+		Username: "moderator-name",
+		Role:     "moderator",
+	}
+	authMiddleware := func(c *gin.Context) {
+		auth.SetClaims(c, claims)
+		c.Next()
+	}
+
+	router := NewRouter(userHandler, adminHandler, authMiddleware, zap.NewNop())
+	router.SetupRoutes()
+
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/submissions/77/rejudge", nil)
+	router.engine.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", recorder.Code, recorder.Body.String())
+	}
+	if rejudgeUseCase.calls != 1 {
+		t.Fatalf("rejudge use case calls = %d, want 1", rejudgeUseCase.calls)
+	}
+	if rejudgeUseCase.claims.UserID != claims.UserID || rejudgeUseCase.claims.Role != claims.Role {
+		t.Fatalf("claims = %+v, want verified claims %+v", rejudgeUseCase.claims, claims)
+	}
+	if rejudgeUseCase.req.SubmissionID != 77 {
+		t.Fatalf("submission ID = %d, want 77", rejudgeUseCase.req.SubmissionID)
 	}
 }
