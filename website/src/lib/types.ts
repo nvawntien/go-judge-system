@@ -121,6 +121,7 @@ export interface Problem {
   author_id?: string;
   is_hidden?: boolean;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface ListProblemsParams {
@@ -142,6 +143,91 @@ export interface ListTagsResponse {
   items: Tag[];
 }
 
+export interface ProblemWriteExample {
+  input: string;
+  expected_output: string;
+  explanation?: string;
+}
+
+export interface CreateAdminProblemRequest {
+  title: string;
+  description: string;
+  difficulty: Difficulty;
+  tag_ids?: number[];
+  examples: ProblemWriteExample[];
+  constraints: string[];
+  hints: string[];
+  time_limit: number;
+  memory_limit: number;
+}
+
+export interface UpdateAdminProblemRequest {
+  title?: string;
+  slug?: string;
+  description?: string;
+  difficulty?: Difficulty;
+  tag_ids?: number[];
+  examples?: ProblemWriteExample[];
+  constraints?: string[];
+  hints?: string[];
+  time_limit?: number;
+  memory_limit?: number;
+}
+
+export interface AdminTestCaseMetadata {
+  has_testcase: boolean;
+  id?: number;
+  problem_id?: number;
+  zip_object_key?: string;
+  test_count?: number;
+  version?: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface AdminProblemDetail extends Required<Omit<Problem, 'tags' | 'examples' | 'constraints' | 'hints' | 'updated_at'>> {
+  tags: Tag[];
+  examples: ProblemExample[];
+  constraints: string[];
+  hints: string[];
+  updated_at: string;
+  deleted_at?: string | null;
+  testcase: AdminTestCaseMetadata;
+}
+
+export interface AdminListProblemsParams extends ListProblemsParams {}
+
+export interface AdminListProblemsResponse {
+  items: Problem[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface AdminTag extends Tag {
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminListTagsResponse {
+  items: AdminTag[];
+}
+
+export interface CreateAdminTagRequest {
+  name: string;
+  slug?: string;
+  description?: string;
+  is_active?: boolean;
+}
+
+export interface UpdateAdminTagRequest {
+  name?: string;
+  slug?: string;
+  description?: string;
+  is_active?: boolean;
+}
+
 /* ------------------------------------------------------------ submission */
 
 /** services/submission/internal/domain/entity.Status */
@@ -152,6 +238,7 @@ export type SubmissionStatus =
   | 'WRONG_ANSWER'
   | 'TIME_LIMIT_EXCEEDED'
   | 'MEMORY_LIMIT_EXCEEDED'
+  | 'OUTPUT_LIMIT_EXCEEDED'
   | 'RUNTIME_ERROR'
   | 'COMPILATION_ERROR'
   | 'SYSTEM_ERROR';
@@ -216,6 +303,117 @@ export interface SubmissionListItem {
   passed_testcases: number | null;
   total_testcases: number | null;
   created_at: string;
+}
+
+export interface AdminSubmissionListItem {
+  id: number;
+  problem_id: number;
+  problem_title: string;
+  user_id: string;
+  username: string;
+  language: string;
+  status: SubmissionStatus;
+  created_at: string;
+}
+
+export interface AdminSubmissionTestResult {
+  index: number;
+  status: string;
+  runtime_ms: number | null;
+  memory_kb: number | null;
+}
+
+export interface AdminSubmissionDetail {
+  id: number;
+  problem_id: number;
+  problem_title: string;
+  user_id: string;
+  username: string;
+  language: string;
+  source_code: string;
+  status: SubmissionStatus;
+  current_attempt_id: string;
+  attempt_trigger: string | null;
+  attempt_triggered_by_user_id: string | null;
+  attempt_created_at: string | null;
+  testcase_version: number | null;
+  dataset_checksum: string | null;
+  passed_test_count: number;
+  executed_test_count: number;
+  total_test_count: number | null;
+  runtime_ms: number | null;
+  memory_kb: number | null;
+  compile_message: string | null;
+  judge_message: string | null;
+  created_at: string;
+  updated_at: string;
+  test_results: AdminSubmissionTestResult[];
+}
+
+export interface RejudgeAdminSubmissionResponse {
+  submission_id: number;
+  attempt_id: string;
+  status: SubmissionStatus;
+  attempt_trigger: string;
+  attempt_triggered_by_user_id: string;
+  enqueued_at: string;
+}
+
+export interface ListAdminSubmissionsResponse {
+  items: AdminSubmissionListItem[];
+  pagination: Pagination;
+}
+
+export interface ListAdminSubmissionsParams {
+  page?: number;
+  limit?: number;
+  status?: SubmissionStatus | '';
+  language?: LanguageCode | '';
+  problem_id?: number;
+  user_id?: string;
+}
+
+export interface AssignUserRoleRequest {
+  role: Role;
+}
+
+/* ----------------------------------------------------------- admin users */
+
+export type AdminUserRole = Role;
+export type AdminUserStatus = 'active' | 'unverified' | 'suspended';
+
+export interface AdminUser {
+  id: string;
+  full_name: string;
+  username: string;
+  email: string;
+  role: AdminUserRole;
+  rating: number;
+  is_active: boolean;
+  is_suspended: boolean;
+  avatar_url?: string | null;
+  bio?: string | null;
+  country?: string | null;
+  school?: string | null;
+  company?: string | null;
+  github_url?: string | null;
+  website_url?: string | null;
+  linkedin_url?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminUserListParams {
+  page?: number;
+  limit?: number;
+  search?: string;
+  role?: AdminUserRole | '';
+  status?: AdminUserStatus | '';
+}
+
+export interface AdminUserListResponse {
+  items: AdminUser[];
+  pagination: Pagination;
 }
 
 export type SubmissionDetail = Submission;

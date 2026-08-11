@@ -3,7 +3,9 @@ package kafka
 import (
 	"context"
 	"encoding/json"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	pkgjudge "go-judge-system/pkg/judge"
 
@@ -75,5 +77,72 @@ func TestJudgeJobHandlerDecodesCallsUseCaseAndMarksMessage(t *testing.T) {
 	}
 	if !session.marked || session.metadata != "processed" {
 		t.Fatalf("mark = %v/%q, want processed", session.marked, session.metadata)
+	}
+}
+
+type blockingProcessJudgeJobUseCase struct {
+	started chan struct{}
+	release chan struct{}
+	active  atomic.Int32
+	max     atomic.Int32
+}
+
+func (f *blockingProcessJudgeJobUseCase) Execute(context.Context, *pkgjudge.JobMessage) error {
+	active := f.active.Add(1)
+	for {
+		currentMax := f.max.Load()
+		if active <= currentMax || f.max.CompareAndSwap(currentMax, active) {
+			break
+		}
+	}
+	f.started <- struct{}{}
+	<-f.release
+	f.active.Add(-1)
+	return nil
+}
+
+func TestJudgeJobHandlerSharesConcurrencyLimitAcrossClaims(t *testing.T) {
+	payload, err := json.Marshal(pkgjudge.JobMessage{SubmissionID: 99, ProblemID: 42, AttemptID: "attempt-a", Language: "GO", SourceCode: "package main"})
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+
+	useCase := &blockingProcessJudgeJobUseCase{
+		started: make(chan struct{}, 2),
+		release: make(chan struct{}, 2),
+	}
+	jobSlots := make(chan struct{}, 1)
+	newHandler := func() *judgeJobHandler {
+		return &judgeJobHandler{useCase: useCase, maxRetries: 1, jobSlots: jobSlots, logger: zap.NewNop()}
+	}
+	session := &fakeConsumerGroupSession{}
+
+	firstDone := make(chan struct{})
+	go func() {
+		defer close(firstDone)
+		newHandler().handleMessage(session, &sarama.ConsumerMessage{Value: payload})
+	}()
+	<-useCase.started
+
+	secondDone := make(chan struct{})
+	go func() {
+		defer close(secondDone)
+		newHandler().handleMessage(session, &sarama.ConsumerMessage{Value: payload})
+	}()
+
+	select {
+	case <-useCase.started:
+		t.Fatal("second claim started work before the shared slot was released")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	useCase.release <- struct{}{}
+	<-firstDone
+	<-useCase.started
+	useCase.release <- struct{}{}
+	<-secondDone
+
+	if got := useCase.max.Load(); got != 1 {
+		t.Fatalf("max concurrent jobs = %d, want 1", got)
 	}
 }

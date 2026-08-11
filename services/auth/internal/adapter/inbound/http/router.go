@@ -82,6 +82,9 @@ func (r *Router) SetupRoutes() {
 	// admin api
 	admin := r.engine.Group("/api/v1/admin", r.middleware)
 	{
+		admin.GET("/users", isAdmin, r.admin.Users.List)
+		admin.GET("/users/:user_id", isAdmin, r.admin.Users.Get)
+		admin.PATCH("/users/:user_id/suspension", isAdmin, r.admin.Users.SetSuspension)
 		admin.PUT("/users/:user_id/role", isAdmin, r.admin.AssignRole.Handle)
 	}
 }

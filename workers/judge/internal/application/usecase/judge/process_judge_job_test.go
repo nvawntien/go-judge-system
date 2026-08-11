@@ -26,8 +26,13 @@ type fakeOfficialLoader struct {
 	err       error
 }
 
-func (f *fakeOfficialLoader) Load(context.Context, outbound.ProblemTestCaseMetadata) ([]outbound.ExecutionTestCase, error) {
-	return f.testCases, f.err
+func (f *fakeOfficialLoader) Load(context.Context, outbound.ProblemTestCaseMetadata) (outbound.OfficialTestCaseBundle, error) {
+	return outbound.OfficialTestCaseBundle{
+		TestCases:       f.testCases,
+		TestCount:       len(f.testCases),
+		Version:         1,
+		DatasetChecksum: "checksum-test",
+	}, f.err
 }
 
 type fakeExecutor struct {

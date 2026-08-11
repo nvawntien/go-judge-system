@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -27,9 +28,15 @@ const (
 	defaultHTTPTimeout       = 30 * time.Second
 	defaultMaxZipBytes       = 64 * 1024 * 1024
 	defaultMaxExtractedBytes = 128 * 1024 * 1024
+	cacheVersionFile         = ".version"
+	cacheSHA256File          = ".sha256"
+	cacheZipFile             = "bundle.zip"
 )
 
-var testcaseFilePattern = regexp.MustCompile(`^0*([1-9][0-9]*)\.(in|out)$`)
+var (
+	testcaseFilePattern = regexp.MustCompile(`^0*([1-9][0-9]*)\.(in|out)$`)
+	sha256HexPattern    = regexp.MustCompile(`^[a-f0-9]{64}$`)
+)
 
 type OfficialLoader struct {
 	httpClient        *http.Client
@@ -54,21 +61,28 @@ func NewOfficialLoader(logger *zap.Logger) *OfficialLoader {
 func (l *OfficialLoader) Load(
 	ctx context.Context,
 	metadata outbound.ProblemTestCaseMetadata,
-) ([]outbound.ExecutionTestCase, error) {
+) (outbound.OfficialTestCaseBundle, error) {
 	if err := validateMetadata(metadata); err != nil {
-		return nil, err
+		return outbound.OfficialTestCaseBundle{}, err
 	}
 
 	cacheDir := filepath.Join(l.cacheBaseDir, fmt.Sprintf("problem_%d", metadata.ProblemID))
 	version := strconv.Itoa(metadata.Version)
-	versionFile := filepath.Join(cacheDir, ".version")
+	versionFile := filepath.Join(cacheDir, cacheVersionFile)
 	if cachedVersion, err := os.ReadFile(versionFile); err == nil && strings.TrimSpace(string(cachedVersion)) == version {
+		if checksum, ok := l.verifiedCachedChecksum(cacheDir); ok {
+			l.logger.Debug(
+				"official testcase cache hit",
+				zap.Int64("problem_id", metadata.ProblemID),
+				zap.Int("version", metadata.Version),
+			)
+			return l.bundleFromDir(cacheDir, metadata, checksum)
+		}
 		l.logger.Debug(
-			"official testcase cache hit",
+			"official testcase cache missing or mismatched checksum, refreshing bundle",
 			zap.Int64("problem_id", metadata.ProblemID),
 			zap.Int("version", metadata.Version),
 		)
-		return l.loadFromDir(cacheDir, metadata.TestCount)
 	}
 
 	l.logger.Info(
@@ -78,8 +92,9 @@ func (l *OfficialLoader) Load(
 	)
 
 	zipPath := filepath.Join(os.TempDir(), fmt.Sprintf("tc_%d_%d_%s.zip", metadata.ProblemID, metadata.Version, randHex(6)))
-	if err := l.downloadToFile(ctx, metadata.ZipDownloadURL, zipPath); err != nil {
-		return nil, fmt.Errorf("download testcase bundle: %w", err)
+	checksum, err := l.downloadToFile(ctx, metadata.ZipDownloadURL, zipPath)
+	if err != nil {
+		return outbound.OfficialTestCaseBundle{}, fmt.Errorf("download testcase bundle: %w", err)
 	}
 	defer func() {
 		if err := os.Remove(zipPath); err != nil && !os.IsNotExist(err) {
@@ -89,7 +104,7 @@ func (l *OfficialLoader) Load(
 
 	tmpDir := fmt.Sprintf("%s_tmp_%s", cacheDir, randHex(8))
 	if err := os.MkdirAll(tmpDir, 0755); err != nil {
-		return nil, fmt.Errorf("create testcase cache temp dir: %w", err)
+		return outbound.OfficialTestCaseBundle{}, fmt.Errorf("create testcase cache temp dir: %w", err)
 	}
 	removeTmp := true
 	defer func() {
@@ -101,23 +116,29 @@ func (l *OfficialLoader) Load(
 	}()
 
 	if err := l.extractZip(zipPath, tmpDir); err != nil {
-		return nil, workerdomain.MarkNonRetryable(fmt.Errorf("extract testcase bundle: %w", err))
+		return outbound.OfficialTestCaseBundle{}, workerdomain.MarkNonRetryable(fmt.Errorf("extract testcase bundle: %w", err))
 	}
 	if _, err := l.loadFromDir(tmpDir, metadata.TestCount); err != nil {
-		return nil, err
+		return outbound.OfficialTestCaseBundle{}, err
 	}
-	if err := os.WriteFile(filepath.Join(tmpDir, ".version"), []byte(version), 0644); err != nil {
-		return nil, fmt.Errorf("write testcase cache version: %w", err)
+	if err := copyFileAtomic(zipPath, filepath.Join(tmpDir, cacheZipFile)); err != nil {
+		return outbound.OfficialTestCaseBundle{}, fmt.Errorf("write testcase cache zip: %w", err)
+	}
+	if err := writeFileAtomic(filepath.Join(tmpDir, cacheVersionFile), []byte(version), 0644); err != nil {
+		return outbound.OfficialTestCaseBundle{}, fmt.Errorf("write testcase cache version: %w", err)
+	}
+	if err := writeFileAtomic(filepath.Join(tmpDir, cacheSHA256File), []byte(checksum), 0644); err != nil {
+		return outbound.OfficialTestCaseBundle{}, fmt.Errorf("write testcase cache checksum: %w", err)
 	}
 
 	if err := os.MkdirAll(l.cacheBaseDir, 0755); err != nil {
-		return nil, fmt.Errorf("create testcase cache base dir: %w", err)
+		return outbound.OfficialTestCaseBundle{}, fmt.Errorf("create testcase cache base dir: %w", err)
 	}
 	if err := os.RemoveAll(cacheDir); err != nil {
-		return nil, fmt.Errorf("remove stale testcase cache: %w", err)
+		return outbound.OfficialTestCaseBundle{}, fmt.Errorf("remove stale testcase cache: %w", err)
 	}
 	if err := os.Rename(tmpDir, cacheDir); err != nil {
-		return nil, fmt.Errorf("promote testcase cache: %w", err)
+		return outbound.OfficialTestCaseBundle{}, fmt.Errorf("promote testcase cache: %w", err)
 	}
 	removeTmp = false
 
@@ -127,7 +148,27 @@ func (l *OfficialLoader) Load(
 		zap.Int("version", metadata.Version),
 		zap.Int("test_count", metadata.TestCount),
 	)
-	return l.loadFromDir(cacheDir, metadata.TestCount)
+	return l.bundleFromDir(cacheDir, metadata, checksum)
+}
+
+func (l *OfficialLoader) verifiedCachedChecksum(cacheDir string) (string, bool) {
+	checksumBytes, err := os.ReadFile(filepath.Join(cacheDir, cacheSHA256File))
+	if err != nil {
+		return "", false
+	}
+	checksum := strings.TrimSpace(string(checksumBytes))
+	if !sha256HexPattern.MatchString(checksum) {
+		return "", false
+	}
+
+	actual, err := sha256File(filepath.Join(cacheDir, cacheZipFile))
+	if err != nil {
+		return "", false
+	}
+	if actual != checksum {
+		return "", false
+	}
+	return checksum, true
 }
 
 func validateMetadata(metadata outbound.ProblemTestCaseMetadata) error {
@@ -146,37 +187,109 @@ func validateMetadata(metadata outbound.ProblemTestCaseMetadata) error {
 	return nil
 }
 
-func (l *OfficialLoader) downloadToFile(ctx context.Context, url, destPath string) error {
+func (l *OfficialLoader) downloadToFile(ctx context.Context, url, destPath string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return workerdomain.MarkNonRetryable(fmt.Errorf("build testcase download request: %w", err))
+		return "", workerdomain.MarkNonRetryable(fmt.Errorf("build testcase download request: %w", err))
 	}
 
 	resp, err := l.httpClient.Do(req)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return fmt.Errorf("testcase download returned status %d", resp.StatusCode)
+		return "", fmt.Errorf("testcase download returned status %d", resp.StatusCode)
 	}
 
 	f, err := os.Create(destPath)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer f.Close()
 
 	reader := io.LimitReader(resp.Body, l.maxZipBytes+1)
-	n, err := io.Copy(f, reader)
+	hash := sha256.New()
+	n, err := io.Copy(io.MultiWriter(f, hash), reader)
+	if err != nil {
+		return "", err
+	}
+	if n > l.maxZipBytes {
+		return "", workerdomain.MarkNonRetryable(fmt.Errorf("testcase zip exceeds %d bytes", l.maxZipBytes))
+	}
+	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func sha256File(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
+	tmpPath := fmt.Sprintf("%s.tmp.%s", path, randHex(6))
+	if err := os.WriteFile(tmpPath, data, perm); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	return nil
+}
+
+func copyFileAtomic(srcPath, destPath string) error {
+	tmpPath := fmt.Sprintf("%s.tmp.%s", destPath, randHex(6))
+	src, err := os.Open(srcPath)
 	if err != nil {
 		return err
 	}
-	if n > l.maxZipBytes {
-		return workerdomain.MarkNonRetryable(fmt.Errorf("testcase zip exceeds %d bytes", l.maxZipBytes))
+	defer src.Close()
+
+	dest, err := os.Create(tmpPath)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(dest, src); err != nil {
+		_ = dest.Close()
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if err := dest.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if err := os.Rename(tmpPath, destPath); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
 	}
 	return nil
+}
+
+func (l *OfficialLoader) bundleFromDir(
+	dir string,
+	metadata outbound.ProblemTestCaseMetadata,
+	checksum string,
+) (outbound.OfficialTestCaseBundle, error) {
+	testCases, err := l.loadFromDir(dir, metadata.TestCount)
+	if err != nil {
+		return outbound.OfficialTestCaseBundle{}, err
+	}
+	return outbound.OfficialTestCaseBundle{
+		TestCases:       testCases,
+		TestCount:       metadata.TestCount,
+		Version:         metadata.Version,
+		DatasetChecksum: checksum,
+	}, nil
 }
 
 func (l *OfficialLoader) extractZip(zipPath, destDir string) error {

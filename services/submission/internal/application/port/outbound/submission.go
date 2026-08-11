@@ -17,6 +17,12 @@ type SubmissionRepository interface {
 	ResultSummaries(ctx context.Context, submissionIDs []int64) (map[int64]SubmissionResultSummary, error)
 }
 
+type SubmissionAttemptRepository interface {
+	Create(ctx context.Context, attempt *entity.SubmissionAttempt) error
+	GetByAttemptID(ctx context.Context, attemptID string) (*entity.SubmissionAttempt, error)
+	MarkCompleted(ctx context.Context, attemptID string, status entity.Status, testcaseVersion *int, testCount *int, datasetChecksum *string) error
+}
+
 type SubmissionStreamSnapshotRepository interface {
 	GetStreamSnapshot(ctx context.Context, submissionID int64) (*entity.SubmissionStreamSnapshot, error)
 }
@@ -43,6 +49,7 @@ type SubmissionResultSummary struct {
 
 type SubmissionResultRepository interface {
 	GetBySubmissionID(ctx context.Context, submissionID int64) ([]*entity.SubmissionResult, error)
+	GetBySubmissionIDAndAttemptID(ctx context.Context, submissionID int64, attemptID string) ([]*entity.SubmissionResult, error)
 	DeleteBySubmissionID(ctx context.Context, submissionID int64) error
 	ReplaceBySubmissionIDAndAttemptID(ctx context.Context, submissionID int64, attemptID string, results []*entity.SubmissionResult) error
 }

@@ -70,6 +70,7 @@ function isKnownSubmissionStatus(value: string): value is SubmissionStatus {
     value === 'WRONG_ANSWER' ||
     value === 'TIME_LIMIT_EXCEEDED' ||
     value === 'MEMORY_LIMIT_EXCEEDED' ||
+    value === 'OUTPUT_LIMIT_EXCEEDED' ||
     value === 'RUNTIME_ERROR' ||
     value === 'COMPILATION_ERROR' ||
     value === 'SYSTEM_ERROR'

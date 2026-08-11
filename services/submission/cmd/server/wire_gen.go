@@ -40,6 +40,8 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 		return nil, err
 	}
 	submissionRepository := postgres.NewSubmissionRepository(db)
+	submissionResultRepository := postgres.NewSubmissionResultRepository(db)
+	submissionAttemptRepository := postgres.NewSubmissionAttemptRepository(db)
 	transactionManager := postgres.NewTransactionManager(db)
 	outboxRepository := postgres.NewOutboxRepository(db)
 	kafkaConfig := cfg.Kafka
@@ -56,7 +58,7 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	problemServiceClient := container.ProvideProblemServiceClient(clientConn)
 	duration := container.ProvideProblemGRPCTimeout(problemGRPCConfig)
 	problemReader := problem.NewGRPCProblemReader(problemServiceClient, duration)
-	createSubmissionUseCase := user.NewCreateSubmissionUseCase(submissionRepository, transactionManager, judgePublisher, attemptIDGenerator, problemReader)
+	createSubmissionUseCase := user.NewCreateSubmissionUseCase(submissionRepository, transactionManager, judgePublisher, attemptIDGenerator, problemReader, submissionAttemptRepository)
 	createSubmissionHandler := user2.NewCreateSubmissionHandler(createSubmissionUseCase)
 	judgeGRPCConfig, err := container.ProvideJudgeGRPCConfig(cfg)
 	if err != nil {
@@ -92,7 +94,11 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	userHandler := handler.NewUserHandler(createSubmissionHandler, runCodeHandler, getSubmissionHandler, listMySubmissionsHandler, issueSubmissionStreamTicketHandler, submissionEventsHandler)
 	listAdminSubmissionsUseCase := admin.NewListAdminSubmissionsUseCase(submissionRepository)
 	listSubmissionsHandler := admin2.NewListSubmissionsHandler(listAdminSubmissionsUseCase)
-	adminHandler := handler.NewAdminHandler(listSubmissionsHandler)
+	getAdminSubmissionDetailUseCase := admin.NewGetAdminSubmissionDetailUseCase(submissionRepository, submissionResultRepository, submissionAttemptRepository)
+	getSubmissionDetailHandler := admin2.NewGetSubmissionDetailHandler(getAdminSubmissionDetailUseCase)
+	rejudgeAdminSubmissionUseCase := admin.NewRejudgeAdminSubmissionUseCase(submissionRepository, submissionAttemptRepository, transactionManager, judgePublisher, attemptIDGenerator, problemReader)
+	rejudgeSubmissionHandler := admin2.NewRejudgeSubmissionHandler(rejudgeAdminSubmissionUseCase)
+	adminHandler := handler.NewAdminHandler(listSubmissionsHandler, getSubmissionDetailHandler, rejudgeSubmissionHandler)
 	redisConfig := cfg.Redis
 	client, err := cache.ConnectRedis(redisConfig)
 	if err != nil {
@@ -111,8 +117,7 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	if err != nil {
 		return nil, err
 	}
-	submissionResultRepository := postgres.NewSubmissionResultRepository(db)
-	applyJudgeResultUseCase := result.NewApplyJudgeResultUseCase(submissionRepository, submissionResultRepository, transactionManager, submissionEventHub, zapLogger)
+	applyJudgeResultUseCase := result.NewApplyJudgeResultUseCase(submissionRepository, submissionResultRepository, transactionManager, submissionEventHub, zapLogger, submissionAttemptRepository)
 	dltPublisher := kafka2.NewDLTPublisher(syncProducer, kafkaConfig, zapLogger)
 	judgeResultConsumer := kafka2.NewJudgeResultConsumer(consumerGroup, kafkaConfig, applyJudgeResultUseCase, dltPublisher, zapLogger)
 	app := container.NewApp(cfg, db, router, outboxRelay, judgeResultConsumer, zapLogger, syncProducer, consumerGroup, clientConn, judgeClientConn)

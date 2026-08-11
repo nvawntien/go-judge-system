@@ -9,6 +9,7 @@ const (
 	ResultWrongAnswer  ResultStatus = "WRONG_ANSWER"
 	ResultTimeLimit    ResultStatus = "TIME_LIMIT_EXCEEDED"
 	ResultMemoryLimit  ResultStatus = "MEMORY_LIMIT_EXCEEDED"
+	ResultOutputLimit  ResultStatus = "OUTPUT_LIMIT_EXCEEDED"
 	ResultRuntimeError ResultStatus = "RUNTIME_ERROR"
 	ResultSystemError  ResultStatus = "SYSTEM_ERROR"
 )

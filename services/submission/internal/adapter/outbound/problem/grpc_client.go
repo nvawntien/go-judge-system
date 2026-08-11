@@ -75,3 +75,42 @@ func (r *grpcProblemReader) GetProblem(
 		MemoryLimit: int(response.GetMemoryLimit()),
 	}, nil
 }
+
+func (r *grpcProblemReader) GetTestCaseMetadata(
+	ctx context.Context,
+	problemID int64,
+) (dto.ProblemTestCaseMetadata, error) {
+	callCtx, cancel := context.WithTimeout(ctx, r.timeout)
+	defer cancel()
+
+	response, err := r.client.GetTestCase(
+		callCtx,
+		&problemv1.GetTestCaseRequest{ProblemId: problemID},
+	)
+	if err != nil {
+		switch status.Code(err) {
+		case codes.InvalidArgument:
+			return dto.ProblemTestCaseMetadata{}, domain.ErrInvalidProblemID
+		case codes.NotFound:
+			return dto.ProblemTestCaseMetadata{}, domain.ErrSubmissionTestCaseRequired
+		case codes.Canceled:
+			if ctx.Err() != nil {
+				return dto.ProblemTestCaseMetadata{}, ctx.Err()
+			}
+			return dto.ProblemTestCaseMetadata{}, context.Canceled
+		case codes.DeadlineExceeded, codes.Unavailable, codes.Internal:
+			return dto.ProblemTestCaseMetadata{}, domain.ErrProblemServiceUnavailable.Wrap(err)
+		default:
+			return dto.ProblemTestCaseMetadata{}, domain.ErrProblemServiceUnavailable.Wrap(err)
+		}
+	}
+	if response == nil || response.GetTestCount() <= 0 || response.GetVersion() <= 0 {
+		return dto.ProblemTestCaseMetadata{}, domain.ErrSubmissionTestCaseRequired
+	}
+
+	return dto.ProblemTestCaseMetadata{
+		ProblemID: problemID,
+		TestCount: int(response.GetTestCount()),
+		Version:   int(response.GetVersion()),
+	}, nil
+}

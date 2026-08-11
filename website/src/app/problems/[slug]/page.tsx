@@ -2210,6 +2210,9 @@ function submissionDetailOutput(
   ) {
     return { label: 'Message', output: submission.error_message };
   }
+  if (submission.status === 'OUTPUT_LIMIT_EXCEEDED' && submission.error_message) {
+    return { label: 'Message', output: submission.error_message };
+  }
   return null;
 }
 

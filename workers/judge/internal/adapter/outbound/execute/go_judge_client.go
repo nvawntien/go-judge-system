@@ -16,6 +16,8 @@ import (
 
 const batchSize = 50
 
+const expectedOutputHeadroomBytes = 64 * 1024
+
 type GoJudgeClient struct {
 	client *resty.Client
 	logger *zap.Logger
@@ -45,6 +47,7 @@ func (c *GoJudgeClient) Execute(ctx context.Context, req outbound.ExecutionReque
 	}
 
 	limits := normalizeLimits(req.Limits)
+	limits = ensureOutputLimitForExpected(limits, req.TestCases)
 	hasCompile := langCfg.Compile != nil
 	var exeFileID string
 
@@ -66,8 +69,13 @@ func (c *GoJudgeClient) Execute(ctx context.Context, req outbound.ExecutionReque
 		MemoryUsed:    0,
 	}
 
-	for start := 0; start < len(req.TestCases); start += batchSize {
-		end := start + batchSize
+	currentBatchSize := batchSize
+	if req.StopOnFirstFailure {
+		currentBatchSize = 1
+	}
+
+	for start := 0; start < len(req.TestCases); start += currentBatchSize {
+		end := start + currentBatchSize
 		if end > len(req.TestCases) {
 			end = len(req.TestCases)
 		}
@@ -327,9 +335,6 @@ func mapJudgeStatus(status string, exitStatus int) string {
 }
 
 func mapOfficialSubmissionStatus(status string) string {
-	if status == "OUTPUT_LIMIT_EXCEEDED" {
-		return "WRONG_ANSWER"
-	}
 	return status
 }
 
@@ -343,6 +348,24 @@ func normalizeLimits(limits outbound.ExecutionLimits) outbound.ExecutionLimits {
 	if limits.OutputLimitBytes <= 0 {
 		limits.OutputLimitBytes = 1024 * 1024
 	}
+	return limits
+}
+
+func ensureOutputLimitForExpected(
+	limits outbound.ExecutionLimits,
+	testCases []outbound.ExecutionTestCase,
+) outbound.ExecutionLimits {
+	required := limits.OutputLimitBytes
+	for _, testCase := range testCases {
+		if testCase.ExpectedOutput == nil {
+			continue
+		}
+		size := int64(len(*testCase.ExpectedOutput)) + expectedOutputHeadroomBytes
+		if size > required {
+			required = size
+		}
+	}
+	limits.OutputLimitBytes = required
 	return limits
 }
 

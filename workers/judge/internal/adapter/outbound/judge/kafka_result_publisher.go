@@ -46,15 +46,18 @@ func (p *KafkaResultPublisher) PublishResult(ctx context.Context, submissionID i
 	}
 
 	payload := pkgjudge.ResultMessage{
-		SubmissionID:  submissionID,
-		AttemptID:     attemptID,
-		Status:        result.Status,
-		CompileOutput: result.CompileOutput,
-		ErrorMessage:  result.ErrorMessage,
-		ExecutionTime: intPtr(result.ExecutionTime),
-		MemoryUsed:    intPtr(result.MemoryUsed),
-		Error:         result.Error,
-		TestCases:     tcResults,
+		SubmissionID:    submissionID,
+		AttemptID:       attemptID,
+		Status:          result.Status,
+		CompileOutput:   result.CompileOutput,
+		ErrorMessage:    result.ErrorMessage,
+		ExecutionTime:   intPtr(result.ExecutionTime),
+		MemoryUsed:      intPtr(result.MemoryUsed),
+		Error:           result.Error,
+		TestcaseVersion: result.TestcaseVersion,
+		TestCount:       result.TestCount,
+		DatasetChecksum: result.DatasetChecksum,
+		TestCases:       tcResults,
 	}
 
 	value, err := json.Marshal(payload)

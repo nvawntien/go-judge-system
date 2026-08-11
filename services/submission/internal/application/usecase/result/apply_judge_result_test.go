@@ -82,6 +82,9 @@ type fakeSubmissionResultRepo struct {
 func (r *fakeSubmissionResultRepo) GetBySubmissionID(context.Context, int64) ([]*entity.SubmissionResult, error) {
 	return nil, nil
 }
+func (r *fakeSubmissionResultRepo) GetBySubmissionIDAndAttemptID(context.Context, int64, string) ([]*entity.SubmissionResult, error) {
+	return nil, nil
+}
 func (r *fakeSubmissionResultRepo) DeleteBySubmissionID(context.Context, int64) error { return nil }
 func (r *fakeSubmissionResultRepo) ReplaceBySubmissionIDAndAttemptID(ctx context.Context, submissionID int64, attemptID string, results []*entity.SubmissionResult) error {
 	if err := ctx.Err(); err != nil {
@@ -94,6 +97,29 @@ func (r *fakeSubmissionResultRepo) ReplaceBySubmissionIDAndAttemptID(ctx context
 	r.submission = submissionID
 	r.attemptID = attemptID
 	r.results = results
+	return nil
+}
+
+type fakeAttemptRepo struct {
+	calls           int
+	attemptID       string
+	status          entity.Status
+	testcaseVersion *int
+	testCount       *int
+	datasetChecksum *string
+}
+
+func (r *fakeAttemptRepo) Create(context.Context, *entity.SubmissionAttempt) error { return nil }
+func (r *fakeAttemptRepo) GetByAttemptID(context.Context, string) (*entity.SubmissionAttempt, error) {
+	return nil, domain.ErrSubmissionNotFound
+}
+func (r *fakeAttemptRepo) MarkCompleted(_ context.Context, attemptID string, status entity.Status, testcaseVersion *int, testCount *int, datasetChecksum *string) error {
+	r.calls++
+	r.attemptID = attemptID
+	r.status = status
+	r.testcaseVersion = testcaseVersion
+	r.testCount = testCount
+	r.datasetChecksum = datasetChecksum
 	return nil
 }
 
@@ -131,6 +157,7 @@ func TestApplyJudgeResultMatchingAttemptAppliesTerminalStatuses(t *testing.T) {
 		entity.StatusWrongAnswer,
 		entity.StatusTimeLimitExceed,
 		entity.StatusMemoryLimitExceed,
+		entity.StatusOutputLimitExceed,
 		entity.StatusRuntimeError,
 		entity.StatusCompilationError,
 		entity.StatusSystemError,
@@ -234,6 +261,11 @@ func TestApplyJudgeResultMapsOutputFieldsByVerdict(t *testing.T) {
 			wantErrorMessage: stringPointer(publicMemoryLimitMessage),
 		},
 		{
+			name:             "output limit gets public default message",
+			msg:              pkgjudge.ResultMessage{Status: string(entity.StatusOutputLimitExceed)},
+			wantErrorMessage: stringPointer(publicOutputLimitMessage),
+		},
+		{
 			name:             "system error ignores unsafe incoming message",
 			msg:              pkgjudge.ResultMessage{Status: string(entity.StatusSystemError), ErrorMessage: &unsafeSystemMessage},
 			wantErrorMessage: stringPointer(publicSystemErrorMessage),
@@ -319,6 +351,153 @@ func TestApplyJudgeResultStaleOrLegacyAttemptIsAckNoop(t *testing.T) {
 				t.Fatalf("stale/legacy result must not publish, events=%d", len(eventHub.events))
 			}
 		})
+	}
+}
+
+func TestApplyJudgeResultPersistsCurrentAttemptProvenance(t *testing.T) {
+	version := 3
+	testCount := 24
+	checksum := strings.Repeat("a", 64)
+	attemptRepo := &fakeAttemptRepo{}
+	uc := NewApplyJudgeResultUseCase(
+		&fakeSubmissionRepo{submission: matchingSubmission()},
+		&fakeSubmissionResultRepo{},
+		&fakeTxManager{},
+		&fakeSubmissionEventHub{},
+		nil,
+		attemptRepo,
+	)
+
+	err := uc.Execute(context.Background(), pkgjudge.ResultMessage{
+		SubmissionID:    77,
+		AttemptID:       "attempt-77",
+		Status:          string(entity.StatusAccepted),
+		TestcaseVersion: &version,
+		TestCount:       &testCount,
+		DatasetChecksum: &checksum,
+		TestCases:       []pkgjudge.TestCaseResultItem{{Index: 1, Status: string(entity.ResultAccepted)}},
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if attemptRepo.calls != 1 ||
+		attemptRepo.attemptID != "attempt-77" ||
+		attemptRepo.status != entity.StatusAccepted ||
+		attemptRepo.testcaseVersion == nil || *attemptRepo.testcaseVersion != version ||
+		attemptRepo.testCount == nil || *attemptRepo.testCount != testCount ||
+		attemptRepo.datasetChecksum == nil || *attemptRepo.datasetChecksum != checksum {
+		t.Fatalf("attempt provenance = calls=%d attempt=%q status=%s version=%v count=%v checksum=%v",
+			attemptRepo.calls,
+			attemptRepo.attemptID,
+			attemptRepo.status,
+			attemptRepo.testcaseVersion,
+			attemptRepo.testCount,
+			attemptRepo.datasetChecksum,
+		)
+	}
+}
+
+func TestApplyJudgeResultPersistsOutputLimitTestCaseStatus(t *testing.T) {
+	resultRepo := &fakeSubmissionResultRepo{}
+	uc := NewApplyJudgeResultUseCase(
+		&fakeSubmissionRepo{submission: matchingSubmission()},
+		resultRepo,
+		&fakeTxManager{},
+		&fakeSubmissionEventHub{},
+		nil,
+	)
+
+	err := uc.Execute(context.Background(), pkgjudge.ResultMessage{
+		SubmissionID: 77,
+		AttemptID:    "attempt-77",
+		Status:       string(entity.StatusOutputLimitExceed),
+		TestCases: []pkgjudge.TestCaseResultItem{{
+			Index:  1,
+			Status: string(entity.ResultOutputLimit),
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if len(resultRepo.results) != 1 || resultRepo.results[0].Status != entity.ResultOutputLimit {
+		t.Fatalf("results = %+v, want output limit status", resultRepo.results)
+	}
+}
+
+func TestApplyJudgeResultRejectsInvalidDatasetChecksum(t *testing.T) {
+	for _, checksum := range []string{
+		"",
+		strings.Repeat("A", 64),
+		strings.Repeat("a", 63),
+		strings.Repeat("g", 64),
+	} {
+		t.Run(checksum, func(t *testing.T) {
+			tx := &fakeTxManager{}
+			uc := NewApplyJudgeResultUseCase(
+				&fakeSubmissionRepo{submission: matchingSubmission()},
+				&fakeSubmissionResultRepo{},
+				tx,
+				&fakeSubmissionEventHub{},
+				nil,
+			)
+
+			err := uc.Execute(context.Background(), pkgjudge.ResultMessage{
+				SubmissionID:    77,
+				AttemptID:       "attempt-77",
+				Status:          string(entity.StatusAccepted),
+				DatasetChecksum: &checksum,
+			})
+			if !errors.Is(err, domain.ErrInvalidJudgeResult) {
+				t.Fatalf("Execute() error = %v, want invalid judge result", err)
+			}
+			if tx.called {
+				t.Fatal("transaction must not start for invalid checksum")
+			}
+		})
+	}
+}
+
+func TestApplyJudgeResultAllowsMissingDatasetChecksum(t *testing.T) {
+	uc := NewApplyJudgeResultUseCase(
+		&fakeSubmissionRepo{submission: matchingSubmission()},
+		&fakeSubmissionResultRepo{},
+		&fakeTxManager{},
+		&fakeSubmissionEventHub{},
+		nil,
+		&fakeAttemptRepo{},
+	)
+	err := uc.Execute(context.Background(), pkgjudge.ResultMessage{
+		SubmissionID: 77,
+		AttemptID:    "attempt-77",
+		Status:       string(entity.StatusCompilationError),
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+}
+
+func TestApplyJudgeResultStaleAttemptDoesNotPersistProvenance(t *testing.T) {
+	attemptRepo := &fakeAttemptRepo{}
+	uc := NewApplyJudgeResultUseCase(
+		&fakeSubmissionRepo{submission: matchingSubmission()},
+		&fakeSubmissionResultRepo{},
+		&fakeTxManager{},
+		&fakeSubmissionEventHub{},
+		nil,
+		attemptRepo,
+	)
+	checksum := strings.Repeat("a", 64)
+	err := uc.Execute(context.Background(), pkgjudge.ResultMessage{
+		SubmissionID:    77,
+		AttemptID:       "attempt-stale",
+		Status:          string(entity.StatusAccepted),
+		DatasetChecksum: &checksum,
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if attemptRepo.calls != 0 {
+		t.Fatalf("stale result updated attempt provenance %d times", attemptRepo.calls)
 	}
 }
 

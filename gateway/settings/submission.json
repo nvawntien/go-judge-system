@@ -276,28 +276,8 @@
       ]
     },
     {
-      "endpoint": "/api/v1/problems/id/{id}/submissions",
+      "endpoint": "/api/v1/admin/submissions/{submission_id}",
       "method": "GET",
-      "output_encoding": "no-op",
-      "input_headers": [
-        "*"
-      ],
-      "input_query_strings": [
-        "*"
-      ],
-      "backend": [
-        {
-          "url_pattern": "/api/v1/problems/id/{id}/submissions",
-          "encoding": "no-op",
-          "host": [
-            "http://submission-service:8083"
-          ]
-        }
-      ]
-    },
-    {
-      "endpoint": "/api/v1/admin/submissions/{id}/rejudge",
-      "method": "PUT",
       "output_encoding": "no-op",
       "input_headers": [
         "*"
@@ -330,7 +310,70 @@
       },
       "backend": [
         {
-          "url_pattern": "/api/v1/admin/submissions/{id}/rejudge",
+          "url_pattern": "/api/v1/admin/submissions/{submission_id}",
+          "encoding": "no-op",
+          "host": [
+            "http://submission-service:8083"
+          ]
+        }
+      ]
+    },
+    {
+      "endpoint": "/api/v1/admin/submissions/{submission_id}/rejudge",
+      "method": "POST",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "*"
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "HS256",
+          "jwk_local_path": "/etc/krakend/symmetric.json",
+          "disable_jwk_security": true,
+          "cookie_key": "access_token",
+          "propagate_claims": [
+            [
+              "sub",
+              "X-User-ID"
+            ],
+            [
+              "role",
+              "X-Role"
+            ],
+            [
+              "username",
+              "X-Username"
+            ],
+            [
+              "iat",
+              "X-Token-Iat"
+            ]
+          ]
+        }
+      },
+      "backend": [
+        {
+          "url_pattern": "/api/v1/admin/submissions/{submission_id}/rejudge",
+          "encoding": "no-op",
+          "host": [
+            "http://submission-service:8083"
+          ]
+        }
+      ]
+    },
+    {
+      "endpoint": "/api/v1/problems/id/{id}/submissions",
+      "method": "GET",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "*"
+      ],
+      "input_query_strings": [
+        "*"
+      ],
+      "backend": [
+        {
+          "url_pattern": "/api/v1/problems/id/{id}/submissions",
           "encoding": "no-op",
           "host": [
             "http://submission-service:8083"

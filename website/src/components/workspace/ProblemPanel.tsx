@@ -970,6 +970,9 @@ function submissionDetailOutput(
   ) {
     return { label: 'Message', output: detail.error_message };
   }
+  if (detail.status === 'OUTPUT_LIMIT_EXCEEDED' && detail.error_message) {
+    return { label: 'Message', output: detail.error_message };
+  }
   return null;
 }
 

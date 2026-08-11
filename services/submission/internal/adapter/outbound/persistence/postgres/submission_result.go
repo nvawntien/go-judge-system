@@ -54,6 +54,32 @@ func (r *submissionResultRepository) GetBySubmissionID(ctx context.Context, subm
 	return results, nil
 }
 
+func (r *submissionResultRepository) GetBySubmissionIDAndAttemptID(
+	ctx context.Context,
+	submissionID int64,
+	attemptID string,
+) ([]*entity.SubmissionResult, error) {
+	attemptID = strings.TrimSpace(attemptID)
+	if attemptID == "" {
+		return []*entity.SubmissionResult{}, nil
+	}
+
+	var daos []SubmissionResultDAO
+	db := getDB(ctx, r.db)
+	if err := db.Where("submission_id = ? AND attempt_id = ?", submissionID, attemptID).
+		Order("test_index ASC").
+		Find(&daos).Error; err != nil {
+		return nil, err
+	}
+
+	results := make([]*entity.SubmissionResult, 0, len(daos))
+	for i := range daos {
+		results = append(results, toSubmissionResultEntity(&daos[i]))
+	}
+
+	return results, nil
+}
+
 func (r *submissionResultRepository) DeleteBySubmissionID(ctx context.Context, submissionID int64) error {
 	db := getDB(ctx, r.db)
 	return db.Where("submission_id = ?", submissionID).Delete(&SubmissionResultDAO{}).Error
@@ -66,7 +92,7 @@ func (r *submissionResultRepository) ReplaceBySubmissionIDAndAttemptID(ctx conte
 	}
 
 	db := getDB(ctx, r.db)
-	if err := db.Where("submission_id = ?", submissionID).Delete(&SubmissionResultDAO{}).Error; err != nil {
+	if err := db.Where("submission_id = ? AND attempt_id = ?", submissionID, attemptID).Delete(&SubmissionResultDAO{}).Error; err != nil {
 		return err
 	}
 

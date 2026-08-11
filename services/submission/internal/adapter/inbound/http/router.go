@@ -49,6 +49,10 @@ func (r *Router) SetupRoutes() {
 	v1.GET("/submissions/:submission_id", r.authMiddleware, r.userHandler.GetSubmission.Handle)
 	v1.GET("/me/submissions", r.authMiddleware, r.userHandler.ListMySubmissions.Handle)
 	v1.GET("/admin/submissions", r.authMiddleware, r.adminHandler.ListSubmissions.Handle)
+	v1.GET("/admin/submissions/:submission_id", r.authMiddleware, r.adminHandler.GetSubmissionDetail.Handle)
+	if r.adminHandler.RejudgeSubmission != nil {
+		v1.POST("/admin/submissions/:submission_id/rejudge", r.authMiddleware, r.adminHandler.RejudgeSubmission.Handle)
+	}
 
 	r.engine.GET("/events/submissions/:submission_id", r.userHandler.SubmissionEvents.Handle)
 }

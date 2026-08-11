@@ -65,6 +65,7 @@ var UseCaseProviderSet = wire.NewSet(
 	userusecase.NewUploadAvatarUseCase,
 
 	adminusecase.NewAssignRoleUseCase,
+	adminusecase.NewAdminUsersUseCase,
 )
 
 var InboundProviderSet = wire.NewSet(
@@ -85,6 +86,7 @@ var InboundProviderSet = wire.NewSet(
 	userhandler.NewUploadAvatarHandler,
 
 	adminhandler.NewAssignRoleHandler,
+	adminhandler.NewAdminUsersHandler,
 
 	handler.NewAuthHandler,
 	handler.NewUserHandler,

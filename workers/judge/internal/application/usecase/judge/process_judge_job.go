@@ -45,7 +45,7 @@ func (u *ProcessJudgeJobUseCase) Execute(ctx context.Context, jobMsg *judge.JobM
 		return u.handleProcessingError(ctx, jobMsg, "fetch testcase metadata", err)
 	}
 
-	testCases, err := u.testCaseLoader.Load(ctx, metadata)
+	bundle, err := u.testCaseLoader.Load(ctx, metadata)
 	if err != nil {
 		return u.handleProcessingError(ctx, jobMsg, "load official testcases", err)
 	}
@@ -53,13 +53,16 @@ func (u *ProcessJudgeJobUseCase) Execute(ctx context.Context, jobMsg *judge.JobM
 	result, err := u.executor.Execute(ctx, outbound.ExecutionRequest{
 		Language:           jobMsg.Language,
 		SourceCode:         jobMsg.SourceCode,
-		TestCases:          testCases,
+		TestCases:          bundle.TestCases,
 		StopOnFirstFailure: true,
 	})
 	if err != nil {
 		return u.handleProcessingError(ctx, jobMsg, "execute submission", err)
 	}
 	sanitizeOfficialResult(result)
+	result.TestcaseVersion = intPtr(bundle.Version)
+	result.TestCount = intPtr(bundle.TestCount)
+	result.DatasetChecksum = nonEmptyStringPtr(bundle.DatasetChecksum)
 
 	if err := u.resultPublisher.PublishResult(ctx, jobMsg.SubmissionID, jobMsg.AttemptID, result); err != nil {
 		u.logger.Error(
@@ -77,6 +80,17 @@ func (u *ProcessJudgeJobUseCase) Execute(ctx context.Context, jobMsg *judge.JobM
 	)
 
 	return nil
+}
+
+func intPtr(value int) *int {
+	return &value
+}
+
+func nonEmptyStringPtr(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
 }
 
 func (u *ProcessJudgeJobUseCase) handleProcessingError(

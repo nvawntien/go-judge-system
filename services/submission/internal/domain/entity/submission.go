@@ -32,6 +32,7 @@ const (
 	StatusWrongAnswer       Status = "WRONG_ANSWER"
 	StatusTimeLimitExceed   Status = "TIME_LIMIT_EXCEEDED"
 	StatusMemoryLimitExceed Status = "MEMORY_LIMIT_EXCEEDED"
+	StatusOutputLimitExceed Status = "OUTPUT_LIMIT_EXCEEDED"
 	StatusRuntimeError      Status = "RUNTIME_ERROR"
 	StatusCompilationError  Status = "COMPILATION_ERROR"
 	StatusSystemError       Status = "SYSTEM_ERROR"
@@ -45,6 +46,7 @@ func ParseStatus(value string) (Status, bool) {
 		StatusWrongAnswer,
 		StatusTimeLimitExceed,
 		StatusMemoryLimitExceed,
+		StatusOutputLimitExceed,
 		StatusRuntimeError,
 		StatusCompilationError,
 		StatusSystemError:
@@ -60,6 +62,7 @@ func IsTerminalStatus(status Status) bool {
 		StatusWrongAnswer,
 		StatusTimeLimitExceed,
 		StatusMemoryLimitExceed,
+		StatusOutputLimitExceed,
 		StatusRuntimeError,
 		StatusCompilationError,
 		StatusSystemError:
