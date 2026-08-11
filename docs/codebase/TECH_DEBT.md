@@ -5,7 +5,7 @@
 | Area | Finding | Evidence / impact |
 | --- | --- | --- |
 | Schema change management | No versioned SQL migrations or migration command; repositories call `AutoMigrate` at runtime. | `infra/postgres/init.sql`; repository constructors. Production schema rollout/reversibility is not explicit. |
-| Worker cleanup race | Parallel cleanup goroutines assign to the same `closeErr` without a mutex/channel. | `workers/judge/internal/container/app.go`; race detector can report this path. |
+| Worker capacity scaling | Compose intentionally limits each worker to one concurrent official job and 512 MiB after executor memory-pressure remediation. | `docker-compose.yml`, `judge_job_consumer.go`; any throughput increase needs a fresh memory/concurrency measurement rather than raising `WORKER_POOL_SIZE` independently. |
 | SSE scale boundary | Event delivery uses an in-memory `EventHub`; no shared pub/sub adapter is present. | `services/submission/internal/adapter/outbound/stream/event_hub.go`; multi-replica client delivery is not guaranteed. |
 | DLT recovery | Worker produces a DLT topic but no DLT consumer/replay tool was found. | `infra/kafka/kafka-init.sh`, `dlt_publisher.go`. Failed jobs need manual/operator recovery. |
 | Gateway/API drift risk | Gateway route JSON and service routers are separate configuration/code surfaces. | `gateway/settings/`, all three router files. A local handler route can be unavailable publicly or gateway config can drift. |

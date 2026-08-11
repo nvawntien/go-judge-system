@@ -9,7 +9,7 @@
 
 ## Kafka processing
 
-The Judge Worker creates a worker pool per Sarama consumer claim, size four by default or `WORKER_POOL_SIZE`; messages are only marked after success or after DLT handling. Processing failures retry three times with 500 ms, 1 s and 2 s waits, then send to DLT (`judge_job_consumer.go`). Cancellation skips retry/commit to permit redelivery.
+The Judge Worker creates dispatch workers per Sarama consumer claim, but a single `JudgeJobConsumer` owns a shared `jobSlots` semaphore. Its capacity is four by default or `WORKER_POOL_SIZE`, and it bounds total in-flight official jobs across all claims for that worker instance. Acquisition selects on the consumer session context and every acquired slot is released with `defer`; cancellation before acquisition skips processing/commit so Kafka can redeliver. Messages are otherwise marked only after success or DLT handling. Processing failures retry three times with 500 ms, 1 s and 2 s waits, then send to DLT (`judge_job_consumer.go`).
 
 Submission's result consumer is another consumer-group loop. Broker delivery remains at-least-once: use `AttemptID` and result application guards as the cross-service deduplication boundary; do not treat an idempotent Kafka producer as end-to-end exactly once.
 
@@ -17,7 +17,7 @@ Submission's result consumer is another consumer-group loop. Broker delivery rem
 
 * gRPC caller deadlines come from Problem/Judge configuration and adapters.
 * Worker testcase download uses 30 seconds, limits ZIP to 64 MiB and extracted content to 128 MiB (`official_loader.go`).
-* go-judge REST client has a 120-second client timeout; requests set CPU, wall clock, memory, process and output limits. Requests are batched in groups of 50 and official submission execution stops after first failure.
+* go-judge REST client has a 120-second client timeout; requests set CPU, wall clock, memory, process and output limits. Interactive requests may batch up to 50 testcases. Official submissions use one testcase per run request so execution can stop at the first failure; compiled languages compile once and each testcase run receives the cached compiled artifact.
 * Interactive run-code has explicit source/stdin/expected-output/testcase/concurrency/timeout limits in Submission config and use case.
 
 ## In-process SSE
@@ -26,4 +26,4 @@ Submission `EventHub` manages subscriptions/channels in process. It supports liv
 
 ## Race/resource observations
 
-The Worker `Close` method writes the shared `closeErr` from multiple goroutines without synchronization (`workers/judge/internal/container/app.go`); this is a confirmed race-risk in the cleanup path. The testcase cache update deletes and renames a per-problem directory without an inter-process lock; concurrent worker replicas sharing one volume are a potential race. Current Compose has one worker container, so multi-replica behavior is **NEEDS VERIFICATION**.
+Worker cleanup is sequential and joins close errors (`workers/judge/internal/container/app.go`). The testcase cache update deletes and renames a per-problem directory without an inter-process lock; concurrent worker replicas sharing one volume are a potential race. Current Compose has one worker container, so multi-replica behavior is **NEEDS VERIFICATION**.

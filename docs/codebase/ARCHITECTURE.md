@@ -65,7 +65,7 @@ Kafka messages are keyed by submission ID. `AttemptID` is carried as the attempt
 1. `POST /api/v1/submissions` enters `CreateSubmission`.
 2. It calls Problem gRPC, creates `submissions` and `submission_attempts`, and writes a JSON job to `outbox_messages` in one GORM transaction.
 3. `OutboxRelay.Start` polls every two seconds and publishes pending messages to Kafka.
-4. Worker consumer processes jobs in a per-claim pool, fetches testcase metadata over gRPC, loads/cache-verifies the ZIP, calls go-judge, sanitizes official test input/expected output, then publishes a result.
+4. Worker consumer dispatches jobs from Sarama claims while a consumer-wide semaphore limits total concurrent official jobs to `WORKER_POOL_SIZE`, fetches testcase metadata over gRPC, loads/cache-verifies the ZIP, calls go-judge, sanitizes official test input/expected output, then publishes a result.
 5. Submission result consumer validates/applies the result transactionally, replaces results for the matching attempt, updates the submission/attempt, and emits in-process SSE events through `EventHub`.
 
 ### Problem authoring and testcase delivery
