@@ -1,4 +1,7 @@
 import type {
+  AdminUser,
+  AdminUserListParams,
+  AdminUserListResponse,
   AdminListProblemsParams,
   AdminListProblemsResponse,
   AdminListTagsResponse,
@@ -346,10 +349,31 @@ export const adminSubmissionApi = {
 };
 
 export const adminUserApi = {
+  list: (params: AdminUserListParams = {}, signal?: AbortSignal) =>
+    apiRequest<AdminUserListResponse>('/api/v1/admin/users', {
+      query: {
+        page: params.page,
+        limit: params.limit,
+        search: params.search,
+        role: params.role,
+        status: params.status,
+      },
+      signal,
+    }),
+
+  get: (id: string, signal?: AbortSignal) =>
+    apiRequest<AdminUser>(`/api/v1/admin/users/${encodeURIComponent(id)}`, { signal }),
+
   assignRole: (id: string, body: AssignUserRoleRequest) =>
     apiRequest<void>(`/api/v1/admin/users/${encodeURIComponent(id)}/role`, {
       method: 'PUT',
       body,
+    }),
+
+  setSuspension: (id: string, suspended: boolean) =>
+    apiRequest<AdminUser>(`/api/v1/admin/users/${encodeURIComponent(id)}/suspension`, {
+      method: 'PATCH',
+      body: { suspended },
     }),
 };
 

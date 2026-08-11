@@ -3,7 +3,7 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { buttonStyles } from '@/components/ui';
 import { difficultyMeta, formatDateTime, languageLabel, verdictMeta } from '@/lib/format';
-import type { Difficulty, SubmissionStatus } from '@/lib/types';
+import type { AdminUser, AdminUserStatus, Difficulty, Role, SubmissionStatus } from '@/lib/types';
 
 export function AdminTableShell({ children }: { children: ReactNode }) {
   return (
@@ -73,6 +73,60 @@ export function BooleanPill({ value, trueLabel, falseLabel }: { value: boolean; 
       }}
     >
       {value ? trueLabel : falseLabel}
+    </span>
+  );
+}
+
+const USER_STATUS_META: Record<AdminUserStatus, { label: string; color: string; background: string }> = {
+  active: { label: 'Active', color: 'var(--success)', background: 'var(--success-bg)' },
+  unverified: { label: 'Unverified', color: 'var(--warn)', background: 'var(--warn-bg)' },
+  suspended: { label: 'Suspended', color: 'var(--error)', background: 'var(--error-bg)' },
+};
+
+export function adminUserStatus(user: Pick<AdminUser, 'is_active' | 'is_suspended'>): AdminUserStatus {
+  if (user.is_suspended) return 'suspended';
+  return user.is_active ? 'active' : 'unverified';
+}
+
+export function AdminUserStatusPill({ user }: { user: Pick<AdminUser, 'is_active' | 'is_suspended'> }) {
+  const meta = USER_STATUS_META[adminUserStatus(user)];
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        color: meta.color,
+        background: meta.background,
+        borderRadius: 6,
+        padding: '2px 8px',
+        fontSize: 11,
+        fontWeight: 700,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      <span aria-hidden="true" style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor' }} />
+      {meta.label}
+    </span>
+  );
+}
+
+export function RolePill({ role }: { role: Role }) {
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        borderRadius: 6,
+        padding: '2px 8px',
+        background: role === 'admin' ? 'var(--accent-soft)' : 'var(--surface2)',
+        color: role === 'admin' ? 'var(--accent-fg)' : 'var(--text2)',
+        fontFamily: 'var(--font-mono)',
+        fontSize: 11,
+        fontWeight: 700,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {role}
     </span>
   );
 }

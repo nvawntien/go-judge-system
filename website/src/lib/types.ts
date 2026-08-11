@@ -377,6 +377,45 @@ export interface AssignUserRoleRequest {
   role: Role;
 }
 
+/* ----------------------------------------------------------- admin users */
+
+export type AdminUserRole = Role;
+export type AdminUserStatus = 'active' | 'unverified' | 'suspended';
+
+export interface AdminUser {
+  id: string;
+  full_name: string;
+  username: string;
+  email: string;
+  role: AdminUserRole;
+  rating: number;
+  is_active: boolean;
+  is_suspended: boolean;
+  avatar_url?: string | null;
+  bio?: string | null;
+  country?: string | null;
+  school?: string | null;
+  company?: string | null;
+  github_url?: string | null;
+  website_url?: string | null;
+  linkedin_url?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminUserListParams {
+  page?: number;
+  limit?: number;
+  search?: string;
+  role?: AdminUserRole | '';
+  status?: AdminUserStatus | '';
+}
+
+export interface AdminUserListResponse {
+  items: AdminUser[];
+  pagination: Pagination;
+}
+
 export type SubmissionDetail = Submission;
 
 export interface Pagination {

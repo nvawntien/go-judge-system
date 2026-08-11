@@ -25,7 +25,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     minRole: 'moderator',
     readiness: 'partial',
   },
-  { label: 'Users', href: '/admin/users', icon: <AdminIcon.Users />, minRole: 'admin', readiness: 'unavailable' },
+  { label: 'Users', href: '/admin/users', icon: <AdminIcon.Users />, minRole: 'admin', readiness: 'available' },
 ];
 
 export function isAdminRouteActive(pathname: string, href: string) {
