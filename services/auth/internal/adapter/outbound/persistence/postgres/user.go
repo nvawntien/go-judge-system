@@ -159,6 +159,55 @@ func (r *userRepository) UpdateUser(ctx context.Context, user *entity.User) erro
 		}).Error
 }
 
+func (r *userRepository) UpdatePassword(ctx context.Context, userID string, passwordHash string, updatedAt time.Time) error {
+	return r.db.WithContext(ctx).Model(&UserDAO{}).
+		Where("id = ?", userID).
+		Updates(map[string]interface{}{
+			"password":   passwordHash,
+			"updated_at": updatedAt,
+		}).Error
+}
+
+func (r *userRepository) UpdateProfile(ctx context.Context, userID string, updates outbound.ProfileUpdates) error {
+	values := map[string]interface{}{"updated_at": updates.UpdatedAt}
+	if updates.FullName != nil {
+		values["full_name"] = *updates.FullName
+	}
+	if updates.Bio != nil {
+		values["bio"] = updates.Bio
+	}
+	if updates.Country != nil {
+		values["country"] = updates.Country
+	}
+	if updates.School != nil {
+		values["school"] = updates.School
+	}
+	if updates.Company != nil {
+		values["company"] = updates.Company
+	}
+	if updates.GithubURL != nil {
+		values["github_url"] = updates.GithubURL
+	}
+	if updates.WebsiteURL != nil {
+		values["website_url"] = updates.WebsiteURL
+	}
+	if updates.LinkedinURL != nil {
+		values["linkedin_url"] = updates.LinkedinURL
+	}
+
+	return r.db.WithContext(ctx).Model(&UserDAO{}).Where("id = ?", userID).Updates(values).Error
+}
+
+func (r *userRepository) UpdateAvatar(ctx context.Context, userID string, avatarURL string, avatarObjectKey string, updatedAt time.Time) error {
+	return r.db.WithContext(ctx).Model(&UserDAO{}).
+		Where("id = ?", userID).
+		Updates(map[string]interface{}{
+			"avatar_url":        avatarURL,
+			"avatar_object_key": avatarObjectKey,
+			"updated_at":        updatedAt,
+		}).Error
+}
+
 func escapeLikePattern(value string) string {
 	value = strings.ReplaceAll(value, "\\", "\\\\")
 	value = strings.ReplaceAll(value, "%", "\\%")

@@ -11,6 +11,7 @@
 | Gateway/API drift risk | Gateway route JSON and service routers are separate configuration/code surfaces. | `gateway/settings/`, all three router files. A local handler route can be unavailable publicly or gateway config can drift. |
 | Redis ownership | Problem and Submission receive Redis configuration, but no active cache adapters were found. | Wire/config versus adapter tree. This increases operational surface without demonstrated use. |
 | User-suspension audit trail | Administrative suspension is a current boolean state with session invalidation, but there is no persisted reason, actor, expiry, or state-change history. | `auth_db.users`, Auth admin user use case. Operational moderation review and reversibility need a dedicated audit model if required. |
+| Session cutoff resolution | Logout-all, suspension, authenticated password-change, and password-reset invalidation use Unix-second JWT `iat`; a fresh login in the same second waits cancelably for the next second. | `session_invalidation.go`; correct but can add nearly one second of authentication latency. |
 | Local developer ergonomics | Auth/Problem/Submission main programs hard-code `/app/config`; no root task runner exists. | their `cmd/server/main.go`, absence of Makefile. |
 | Sandbox privilege | Compose runs the go-judge container with `privileged: true`. | `docker-compose.yml`; this is a high-value host isolation boundary requiring deployment-specific review. |
 

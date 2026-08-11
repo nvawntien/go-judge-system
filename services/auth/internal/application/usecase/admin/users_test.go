@@ -179,4 +179,13 @@ func (r *adminUsersRepository) UpdateUser(_ context.Context, user *entity.User) 
 	r.users[user.ID] = user
 	return nil
 }
+func (r *adminUsersRepository) UpdatePassword(context.Context, string, string, time.Time) error {
+	return nil
+}
+func (r *adminUsersRepository) UpdateProfile(context.Context, string, outbound.ProfileUpdates) error {
+	return nil
+}
+func (r *adminUsersRepository) UpdateAvatar(context.Context, string, string, string, time.Time) error {
+	return nil
+}
 func (r *adminUsersRepository) DeleteUser(context.Context, string) error { return nil }

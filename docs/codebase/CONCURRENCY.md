@@ -20,6 +20,10 @@ Submission's result consumer is another consumer-group loop. Broker delivery rem
 * go-judge REST client has a 120-second client timeout; requests set CPU, wall clock, memory, process and output limits. Interactive requests may batch up to 50 testcases. Official submissions use one testcase per run request so execution can stop at the first failure; compiled languages compile once and each testcase run receives the cached compiled artifact.
 * Interactive run-code has explicit source/stdin/expected-output/testcase/concurrency/timeout limits in Submission config and use case.
 
+## Session cutoff resolution
+
+Auth session invalidation uses Unix-second JWT `iat` values. A login immediately after a logout-all, suspension, authenticated password change, or password-reset cutoff waits cancelably until the next second before minting tokens, so a fresh token cannot be rejected by the same cutoff. This bounded wait can approach one second and remains a timestamp-resolution trade-off.
+
 ## In-process SSE
 
 Submission `EventHub` manages subscriptions/channels in process. It supports live fan-out and heartbeat stream handling but is not backed by Redis or Kafka. Therefore an SSE connection and a result consumer in different service replicas need verification; horizontal scale requires a shared event transport or routing affinity.

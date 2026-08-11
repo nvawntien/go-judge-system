@@ -73,7 +73,16 @@ func (r *sessionUserRepository) ListUsers(context.Context, outbound.ListUsersFil
 	return outbound.ListUsersResult{}, nil
 }
 func (r *sessionUserRepository) UpdateUser(context.Context, *entity.User) error { return nil }
-func (r *sessionUserRepository) DeleteUser(context.Context, string) error       { return nil }
+func (r *sessionUserRepository) UpdatePassword(context.Context, string, string, time.Time) error {
+	return nil
+}
+func (r *sessionUserRepository) UpdateProfile(context.Context, string, outbound.ProfileUpdates) error {
+	return nil
+}
+func (r *sessionUserRepository) UpdateAvatar(context.Context, string, string, string, time.Time) error {
+	return nil
+}
+func (r *sessionUserRepository) DeleteUser(context.Context, string) error { return nil }
 
 type sessionPasswordEncoder struct{}
 

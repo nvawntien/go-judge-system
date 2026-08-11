@@ -49,7 +49,6 @@ type GetProfileResponse struct {
 
 type UpdateProfileRequest struct {
 	FullName    *string `json:"full_name"`
-	AvatarURL   *string `json:"avatar_url"`
 	Bio         *string `json:"bio"`
 	Country     *string `json:"country"`
 	School      *string `json:"school"`

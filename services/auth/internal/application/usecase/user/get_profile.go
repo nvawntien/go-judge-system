@@ -25,6 +25,9 @@ func (uc *getProfileUseCase) Execute(ctx context.Context, req dto.GetProfileRequ
 		}
 		return dto.GetProfileResponse{}, domain.ErrInternalServer.Wrap(err)
 	}
+	if !user.IsActive || user.IsSuspended {
+		return dto.GetProfileResponse{}, domain.ErrUserNotFound
+	}
 
 	return toGetProfileResponse(user), nil
 }

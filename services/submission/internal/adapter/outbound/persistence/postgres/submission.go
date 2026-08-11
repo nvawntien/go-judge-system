@@ -180,13 +180,14 @@ func (r *submissionRepository) ResultSummaries(
 	if err := r.db.WithContext(ctx).
 		Model(&SubmissionResultDAO{}).
 		Select(
-			"submission_id, "+
-				"SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS passed, "+
+			"submission_results.submission_id, "+
+				"SUM(CASE WHEN submission_results.status = ? THEN 1 ELSE 0 END) AS passed, "+
 				"COUNT(*) AS total",
 			string(entity.ResultAccepted),
 		).
-		Where("submission_id IN ?", submissionIDs).
-		Group("submission_id").
+		Joins("JOIN submissions ON submissions.id = submission_results.submission_id").
+		Where("submission_results.submission_id IN ? AND submission_results.attempt_id = submissions.current_attempt_id", submissionIDs).
+		Group("submission_results.submission_id").
 		Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("summarize submission results: %w", err)
 	}

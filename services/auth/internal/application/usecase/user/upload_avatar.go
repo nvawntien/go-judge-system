@@ -84,7 +84,7 @@ func (uc *uploadAvatarUseCase) Execute(ctx context.Context, claims pkgAuth.Claim
 
 	user.UploadAvatar(avatarURL, objectKey)
 
-	if err := uc.userRepo.UpdateUser(ctx, user); err != nil {
+	if err := uc.userRepo.UpdateAvatar(ctx, user.ID, avatarURL, objectKey, user.UpdatedAt); err != nil {
 		_ = uc.avatarStorage.DeleteAvatar(ctx, objectKey)
 		return nil, domain.ErrInternalServer.Wrap(err)
 	}

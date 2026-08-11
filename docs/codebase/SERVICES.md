@@ -6,7 +6,7 @@
 * **Responsibility:** registration, email verification/resend, login/refresh/logout/logout-all, password lifecycle, public profile, authenticated profile/avatar, and Auth-owned admin user listing/detail, role assignment and suspension.
 * **Internal layout:** domain `User`, email/password value objects and domain errors; auth/user/admin use cases; Gin handlers; adapters for Postgres, Redis token invalidation, JWT, bcrypt, SMTP and MinIO avatar storage.
 * **HTTP:** router is `services/auth/internal/adapter/inbound/http/router.go`; public auth endpoints under `/api/v1/auth`, protected `/api/v1/me`, public username profile, and admin `GET /api/v1/admin/users`, `GET /api/v1/admin/users/:user_id`, `PATCH /api/v1/admin/users/:user_id/suspension`, and role assignment routes.
-* **Data/dependencies:** owns `auth_db.users`; Redis tracks logout-all token issued-at. Suspending a user records a cutoff before persisting the suspension, so already-issued access tokens are rejected by protected-service middleware; unsuspending deliberately leaves that cutoff intact. Avatars go to MinIO bucket `avatars`; SMTP is configured in `config/config.yaml`.
+* **Data/dependencies:** owns `auth_db.users`; Redis tracks logout-all token issued-at. Suspending a user, a successful authenticated password change, and a successful password reset record a cutoff before the corresponding database write, so already-issued access and refresh tokens are rejected; unsuspending deliberately leaves that cutoff intact. Password reset consumes its latest one-time Redis token atomically before invalidation/persistence, so a downstream failure does not leave a replayable token. Profile, avatar, and password mutations use column-scoped persistence operations to avoid overwriting unrelated user fields. Avatars go to MinIO bucket `avatars`; SMTP is configured in `config/config.yaml`.
 * **Configuration:** server, database, Redis, SMTP, JWT, app frontend URL, MinIO, logger. Environment keys use uppercase dotted-path replacement, e.g. `DATABASE_PASSWORD`, `JWT_ACCESS_SECRET` (`pkg/config/config.go`).
 
 ## Problem Service
@@ -26,7 +26,7 @@
 * **HTTP:** protected create, run, ticket, detail, own list and admin list/detail/rejudge routes; unauthenticated service SSE route `/events/submissions/:submission_id` validates a short-lived signed ticket. See router for exact paths.
 * **gRPC clients:** Problem `GetProblem`; Judge Worker `RunCode` for interactive execution.
 * **Background work:** outbox polling and result consumer start in `internal/container/app.go`.
-* **Data/dependencies:** owns `submission_db` tables; produces jobs and consumes results; local `EventHub` is an in-process SSE fan-out, not a cross-instance bus. Redis is configured but no Submission Redis adapter was found.
+* **Data/dependencies:** owns `submission_db` tables; produces jobs and consumes results; list/detail result summaries are scoped to each submission's `current_attempt_id`, while historical attempt rows remain retained. The local `EventHub` is an in-process SSE fan-out, not a cross-instance bus. Redis is configured but no Submission Redis adapter was found.
 
 ## Judge Worker
 
