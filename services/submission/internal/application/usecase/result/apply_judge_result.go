@@ -20,6 +20,7 @@ const (
 	publicSystemErrorMessage   = "The judge could not complete this submission."
 	publicTimeLimitMessage     = "Execution exceeded the time limit."
 	publicMemoryLimitMessage   = "Execution exceeded the memory limit."
+	publicOutputLimitMessage   = "Execution exceeded the output limit."
 )
 
 var (
@@ -167,6 +168,12 @@ func judgeOutputFields(status entity.Status, msg pkgjudge.ResultMessage) (*strin
 		}
 		message := publicMemoryLimitMessage
 		return nil, &message
+	case entity.StatusOutputLimitExceed:
+		if message := publicErrorMessage(msg.ErrorMessage); message != nil {
+			return nil, message
+		}
+		message := publicOutputLimitMessage
+		return nil, &message
 	case entity.StatusSystemError:
 		message := publicSystemErrorMessage
 		return nil, &message
@@ -232,6 +239,7 @@ func mapTerminalSubmissionStatus(raw string) (entity.Status, error) {
 		entity.StatusWrongAnswer,
 		entity.StatusTimeLimitExceed,
 		entity.StatusMemoryLimitExceed,
+		entity.StatusOutputLimitExceed,
 		entity.StatusRuntimeError,
 		entity.StatusCompilationError,
 		entity.StatusSystemError:
@@ -275,6 +283,7 @@ func mapTestCaseStatus(raw string) (entity.ResultStatus, error) {
 		entity.ResultWrongAnswer,
 		entity.ResultTimeLimit,
 		entity.ResultMemoryLimit,
+		entity.ResultOutputLimit,
 		entity.ResultRuntimeError,
 		entity.ResultSystemError:
 		return entity.ResultStatus(raw), nil

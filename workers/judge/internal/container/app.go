@@ -5,7 +5,6 @@ import (
 	"errors"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 	"time"
 
@@ -105,39 +104,26 @@ func (a *App) Run() error {
 
 func (a *App) Close() error {
 	var closeErr error
-	var wg sync.WaitGroup
+	addCloseErr := func(component string, err error) {
+		if err == nil {
+			return
+		}
+		if a.Logger != nil {
+			a.Logger.Error("failed to close judge worker dependency", zap.String("component", component), zap.Error(err))
+		}
+		closeErr = errors.Join(closeErr, err)
+	}
 
 	if a.KafkaProducer != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if err := a.KafkaProducer.Close(); err != nil {
-				a.Logger.Error("failed to close kafka producer", zap.Error(err))
-				closeErr = errors.Join(closeErr, err)
-			}
-		}()
+		addCloseErr("kafka producer", a.KafkaProducer.Close())
 	}
 
 	if a.JobConsumer != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if err := a.JobConsumer.Close(); err != nil {
-				a.Logger.Error("failed to close judge job consumer", zap.Error(err))
-				closeErr = errors.Join(closeErr, err)
-			}
-		}()
+		addCloseErr("judge job consumer", a.JobConsumer.Close())
 	}
 
 	if a.ProblemConn != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if err := a.ProblemConn.Close(); err != nil {
-				a.Logger.Error("failed to close problem gRPC connection", zap.Error(err))
-				closeErr = errors.Join(closeErr, err)
-			}
-		}()
+		addCloseErr("problem gRPC connection", a.ProblemConn.Close())
 	}
 
 	if a.GRPC != nil {
@@ -145,15 +131,10 @@ func (a *App) Close() error {
 	}
 
 	if a.Logger != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if err := a.Logger.Sync(); err != nil {
-				closeErr = errors.Join(closeErr, err)
-			}
-		}()
+		if err := a.Logger.Sync(); err != nil && !errors.Is(err, syscall.EINVAL) {
+			closeErr = errors.Join(closeErr, err)
+		}
 	}
 
-	wg.Wait()
 	return closeErr
 }

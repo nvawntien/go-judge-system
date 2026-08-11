@@ -30,6 +30,7 @@ type JudgeJobConsumer struct {
 	dltPublisher *DLTPublisher
 	maxRetries   int
 	poolSize     int
+	jobSlots     chan struct{}
 	logger       *zap.Logger
 }
 
@@ -59,6 +60,7 @@ func NewJudgeJobConsumer(
 		dltPublisher: dltPublisher,
 		maxRetries:   defaultMaxRetries,
 		poolSize:     poolSize,
+		jobSlots:     make(chan struct{}, poolSize),
 		logger:       logger,
 	}
 }
@@ -69,6 +71,7 @@ func (c *JudgeJobConsumer) Run(ctx context.Context) error {
 		dltPublisher: c.dltPublisher,
 		maxRetries:   c.maxRetries,
 		poolSize:     c.poolSize,
+		jobSlots:     c.jobSlots,
 		logger:       c.logger,
 	}
 
@@ -102,6 +105,7 @@ type judgeJobHandler struct {
 	dltPublisher *DLTPublisher
 	maxRetries   int
 	poolSize     int
+	jobSlots     chan struct{}
 	logger       *zap.Logger
 }
 
@@ -113,7 +117,7 @@ func (h *judgeJobHandler) ConsumeClaim(session sarama.ConsumerGroupSession, clai
 	if poolSize <= 0 {
 		poolSize = 4
 	}
-	
+
 	// Start N workers
 	var wg sync.WaitGroup
 	msgCh := make(chan *sarama.ConsumerMessage)
@@ -146,6 +150,14 @@ func (h *judgeJobHandler) ConsumeClaim(session sarama.ConsumerGroupSession, clai
 }
 
 func (h *judgeJobHandler) handleMessage(session sarama.ConsumerGroupSession, msg *sarama.ConsumerMessage) {
+	if !h.acquireJobSlot(session.Context()) {
+		h.logger.Debug("judge job skipped because consumer session was cancelled before execution",
+			zap.Int64("offset", msg.Offset),
+		)
+		return
+	}
+	defer h.releaseJobSlot()
+
 	// 1. Decode payload
 	var payload judge.JobMessage
 	if err := json.Unmarshal(msg.Value, &payload); err != nil {
@@ -205,6 +217,25 @@ func (h *judgeJobHandler) handleMessage(session sarama.ConsumerGroupSession, msg
 	session.MarkMessage(msg, "dlt_forwarded")
 }
 
+func (h *judgeJobHandler) acquireJobSlot(ctx context.Context) bool {
+	if h.jobSlots == nil {
+		return ctx.Err() == nil
+	}
+
+	select {
+	case h.jobSlots <- struct{}{}:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+func (h *judgeJobHandler) releaseJobSlot() {
+	if h.jobSlots != nil {
+		<-h.jobSlots
+	}
+}
+
 func (h *judgeJobHandler) sendToDLT(ctx context.Context, msg *sarama.ConsumerMessage, errMsg string, retryCount int) {
 	if h.dltPublisher == nil {
 		h.logger.Error("DLT publisher not configured, message will be lost",
@@ -220,4 +251,3 @@ func (h *judgeJobHandler) sendToDLT(ctx context.Context, msg *sarama.ConsumerMes
 		)
 	}
 }
-

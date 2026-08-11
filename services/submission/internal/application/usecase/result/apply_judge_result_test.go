@@ -157,6 +157,7 @@ func TestApplyJudgeResultMatchingAttemptAppliesTerminalStatuses(t *testing.T) {
 		entity.StatusWrongAnswer,
 		entity.StatusTimeLimitExceed,
 		entity.StatusMemoryLimitExceed,
+		entity.StatusOutputLimitExceed,
 		entity.StatusRuntimeError,
 		entity.StatusCompilationError,
 		entity.StatusSystemError,
@@ -258,6 +259,11 @@ func TestApplyJudgeResultMapsOutputFieldsByVerdict(t *testing.T) {
 			name:             "memory limit gets public default message",
 			msg:              pkgjudge.ResultMessage{Status: string(entity.StatusMemoryLimitExceed)},
 			wantErrorMessage: stringPointer(publicMemoryLimitMessage),
+		},
+		{
+			name:             "output limit gets public default message",
+			msg:              pkgjudge.ResultMessage{Status: string(entity.StatusOutputLimitExceed)},
+			wantErrorMessage: stringPointer(publicOutputLimitMessage),
 		},
 		{
 			name:             "system error ignores unsafe incoming message",
@@ -388,6 +394,33 @@ func TestApplyJudgeResultPersistsCurrentAttemptProvenance(t *testing.T) {
 			attemptRepo.testCount,
 			attemptRepo.datasetChecksum,
 		)
+	}
+}
+
+func TestApplyJudgeResultPersistsOutputLimitTestCaseStatus(t *testing.T) {
+	resultRepo := &fakeSubmissionResultRepo{}
+	uc := NewApplyJudgeResultUseCase(
+		&fakeSubmissionRepo{submission: matchingSubmission()},
+		resultRepo,
+		&fakeTxManager{},
+		&fakeSubmissionEventHub{},
+		nil,
+	)
+
+	err := uc.Execute(context.Background(), pkgjudge.ResultMessage{
+		SubmissionID: 77,
+		AttemptID:    "attempt-77",
+		Status:       string(entity.StatusOutputLimitExceed),
+		TestCases: []pkgjudge.TestCaseResultItem{{
+			Index:  1,
+			Status: string(entity.ResultOutputLimit),
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if len(resultRepo.results) != 1 || resultRepo.results[0].Status != entity.ResultOutputLimit {
+		t.Fatalf("results = %+v, want output limit status", resultRepo.results)
 	}
 }
 

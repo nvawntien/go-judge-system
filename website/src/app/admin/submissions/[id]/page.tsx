@@ -59,6 +59,7 @@ function isTerminalStatus(status: SubmissionStatus) {
     status === 'RUNTIME_ERROR' ||
     status === 'TIME_LIMIT_EXCEEDED' ||
     status === 'MEMORY_LIMIT_EXCEEDED' ||
+    status === 'OUTPUT_LIMIT_EXCEEDED' ||
     status === 'SYSTEM_ERROR'
   );
 }

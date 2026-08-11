@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -69,6 +70,48 @@ func TestRunCodeCompilesOnceAndRunsAllCases(t *testing.T) {
 	}
 }
 
+func TestOfficialExecutionRunsOneTestCasePerRequest(t *testing.T) {
+	var runCalls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		var req gojudge.Request
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if len(req.Cmd) == 1 && req.Cmd[0].CopyOutCached != nil {
+			_ = json.NewEncoder(w).Encode(gojudge.Response{{Status: "Accepted", FileIDs: map[string]string{"main": "exe-1"}}})
+			return
+		}
+
+		runCalls++
+		if len(req.Cmd) != 1 {
+			t.Fatalf("official request command count = %d, want 1", len(req.Cmd))
+		}
+		_ = json.NewEncoder(w).Encode(gojudge.Response{{Status: "Accepted", Files: map[string]string{"stdout": "1\n", "stderr": ""}}})
+	}))
+	defer server.Close()
+
+	client := NewGoJudgeClient(server.URL, zap.NewNop())
+	res, err := client.Execute(context.Background(), outbound.ExecutionRequest{
+		Language:           "CPP",
+		SourceCode:         "int main(){}",
+		StopOnFirstFailure: true,
+		TestCases: []outbound.ExecutionTestCase{
+			{Index: 1, ID: "1", Kind: "official", Stdin: "1\n", ExpectedOutput: stringPtr("1\n")},
+			{Index: 2, ID: "2", Kind: "official", Stdin: "2\n", ExpectedOutput: stringPtr("1\n")},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if runCalls != 2 {
+		t.Fatalf("run calls = %d, want 2", runCalls)
+	}
+	if res.Status != "ACCEPTED" || len(res.TestCases) != 2 {
+		t.Fatalf("result = %#v, want two accepted test cases", res)
+	}
+}
+
 func TestRunCodeCompileErrorReturnsNoTests(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -110,6 +153,7 @@ func TestMapJudgeStatusClassifiesUserCodeFailures(t *testing.T) {
 		{name: "nonzero exit", status: "Nonzero Exit Status", want: "RUNTIME_ERROR"},
 		{name: "tle", status: "Time Limit Exceeded", want: "TIME_LIMIT_EXCEEDED"},
 		{name: "mle", status: "Memory Limit Exceeded", want: "MEMORY_LIMIT_EXCEEDED"},
+		{name: "ole", status: "Output Limit Exceeded", want: "OUTPUT_LIMIT_EXCEEDED"},
 		{name: "internal", status: "Internal Error", want: "SYSTEM_ERROR"},
 	}
 
@@ -152,11 +196,69 @@ func TestExecutePropagatesContextCancellationToGoJudge(t *testing.T) {
 	}
 }
 
-func TestSubmissionOutputLimitMapsToWrongAnswerWithoutChangingRunCodeContract(t *testing.T) {
-	if got := mapOfficialSubmissionStatus(mapJudgeStatus("Output Limit Exceeded", 0)); got != "WRONG_ANSWER" {
-		t.Fatalf("submission status = %q, want WRONG_ANSWER", got)
+func TestSubmissionOutputLimitIsPreserved(t *testing.T) {
+	if got := mapOfficialSubmissionStatus(mapJudgeStatus("Output Limit Exceeded", 0)); got != "OUTPUT_LIMIT_EXCEEDED" {
+		t.Fatalf("submission status = %q, want OUTPUT_LIMIT_EXCEEDED", got)
 	}
 	if got := mapJudgeStatus("Output Limit Exceeded", 0); got != "OUTPUT_LIMIT_EXCEEDED" {
 		t.Fatalf("raw judge status = %q, want OUTPUT_LIMIT_EXCEEDED for run-code mapper", got)
+	}
+}
+
+func TestExecuteRaisesOutputLimitForLargeExpectedOutput(t *testing.T) {
+	expected := strings.Repeat("7 ", 600*1024)
+	var sawRun bool
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		var req gojudge.Request
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if len(req.Cmd) == 1 && req.Cmd[0].CopyOutCached != nil {
+			_ = json.NewEncoder(w).Encode(gojudge.Response{{Status: "Accepted", FileIDs: map[string]string{"main": "exe-1"}}})
+			return
+		}
+
+		sawRun = true
+		if len(req.Cmd) != 1 {
+			t.Fatalf("run command count = %d, want 1", len(req.Cmd))
+		}
+		stdoutFile := req.Cmd[0].Files[1]
+		if stdoutFile.Max == nil {
+			t.Fatal("stdout max = nil")
+		}
+		wantMin := int64(len(expected) + expectedOutputHeadroomBytes)
+		if *stdoutFile.Max < wantMin {
+			t.Fatalf("stdout max = %d, want at least %d", *stdoutFile.Max, wantMin)
+		}
+		_ = json.NewEncoder(w).Encode(gojudge.Response{{
+			Status: "Accepted",
+			Files:  map[string]string{"stdout": expected, "stderr": ""},
+		}})
+	}))
+	defer server.Close()
+
+	client := NewGoJudgeClient(server.URL, zap.NewNop())
+	res, err := client.Execute(context.Background(), outbound.ExecutionRequest{
+		Language:           "CPP",
+		SourceCode:         "int main(){}",
+		StopOnFirstFailure: true,
+		TestCases: []outbound.ExecutionTestCase{{
+			Index:          1,
+			ID:             "large-output",
+			Kind:           "official",
+			Stdin:          "1\n",
+			ExpectedOutput: &expected,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if !sawRun {
+		t.Fatal("server did not receive run request")
+	}
+	if res.Status != "ACCEPTED" || len(res.TestCases) != 1 || res.TestCases[0].Status != "ACCEPTED" {
+		t.Fatalf("result = %#v, want accepted large output", res)
 	}
 }

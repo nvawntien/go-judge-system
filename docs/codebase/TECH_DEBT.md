@@ -1,0 +1,29 @@
+# Architecture risks and technical debt
+
+## Confirmed from code/configuration
+
+| Area | Finding | Evidence / impact |
+| --- | --- | --- |
+| Schema change management | No versioned SQL migrations or migration command; repositories call `AutoMigrate` at runtime. | `infra/postgres/init.sql`; repository constructors. Production schema rollout/reversibility is not explicit. |
+| Worker cleanup race | Parallel cleanup goroutines assign to the same `closeErr` without a mutex/channel. | `workers/judge/internal/container/app.go`; race detector can report this path. |
+| SSE scale boundary | Event delivery uses an in-memory `EventHub`; no shared pub/sub adapter is present. | `services/submission/internal/adapter/outbound/stream/event_hub.go`; multi-replica client delivery is not guaranteed. |
+| DLT recovery | Worker produces a DLT topic but no DLT consumer/replay tool was found. | `infra/kafka/kafka-init.sh`, `dlt_publisher.go`. Failed jobs need manual/operator recovery. |
+| Gateway/API drift risk | Gateway route JSON and service routers are separate configuration/code surfaces. | `gateway/settings/`, all three router files. A local handler route can be unavailable publicly or gateway config can drift. |
+| Redis ownership | Problem and Submission receive Redis configuration, but no active cache adapters were found. | Wire/config versus adapter tree. This increases operational surface without demonstrated use. |
+| Local developer ergonomics | Auth/Problem/Submission main programs hard-code `/app/config`; no root task runner exists. | their `cmd/server/main.go`, absence of Makefile. |
+| Sandbox privilege | Compose runs the go-judge container with `privileged: true`. | `docker-compose.yml`; this is a high-value host isolation boundary requiring deployment-specific review. |
+
+## Potential concerns — require verification before remediation
+
+* **At-least-once duplicate behavior:** Job producer, consumer, and PostgreSQL are not a single transaction. Attempt IDs and outbox/result guards exist, but audit live failure/rebalance behavior before asserting exactly-once guarantees.
+* **Testcase cache concurrency:** cache promotion has no cross-process lock. It is likely safe for one Compose worker but needs testing before horizontally scaling shared cache volumes.
+* **Official data at rest:** worker sanitizes result messages, but `submission_results` has input/expected-output fields and interactive calls can populate output. Confirm data-retention/access-control policy before changing schemas or APIs.
+* **Transport security:** internal gRPC clients are configured with explicit insecure credentials in provider wiring for the Compose network. Verify TLS/mTLS requirements outside local Docker before production deployment.
+* **Auth trust boundary:** services trust `X-User-*` headers after gateway validation. Ensure service ports remain inaccessible to untrusted networks; direct access could otherwise bypass gateway token validation.
+* **Executor hardening:** input/output limits, process limits, tempfs and language environments are configured, but container/kernel isolation policy depends on the executor image/runtime. Security review of the actual deployment host is needed; do not infer safety from application code alone.
+* **Observability:** Zap request logs and Kafka logs are present, but no tracing provider, metrics endpoint, or distributed correlation ID propagation was found. Validate any platform-level telemetry not stored in this repository.
+* **Readme staleness:** root README describes folders such as `api-tests/` and test fixtures that are absent from the checked-out tree. Treat code and Compose as authoritative.
+
+## Testing gaps observed
+
+Unit tests cover many use cases/adapters, including submission result application, Kafka consumers, gRPC clients and testcase loading. No checked-in end-to-end Compose test, DLT replay test, multi-replica SSE test, schema migration test, or Kubernetes deployment test was found. The absence is based on repository discovery, not a claim that external CI/system tests do not exist.
