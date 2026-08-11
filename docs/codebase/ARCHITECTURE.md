@@ -6,7 +6,7 @@ All four Go runtime components follow the same directional dependency pattern: i
 
 | Runtime | Responsibility | Inbound | Outbound |
 | --- | --- | --- | --- |
-| Auth | Identity, sessions, roles and profile media | Gin HTTP | PostgreSQL, Redis, JWT signer, bcrypt, SMTP, MinIO |
+| Auth | Identity, sessions, roles, user suspension and profile media | Gin HTTP | PostgreSQL, Redis, JWT signer, bcrypt, SMTP, MinIO |
 | Problem | Problem catalogue and testcase administration | Gin HTTP, gRPC `ProblemService` | PostgreSQL, MinIO presigned URLs |
 | Submission | Submission lifecycle and client result delivery | Gin HTTP/SSE, Kafka result consumer | PostgreSQL, Kafka, Problem gRPC, Judge gRPC |
 | Judge Worker | Durable judging and synchronous run-code service | Kafka job consumer, gRPC `JudgeService` | Problem gRPC, HTTP go-judge executor, Kafka results, local testcase cache |

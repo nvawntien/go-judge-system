@@ -8,7 +8,7 @@ There are no checked-in SQL schema migrations or migration command. Repositories
 
 | Owner | Tables/models | Notable indexes/relationships | Evidence |
 | --- | --- | --- | --- |
-| Auth | `users` | primary UUID; unique username/email | `services/auth/.../postgres/user.go` |
+| Auth | `users` | primary UUID; unique username/email; `is_active` is account/email activation and `is_suspended` is independent administrative access control | `services/auth/.../postgres/user.go` |
 | Problem | `problems`, `tags`, `problem_tags`, `test_cases` | unique problem slug; author/deleted indexes; unique tag slug; join uniqueness; one testcase row per `problem_id` | `services/problem/.../postgres/{problem,tag,testcase}.go` |
 | Submission | `submissions`, `submission_attempts`, `submission_results`, `outbox_messages` | submission filters; unique attempt ID; attempt compound lookup/order indexes; outbox aggregate/status indexes | `services/submission/.../postgres/` |
 
@@ -23,7 +23,7 @@ Problem persistence stores examples, constraints and hints as PostgreSQL JSONB. 
 
 ## Redis
 
-Redis is configured globally in Compose with AOF and an allkeys-LRU 128 MB policy. The confirmed application use is Auth's `LogoutAllIATStore`, which lets downstream shared auth middleware reject access tokens issued on or before a logout-all timestamp. Problem and Submission Wire configs receive Redis settings, but no active cache adapter was found under those services.
+Redis is configured globally in Compose with AOF and an allkeys-LRU 128 MB policy. The confirmed application use is Auth's `LogoutAllIATStore`, which lets downstream shared auth middleware reject access tokens issued on or before a logout-all timestamp. Auth writes this cutoff for logout-all and before persisting an administrative suspension; it does not clear the cutoff on unsuspension, so prior tokens cannot become valid again. Problem and Submission Wire configs receive Redis settings, but no active cache adapter was found under those services.
 
 ## MinIO and filesystem cache
 

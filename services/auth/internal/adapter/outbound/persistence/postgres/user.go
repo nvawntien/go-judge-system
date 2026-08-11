@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"go-judge-system/pkg/rbac"
@@ -22,6 +23,7 @@ type UserDAO struct {
 	Role            rbac.Role `gorm:"default:'user';size:20"`
 	Rating          int       `gorm:"default:0"`
 	IsActive        bool      `gorm:"default:false"`
+	IsSuspended     bool      `gorm:"default:false"`
 	AvatarURL       *string   `gorm:"size:500"`
 	AvatarObjectKey *string   `gorm:"column:avatar_object_key;type:text"`
 	Bio             *string   `gorm:"size:500"`
@@ -98,6 +100,40 @@ func (r *userRepository) GetUserById(ctx context.Context, id string) (*entity.Us
 	return toUserEntity(&dao), nil
 }
 
+func (r *userRepository) ListUsers(ctx context.Context, filter outbound.ListUsersFilter) (outbound.ListUsersResult, error) {
+	query := r.db.WithContext(ctx).Model(&UserDAO{})
+	search := strings.TrimSpace(filter.Search)
+	if search != "" {
+		pattern := "%" + escapeLikePattern(search) + "%"
+		query = query.Where("(username ILIKE ? ESCAPE '\\' OR email ILIKE ? ESCAPE '\\' OR full_name ILIKE ? ESCAPE '\\')", pattern, pattern, pattern)
+	}
+	if filter.Role != nil {
+		query = query.Where("role = ?", *filter.Role)
+	}
+	if filter.IsActive != nil {
+		query = query.Where("is_active = ?", *filter.IsActive)
+	}
+	if filter.IsSuspended != nil {
+		query = query.Where("is_suspended = ?", *filter.IsSuspended)
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return outbound.ListUsersResult{}, err
+	}
+
+	var daos []UserDAO
+	if err := query.Order("created_at DESC").Order("id DESC").Offset(filter.Offset).Limit(filter.Limit).Find(&daos).Error; err != nil {
+		return outbound.ListUsersResult{}, err
+	}
+
+	items := make([]*entity.User, 0, len(daos))
+	for i := range daos {
+		items = append(items, toUserEntity(&daos[i]))
+	}
+	return outbound.ListUsersResult{Items: items, Total: total}, nil
+}
+
 func (r *userRepository) UpdateUser(ctx context.Context, user *entity.User) error {
 	return r.db.WithContext(ctx).Model(&UserDAO{}).
 		Where("id = ?", user.ID).
@@ -109,6 +145,7 @@ func (r *userRepository) UpdateUser(ctx context.Context, user *entity.User) erro
 			"role":              user.Role,
 			"rating":            user.Rating,
 			"is_active":         user.IsActive,
+			"is_suspended":      user.IsSuspended,
 			"avatar_url":        user.AvatarURL,
 			"avatar_object_key": user.AvatarObjectKey,
 			"bio":               user.Bio,
@@ -122,6 +159,12 @@ func (r *userRepository) UpdateUser(ctx context.Context, user *entity.User) erro
 		}).Error
 }
 
+func escapeLikePattern(value string) string {
+	value = strings.ReplaceAll(value, "\\", "\\\\")
+	value = strings.ReplaceAll(value, "%", "\\%")
+	return strings.ReplaceAll(value, "_", "\\_")
+}
+
 // mapping entity to dao
 func toUserDAO(user *entity.User) *UserDAO {
 	return &UserDAO{
@@ -133,6 +176,7 @@ func toUserDAO(user *entity.User) *UserDAO {
 		Role:            user.Role,
 		Rating:          user.Rating,
 		IsActive:        user.IsActive,
+		IsSuspended:     user.IsSuspended,
 		AvatarURL:       user.AvatarURL,
 		AvatarObjectKey: user.AvatarObjectKey,
 		Bio:             user.Bio,
@@ -158,6 +202,7 @@ func toUserEntity(dao *UserDAO) *entity.User {
 		Role:            dao.Role,
 		Rating:          dao.Rating,
 		IsActive:        dao.IsActive,
+		IsSuspended:     dao.IsSuspended,
 		AvatarURL:       dao.AvatarURL,
 		AvatarObjectKey: dao.AvatarObjectKey,
 		Bio:             dao.Bio,

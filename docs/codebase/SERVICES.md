@@ -3,10 +3,10 @@
 ## Auth Service
 
 * **Entrypoint:** `services/auth/cmd/server/main.go`; Wire composition in `cmd/server/wire.go`.
-* **Responsibility:** registration, email verification/resend, login/refresh/logout/logout-all, password lifecycle, public profile, authenticated profile/avatar, and admin role assignment.
+* **Responsibility:** registration, email verification/resend, login/refresh/logout/logout-all, password lifecycle, public profile, authenticated profile/avatar, and Auth-owned admin user listing/detail, role assignment and suspension.
 * **Internal layout:** domain `User`, email/password value objects and domain errors; auth/user/admin use cases; Gin handlers; adapters for Postgres, Redis token invalidation, JWT, bcrypt, SMTP and MinIO avatar storage.
-* **HTTP:** router is `services/auth/internal/adapter/inbound/http/router.go`; public auth endpoints under `/api/v1/auth`, protected `/api/v1/me`, public username profile, and admin role assignment.
-* **Data/dependencies:** owns `auth_db.users`; Redis tracks logout-all token issued-at; avatars go to MinIO bucket `avatars`; SMTP is configured in `config/config.yaml`.
+* **HTTP:** router is `services/auth/internal/adapter/inbound/http/router.go`; public auth endpoints under `/api/v1/auth`, protected `/api/v1/me`, public username profile, and admin `GET /api/v1/admin/users`, `GET /api/v1/admin/users/:user_id`, `PATCH /api/v1/admin/users/:user_id/suspension`, and role assignment routes.
+* **Data/dependencies:** owns `auth_db.users`; Redis tracks logout-all token issued-at. Suspending a user records a cutoff before persisting the suspension, so already-issued access tokens are rejected by protected-service middleware; unsuspending deliberately leaves that cutoff intact. Avatars go to MinIO bucket `avatars`; SMTP is configured in `config/config.yaml`.
 * **Configuration:** server, database, Redis, SMTP, JWT, app frontend URL, MinIO, logger. Environment keys use uppercase dotted-path replacement, e.g. `DATABASE_PASSWORD`, `JWT_ACCESS_SECRET` (`pkg/config/config.go`).
 
 ## Problem Service

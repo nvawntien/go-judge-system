@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"go-judge-system/services/auth/internal/application/dto"
+	"go-judge-system/services/auth/internal/application/port/outbound"
 	"go-judge-system/services/auth/internal/domain"
 	"go-judge-system/services/auth/internal/domain/entity"
 	"go-judge-system/services/auth/internal/domain/valueobject"
@@ -159,6 +160,10 @@ func (r *verifyUserRepository) GetUserById(ctx context.Context, id string) (*ent
 		return nil, domain.ErrUserNotFound
 	}
 	return user, nil
+}
+
+func (r *verifyUserRepository) ListUsers(context.Context, outbound.ListUsersFilter) (outbound.ListUsersResult, error) {
+	return outbound.ListUsersResult{}, nil
 }
 
 func (r *verifyUserRepository) UpdateUser(ctx context.Context, user *entity.User) error {

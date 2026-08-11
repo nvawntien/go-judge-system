@@ -8,6 +8,7 @@ var (
 	ErrPasswordMismatch          = response.NewAppError(response.CodeBadRequest, "password and confirm password do not match", nil)
 	ErrDuplicateEntry            = response.NewAppError(response.CodeConflict, "duplicate entry", nil)
 	ErrUserInactive              = response.NewAppError(response.CodeForbidden, "user is not active", nil)
+	ErrUserSuspended             = response.NewAppError(response.CodeForbidden, "user is suspended", nil)
 	ErrUserAlreadyActive         = response.NewAppError(response.CodeConflict, "user is already active", nil)
 	ErrEmailAlreadyExists        = response.NewAppError(response.CodeConflict, "email already exists", nil)
 	ErrUsernameAlreadyExists     = response.NewAppError(response.CodeConflict, "username already exists", nil)

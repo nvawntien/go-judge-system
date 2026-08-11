@@ -17,6 +17,7 @@ type User struct {
 	Role            rbac.Role
 	Rating          int
 	IsActive        bool
+	IsSuspended     bool
 	AvatarURL       *string
 	AvatarObjectKey *string
 	Bio             *string
@@ -47,6 +48,22 @@ func NewUser(fullName string, username string, email valueobject.Email, password
 
 func (u *User) Activate() {
 	u.IsActive = true
+	u.UpdatedAt = time.Now()
+}
+
+func (u *User) Suspend() {
+	if u.IsSuspended {
+		return
+	}
+	u.IsSuspended = true
+	u.UpdatedAt = time.Now()
+}
+
+func (u *User) Unsuspend() {
+	if !u.IsSuspended {
+		return
+	}
+	u.IsSuspended = false
 	u.UpdatedAt = time.Now()
 }
 

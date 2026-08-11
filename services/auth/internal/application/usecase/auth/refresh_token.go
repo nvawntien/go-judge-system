@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	pkgauth "go-judge-system/pkg/auth"
 	"go-judge-system/services/auth/internal/application/dto"
 	"go-judge-system/services/auth/internal/application/port/inbound"
@@ -11,12 +12,14 @@ import (
 
 type refreshTokenUseCase struct {
 	jwt            outbound.JWTProvider
+	userRepo       outbound.UserRepository
 	logoutAllStore pkgauth.LogoutAllIATStore
 }
 
-func NewRefreshTokenUseCase(jwt outbound.JWTProvider, logoutAllStore pkgauth.LogoutAllIATStore) inbound.RefreshTokenUseCase {
+func NewRefreshTokenUseCase(jwt outbound.JWTProvider, userRepo outbound.UserRepository, logoutAllStore pkgauth.LogoutAllIATStore) inbound.RefreshTokenUseCase {
 	return &refreshTokenUseCase{
 		jwt:            jwt,
+		userRepo:       userRepo,
 		logoutAllStore: logoutAllStore,
 	}
 }
@@ -34,6 +37,20 @@ func (uc *refreshTokenUseCase) Execute(ctx context.Context, refreshToken string)
 
 	if logoutAllIAT > 0 && refreshTokenIAT <= logoutAllIAT {
 		return &dto.LoginResponse{}, domain.ErrInvalidOrExpiredToken
+	}
+
+	user, err := uc.userRepo.GetUserById(ctx, id)
+	if err != nil {
+		if errors.Is(err, domain.ErrUserNotFound) {
+			return &dto.LoginResponse{}, domain.ErrInvalidOrExpiredToken
+		}
+		return &dto.LoginResponse{}, domain.ErrInternalServer.Wrap(err)
+	}
+	if !user.IsActive {
+		return &dto.LoginResponse{}, domain.ErrUserInactive
+	}
+	if user.IsSuspended {
+		return &dto.LoginResponse{}, domain.ErrUserSuspended
 	}
 
 	accessToken, accessExpire, err := uc.jwt.GenerateAccessToken(ctx, id, username, role)

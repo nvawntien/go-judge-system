@@ -40,7 +40,7 @@ Code trace:
 
 ## Authentication and revocation
 
-Auth handlers call use cases in `services/auth/internal/application/usecase/auth/`. Registration creates an inactive user, sends mail through SMTP and verification activates it. Login/refresh produce JWT-related responses using the JWT adapter. Logout-all records an issued-at threshold in Redis. Protected gateway routes validate the cookie JWT and propagate identity headers; each receiving service's `pkg/middleware/auth.go` checks the Redis threshold and installs typed claims in Gin context. Role checks follow with `pkg/middleware/role.go`.
+Auth handlers call use cases in `services/auth/internal/application/usecase/auth/`. Registration creates an inactive user, sends mail through SMTP and verification activates it. Login and refresh both load the current user and reject inactive or suspended accounts before issuing tokens. Logout-all records an issued-at threshold in Redis. An admin suspension writes the same threshold before its user update, which immediately rejects access tokens issued at or before that moment in protected-service middleware; unsuspension leaves the threshold in place and therefore requires a new login. Protected gateway routes validate the cookie JWT and propagate identity headers; each receiving service's `pkg/middleware/auth.go` checks the Redis threshold and installs typed claims in Gin context. Role checks follow with `pkg/middleware/role.go`.
 
 ## Testcase upload and worker delivery
 
