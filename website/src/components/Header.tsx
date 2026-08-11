@@ -9,6 +9,9 @@ import { useToast } from './ToastProvider';
 import { useDismissable, useViewportWidth } from '@/lib/hooks';
 import { initials, ratingTier } from '@/lib/format';
 import { Icon, Logo, Wordmark, buttonStyles } from './ui';
+import { AdminIcon } from './admin/AdminIcons';
+import { ADMIN_CONSOLE_MIN_ROLE } from './admin/AdminNavigation';
+import { roleAtLeast } from './admin/roles';
 
 const NAV_ITEMS = [
   { label: 'Problems', href: '/problems' },
@@ -25,6 +28,7 @@ export function Header() {
   const { showToast } = useToast();
   const width = useViewportWidth();
   const isMobile = width < 760;
+  const canAccessAdminConsole = roleAtLeast(user?.role, ADMIN_CONSOLE_MIN_ROLE);
 
   const [menu, setMenu] = useState<'notif' | 'user' | 'mobile' | null>(null);
   const [query, setQuery] = useState('');
@@ -340,6 +344,34 @@ export function Header() {
                       {item.label}
                     </Link>
                   ))}
+                  {canAccessAdminConsole && (
+                    <>
+                      <div aria-hidden="true" style={{ height: 1, margin: '4px 0', background: 'var(--border)' }} />
+                      <Link
+                        role="menuitem"
+                        href="/admin"
+                        className="ac-hover-surface2"
+                        style={{
+                          display: 'flex',
+                          width: '100%',
+                          alignItems: 'center',
+                          gap: 8,
+                          minHeight: 36,
+                          padding: '8px 10px',
+                          borderRadius: 8,
+                          fontSize: 13,
+                          fontWeight: 600,
+                          color: 'var(--accent-fg)',
+                          textDecoration: 'none',
+                          boxSizing: 'border-box',
+                        }}
+                      >
+                        <AdminIcon.Dashboard size={15} />
+                        Admin Console
+                      </Link>
+                    </>
+                  )}
+                  <div aria-hidden="true" style={{ height: 1, margin: '4px 0', background: 'var(--border)' }} />
                   <button
                     type="button"
                     role="menuitem"

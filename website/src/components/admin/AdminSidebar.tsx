@@ -157,6 +157,28 @@ export function AdminSidebar({
       </nav>
 
       <div style={{ padding: 10, borderTop: '1px solid var(--border)' }}>
+        <Link
+          href="/"
+          aria-label="Back to AstraCode"
+          title={collapsed ? 'Back to AstraCode' : undefined}
+          className="ac-hover-surface2-text"
+          style={{
+            minHeight: 40,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: collapsed ? 'center' : 'flex-start',
+            gap: 10,
+            padding: collapsed ? '0' : '0 10px',
+            borderRadius: 8,
+            color: 'var(--text2)',
+            textDecoration: 'none',
+            fontSize: 13,
+            fontWeight: 600,
+          }}
+        >
+          <Logo size={17} />
+          {!collapsed && <span>Back to AstraCode</span>}
+        </Link>
         <div
           style={{
             display: 'flex',
