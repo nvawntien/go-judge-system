@@ -7,6 +7,7 @@ type UserHandler struct {
 	RunCode           *user.RunCodeHandler
 	GetSubmission     *user.GetSubmissionHandler
 	ListMySubmissions *user.ListMySubmissionsHandler
+	GetMyProfileStats *user.GetMyProfileStatsHandler
 	IssueStreamTicket *user.IssueSubmissionStreamTicketHandler
 	SubmissionEvents  *user.SubmissionEventsHandler
 }
@@ -16,6 +17,7 @@ func NewUserHandler(
 	runCode *user.RunCodeHandler,
 	getSubmission *user.GetSubmissionHandler,
 	listMySubmissions *user.ListMySubmissionsHandler,
+	getMyProfileStats *user.GetMyProfileStatsHandler,
 	issueStreamTicket *user.IssueSubmissionStreamTicketHandler,
 	submissionEvents *user.SubmissionEventsHandler,
 ) *UserHandler {
@@ -24,6 +26,7 @@ func NewUserHandler(
 		RunCode:           runCode,
 		GetSubmission:     getSubmission,
 		ListMySubmissions: listMySubmissions,
+		GetMyProfileStats: getMyProfileStats,
 		IssueStreamTicket: issueStreamTicket,
 		SubmissionEvents:  submissionEvents,
 	}

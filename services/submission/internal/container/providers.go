@@ -201,6 +201,7 @@ var MiddlewareProviderSet = wire.NewSet(
 
 var OutboundProviderSet = wire.NewSet(
 	postgres.NewSubmissionRepository,
+	postgres.NewProfileStatsRepository,
 	postgres.NewSubmissionStreamSnapshotRepository,
 	postgres.NewSubmissionResultRepository,
 	postgres.NewSubmissionAttemptRepository,
@@ -226,6 +227,7 @@ var UseCaseProviderSet = wire.NewSet(
 	userusecase.NewRunCodeUseCase,
 	userusecase.NewGetSubmissionUseCase,
 	userusecase.NewListMySubmissionsUseCase,
+	userusecase.NewGetMyProfileStatsUseCase,
 	userusecase.NewIssueSubmissionStreamTicketUseCase,
 )
 
@@ -237,6 +239,7 @@ var InboundProviderSet = wire.NewSet(
 	userhandler.NewRunCodeHandler,
 	userhandler.NewGetSubmissionHandler,
 	userhandler.NewListMySubmissionsHandler,
+	userhandler.NewGetMyProfileStatsHandler,
 	userhandler.NewIssueSubmissionStreamTicketHandler,
 	userhandler.NewSubmissionEventsHandler,
 	ProvideAdminHandler,

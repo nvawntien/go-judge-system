@@ -61,6 +61,21 @@ type fakeRouterListMySubmissionsUseCase struct {
 	calls    int
 }
 
+type fakeRouterGetMyProfileStatsUseCase struct {
+	response dto.GetMyProfileStatsResponse
+	claims   auth.Claims
+	calls    int
+}
+
+func (f *fakeRouterGetMyProfileStatsUseCase) Execute(
+	_ context.Context,
+	claims auth.Claims,
+) (dto.GetMyProfileStatsResponse, error) {
+	f.calls++
+	f.claims = claims
+	return f.response, nil
+}
+
 func (f *fakeRouterListMySubmissionsUseCase) Execute(
 	_ context.Context,
 	claims auth.Claims,
@@ -168,12 +183,14 @@ func newTestUserHandler(
 	runUseCase *fakeRouterRunCodeUseCase,
 	getUseCase *fakeRouterGetSubmissionUseCase,
 	listUseCase *fakeRouterListMySubmissionsUseCase,
+	profileStatsUseCase *fakeRouterGetMyProfileStatsUseCase,
 ) *handler.UserHandler {
 	return handler.NewUserHandler(
 		userhandler.NewCreateSubmissionHandler(createUseCase),
 		userhandler.NewRunCodeHandler(runUseCase),
 		userhandler.NewGetSubmissionHandler(getUseCase),
 		userhandler.NewListMySubmissionsHandler(listUseCase),
+		userhandler.NewGetMyProfileStatsHandler(profileStatsUseCase),
 		userhandler.NewIssueSubmissionStreamTicketHandler(&fakeRouterIssueStreamTicketUseCase{}),
 		userhandler.NewSubmissionEventsHandler(
 			&fakeRouterSnapshotRepository{},
@@ -198,6 +215,7 @@ func TestRouterRegistersAuthenticatedSubmissionRoutes(t *testing.T) {
 		&fakeRouterRunCodeUseCase{},
 		getUseCase,
 		listUseCase,
+		&fakeRouterGetMyProfileStatsUseCase{},
 	)
 	adminHandler := handler.NewAdminHandler(
 		adminhandler.NewListSubmissionsHandler(adminListUseCase),
@@ -231,6 +249,12 @@ func TestRouterRegistersAuthenticatedSubmissionRoutes(t *testing.T) {
 		t.Fatalf(
 			"GET my submissions route count = %d, want 1",
 			routeCounts[http.MethodGet+" /api/v1/me/submissions"],
+		)
+	}
+	if routeCounts[http.MethodGet+" /api/v1/me/profile-stats"] != 1 {
+		t.Fatalf(
+			"GET profile stats route count = %d, want 1",
+			routeCounts[http.MethodGet+" /api/v1/me/profile-stats"],
 		)
 	}
 	if routeCounts[http.MethodGet+" /api/v1/admin/submissions"] != 1 {
@@ -318,6 +342,7 @@ func TestRouterListMySubmissionsUsesGenericHandler(t *testing.T) {
 		&fakeRouterRunCodeUseCase{},
 		&fakeRouterGetSubmissionUseCase{},
 		listUseCase,
+		&fakeRouterGetMyProfileStatsUseCase{},
 	)
 	adminHandler := handler.NewAdminHandler(
 		adminhandler.NewListSubmissionsHandler(&fakeRouterListAdminSubmissionsUseCase{}),
@@ -395,6 +420,7 @@ func TestRouterListAdminSubmissionsUsesGenericHandler(t *testing.T) {
 		&fakeRouterRunCodeUseCase{},
 		&fakeRouterGetSubmissionUseCase{},
 		&fakeRouterListMySubmissionsUseCase{},
+		&fakeRouterGetMyProfileStatsUseCase{},
 	)
 	adminHandler := handler.NewAdminHandler(
 		adminhandler.NewListSubmissionsHandler(adminListUseCase),
@@ -477,6 +503,7 @@ func TestRouterGetAdminSubmissionDetailUsesGenericHandler(t *testing.T) {
 		&fakeRouterRunCodeUseCase{},
 		&fakeRouterGetSubmissionUseCase{},
 		&fakeRouterListMySubmissionsUseCase{},
+		&fakeRouterGetMyProfileStatsUseCase{},
 	)
 	adminHandler := handler.NewAdminHandler(
 		adminhandler.NewListSubmissionsHandler(&fakeRouterListAdminSubmissionsUseCase{}),
@@ -531,6 +558,7 @@ func TestRouterRejudgeSubmissionUsesGenericHandler(t *testing.T) {
 		&fakeRouterRunCodeUseCase{},
 		&fakeRouterGetSubmissionUseCase{},
 		&fakeRouterListMySubmissionsUseCase{},
+		&fakeRouterGetMyProfileStatsUseCase{},
 	)
 	adminHandler := handler.NewAdminHandler(
 		adminhandler.NewListSubmissionsHandler(&fakeRouterListAdminSubmissionsUseCase{}),

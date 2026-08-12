@@ -23,7 +23,7 @@
 * **Entrypoint:** `services/submission/cmd/server/main.go`; Wire in `cmd/server/wire.go`.
 * **Responsibility:** durable official submission intake, rejudge attempts, submission/result query APIs, interactive run-code coordination, Kafka bridging, and submission SSE.
 * **Internal layout:** domain Submission/Attempt/Result/Outbox/Stream types; user/admin/result use cases; Gin/SSE and Kafka inbound adapters; Postgres, outbox relay, gRPC and Kafka outbound adapters.
-* **HTTP:** protected create, run, ticket, detail, own list and admin list/detail/rejudge routes; unauthenticated service SSE route `/events/submissions/:submission_id` validates a short-lived signed ticket. See router for exact paths.
+* **HTTP:** protected create, run, ticket, detail, own list, self-only `GET /api/v1/me/profile-stats`, and admin list/detail/rejudge routes; unauthenticated service SSE route `/events/submissions/:submission_id` validates a short-lived signed ticket. Profile stats are authoritative PostgreSQL aggregates from `submission_db`, not a paginated-history/frontend calculation. See router for exact paths.
 * **gRPC clients:** Problem `GetProblem`; Judge Worker `RunCode` for interactive execution.
 * **Background work:** outbox polling and result consumer start in `internal/container/app.go`.
 * **Data/dependencies:** owns `submission_db` tables; produces jobs and consumes results; list/detail result summaries are scoped to each submission's `current_attempt_id`, while historical attempt rows remain retained. The local `EventHub` is an in-process SSE fan-out, not a cross-instance bus. Redis is configured but no Submission Redis adapter was found.

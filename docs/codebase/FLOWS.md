@@ -38,6 +38,10 @@ Code trace:
 
 `POST /api/v1/submissions/run` is synchronous. The user handler calls `application/usecase/user/run_code.go`, which validates source/testcase/limit caps from `submission/config/config.yaml`. The Submission gRPC runner calls Judge Worker's `JudgeService.RunCode`; worker gRPC adapter/handler executes through the same go-judge client and returns diagnostic/test outputs. It does not enter Kafka or persist an official submission.
 
+## Self profile statistics
+
+`GET /api/v1/me/profile-stats` follows gateway-derived authenticated claims to a Submission-only use case. It issues a fixed set of PostgreSQL aggregate/group queries over the caller's `submissions` rows for totals, distinct attempted problems, current terminal verdicts, languages, and the last 365 UTC submission days. It has no Auth/Problem dependency and does not load paginated submission history into the application.
+
 ## Authentication and revocation
 
 Auth handlers call use cases in `services/auth/internal/application/usecase/auth/`. Registration creates an inactive user, sends mail through SMTP and verification activates it. Login and refresh both load the current user and reject inactive or suspended accounts before issuing tokens. Logout-all records an issued-at threshold in Redis. An admin suspension, authenticated password change, and successful password reset write the same threshold before their database mutation, which immediately rejects access tokens issued at or before that moment in protected-service middleware; password persistence failure therefore returns an error while keeping old sessions invalidated. Password reset atomically consumes its one-time Redis token before this invalidation step, so any later failure requires the user to request a new reset token rather than allowing replay. Unsuspension leaves the threshold in place and therefore requires a new login. Protected gateway routes validate the cookie JWT and propagate identity headers; each receiving service's `pkg/middleware/auth.go` checks the Redis threshold and installs typed claims in Gin context. Role checks follow with `pkg/middleware/role.go`.

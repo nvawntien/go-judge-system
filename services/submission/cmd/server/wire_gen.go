@@ -40,6 +40,7 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 		return nil, err
 	}
 	submissionRepository := postgres.NewSubmissionRepository(db)
+	profileStatsRepository := postgres.NewProfileStatsRepository(db)
 	submissionResultRepository := postgres.NewSubmissionResultRepository(db)
 	submissionAttemptRepository := postgres.NewSubmissionAttemptRepository(db)
 	transactionManager := postgres.NewTransactionManager(db)
@@ -76,7 +77,9 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	getSubmissionUseCase := user.NewGetSubmissionUseCase(submissionRepository)
 	getSubmissionHandler := user2.NewGetSubmissionHandler(getSubmissionUseCase)
 	listMySubmissionsUseCase := user.NewListMySubmissionsUseCase(submissionRepository)
+	getMyProfileStatsUseCase := user.NewGetMyProfileStatsUseCase(profileStatsRepository)
 	listMySubmissionsHandler := user2.NewListMySubmissionsHandler(listMySubmissionsUseCase)
+	getMyProfileStatsHandler := user2.NewGetMyProfileStatsHandler(getMyProfileStatsUseCase)
 	submissionStreamSnapshotRepository := postgres.NewSubmissionStreamSnapshotRepository(db)
 	sseConfig, err := container.ProvideSSEConfig(cfg)
 	if err != nil {
@@ -91,7 +94,7 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	string2 := provideServerMode(serverConfig)
 	zapLogger := logger.NewLogger(loggerConfig, string2)
 	submissionEventsHandler := user2.NewSubmissionEventsHandler(submissionStreamSnapshotRepository, submissionStreamTicketService, submissionEventHub, sseConfig, zapLogger)
-	userHandler := handler.NewUserHandler(createSubmissionHandler, runCodeHandler, getSubmissionHandler, listMySubmissionsHandler, issueSubmissionStreamTicketHandler, submissionEventsHandler)
+	userHandler := handler.NewUserHandler(createSubmissionHandler, runCodeHandler, getSubmissionHandler, listMySubmissionsHandler, getMyProfileStatsHandler, issueSubmissionStreamTicketHandler, submissionEventsHandler)
 	listAdminSubmissionsUseCase := admin.NewListAdminSubmissionsUseCase(submissionRepository)
 	listSubmissionsHandler := admin2.NewListSubmissionsHandler(listAdminSubmissionsUseCase)
 	getAdminSubmissionDetailUseCase := admin.NewGetAdminSubmissionDetailUseCase(submissionRepository, submissionResultRepository, submissionAttemptRepository)

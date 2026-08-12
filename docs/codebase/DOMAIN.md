@@ -38,6 +38,8 @@ stateDiagram-v2
 
 The code defines terminal statuses as Accepted, Wrong Answer, time/memory/output limit, runtime, compilation and system errors. The diagram describes transitions supported by current methods/use cases; it is not a database-enforced state machine.
 
+Self profile statistics count every Submission row for totals; `attempted_problems` is the distinct submitted `problem_id` count regardless of `Submission.Status`, so `PENDING` and `JUDGING` count. Accepted submissions and solved problems use current `ACCEPTED` rows; solved is distinct problem IDs with at least one current accepted Submission. Terminal verdict distribution excludes unfinished lifecycle states. A rejudge resets the same Submission current state, so it can change solved status but not attempted status.
+
 **SubmissionAttempt** is the immutable audit/provenance record for each submit or admin rejudge: unique `attempt_id`, trigger, triggering user, eventual status and testcase version/count/checksum. **SubmissionResult** is a per-testcase record tied to a submission and attempt. Results are replaced for the applied attempt, allowing detail APIs to show the current attempt’s output without retaining official inputs/expected output from worker messages.
 
 ## Queue and execution contracts
