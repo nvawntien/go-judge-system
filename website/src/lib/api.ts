@@ -23,6 +23,7 @@ import type {
   ListTagsResponse,
   LoginRequest,
   Me,
+  MyProfileStats,
   Problem,
   PublicProfile,
   RegisterRequest,
@@ -403,6 +404,9 @@ export const submissionApi = {
       },
       signal,
     }),
+
+  getMyProfileStats: (signal?: AbortSignal) =>
+    apiRequest<MyProfileStats>('/api/v1/me/profile-stats', { signal }),
 
   /** Custom-test execution through the submission-service synchronous run API. */
   run: (body: RunCodeRequest) =>

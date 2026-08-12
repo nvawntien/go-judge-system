@@ -5,9 +5,11 @@ import { ApiError, problemApi, submissionApi } from './api';
 import type { Difficulty, Problem, SubmissionListItem } from './types';
 
 /**
- * The backend has no "user progress" endpoint, so solved/attempted state is
- * derived from the caller's own submission history. Results are memoised per
- * page-session; `invalidateProgress()` is called after a new submission lands.
+ * Detailed per-problem progress is derived from the caller's own submission
+ * history for routes that need solved/attempted problem IDs. Profile aggregate
+ * statistics use Submission's dedicated /me/profile-stats endpoint instead.
+ * Results are memoised per page-session; `invalidateProgress()` is called
+ * after a new submission lands.
  */
 
 const MAX_PAGES = 10;

@@ -429,6 +429,34 @@ export interface ListSubmissionsResponse {
   pagination: Pagination;
 }
 
+/** Authoritative aggregates returned by Submission for the signed-in user. */
+export interface MyProfileStats {
+  total_submissions: number;
+  attempted_problems: number;
+  accepted_submissions: number;
+  solved_problems: number;
+  acceptance_rate: number;
+  verdict_distribution: ProfileStatsVerdict[];
+  language_distribution: ProfileStatsLanguage[];
+  activity: ProfileStatsActivity[];
+}
+
+export interface ProfileStatsVerdict {
+  verdict: string;
+  count: number;
+}
+
+export interface ProfileStatsLanguage {
+  language: string;
+  count: number;
+}
+
+export interface ProfileStatsActivity {
+  /** UTC calendar date in YYYY-MM-DD format. */
+  date: string;
+  count: number;
+}
+
 export interface ListSubmissionsParams {
   page?: number;
   limit?: number;
