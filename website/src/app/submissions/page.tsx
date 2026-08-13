@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { AppShell, PageHeading } from '@/components/AppShell';
 import { useAuth } from '@/components/AuthProvider';
+import { SubmissionDetail } from '@/components/submission/SubmissionDetail';
 import { EmptyState, ErrorState, Icon, SkeletonBar } from '@/components/ui';
 import { ApiError, NetworkError, submissionApi } from '@/lib/api';
 import {
@@ -19,7 +20,6 @@ import {
 import { useViewportWidth } from '@/lib/hooks';
 import type {
   LanguageCode,
-  Submission,
   SubmissionListItem,
   SubmissionStatus,
 } from '@/lib/types';
@@ -478,98 +478,6 @@ export default function SubmissionsPage() {
         )}
       </section>
     </AppShell>
-  );
-}
-
-/** Row expansion: the full submission, including the source that was judged. */
-function SubmissionDetail({ id }: { id: number }) {
-  const [detail, setDetail] = useState<Submission | null>(null);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    submissionApi
-      .get(id, controller.signal)
-      .then(setDetail)
-      .catch(() => {
-        if (!controller.signal.aborted) setFailed(true);
-      });
-    return () => controller.abort();
-  }, [id]);
-
-  if (failed) {
-    return (
-      <div style={{ padding: '8px 18px 16px 54px', background: 'var(--surface2)' }}>
-        <p style={{ margin: 0, fontSize: 12, color: 'var(--error)' }}>
-          Couldn&apos;t load submission #{id}.
-        </p>
-      </div>
-    );
-  }
-
-  if (!detail) {
-    return (
-      <div style={{ padding: '8px 18px 16px 54px', background: 'var(--surface2)' }}>
-        <SkeletonBar height={60} radius={8} />
-      </div>
-    );
-  }
-
-  const verdict = verdictMeta(detail.status);
-
-  return (
-    <div
-      style={{ padding: '4px 18px 16px 54px', background: 'var(--surface2)', animation: 'acFadeUp .2s ease' }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'center',
-          gap: 14,
-          marginBottom: 10,
-          fontSize: 11.5,
-          color: 'var(--text3)',
-        }}
-      >
-        <span>
-          Verdict <strong style={{ color: verdict.color }}>{verdict.label}</strong>
-        </span>
-        <span>
-          Submitted{' '}
-          <strong style={{ color: 'var(--text2)', fontFamily: 'var(--font-mono)' }}>
-            {formatDateTime(detail.created_at)}
-          </strong>
-        </span>
-        <span>
-          Judged{' '}
-          <strong style={{ color: 'var(--text2)', fontFamily: 'var(--font-mono)' }}>
-            {formatDateTime(detail.updated_at)}
-          </strong>
-        </span>
-        <Link href={`/problems?search=${encodeURIComponent(detail.problem_title)}`} style={{ fontSize: 11.5 }}>
-          Open problem →
-        </Link>
-      </div>
-
-      <pre
-        style={{
-          margin: 0,
-          maxHeight: 260,
-          overflow: 'auto',
-          border: '1px solid var(--border)',
-          borderRadius: 8,
-          background: 'var(--code-bg)',
-          color: 'var(--code-fg)',
-          padding: '10px 12px',
-          fontFamily: 'var(--font-mono)',
-          fontSize: 11.5,
-          lineHeight: 1.7,
-        }}
-      >
-        {detail.source_code}
-      </pre>
-    </div>
   );
 }
 

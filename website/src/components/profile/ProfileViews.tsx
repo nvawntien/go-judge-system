@@ -125,10 +125,10 @@ export function ProfileActivity({
   emptyCopy?: string;
 }) {
   const calendar = buildCalendar(stats.activity);
-  const monthLabels = buildMonthLabels(calendar);
+  const monthGroups = buildMonthGroups(calendar);
   const hasActivity = stats.activity.some((item) => item.count > 0);
   return (
-    <ProfilePanel title="Activity" description="Last 52 weeks, grouped by UTC day.">
+    <ProfilePanel title="Activity" description="Last 365 days, grouped by UTC day.">
       {hasActivity ? (
         <>
           <div
@@ -139,30 +139,26 @@ export function ProfileActivity({
             aria-describedby="profile-activity-legend"
           >
             <div className="ac-profile-timeline">
-              <div className="ac-profile-months" aria-label="Calendar months in the activity timeline">
-                {monthLabels.map((month) => (
-                  <time
-                    key={month.key}
-                    dateTime={`${month.key}-01`}
-                    aria-label={month.accessibleLabel}
-                    title={month.accessibleLabel}
-                    style={{ gridColumn: `${month.column} / span ${month.span}` }}
-                  >
+              {monthGroups.map((month) => (
+                <div key={month.key} className="ac-profile-month-group">
+                  <time dateTime={`${month.key}-01`} aria-label={month.accessibleLabel} title={month.accessibleLabel}>
                     {month.label}
                   </time>
-                ))}
-              </div>
-              <div className="ac-profile-heatmap">
-                {calendar.map((cell) => (
-                  <span
-                    key={cell.key}
-                    role="img"
-                    aria-label={activityLabel(cell.key, cell.count)}
-                    title={activityLabel(cell.key, cell.count)}
-                    style={{ background: LEVEL_COLORS[cell.level] }}
-                  />
-                ))}
-              </div>
+                  <div className="ac-profile-month-grid" aria-label={`${month.accessibleLabel} activity`}>
+                    {month.cells.map((cell, index) => cell ? (
+                      <span
+                        key={cell.key}
+                        role="img"
+                        aria-label={activityLabel(cell.key, cell.count)}
+                        title={activityLabel(cell.key, cell.count)}
+                        style={{ background: LEVEL_COLORS[cell.level] }}
+                      />
+                    ) : (
+                      <span key={`${month.key}-empty-${index}`} className="ac-profile-activity-empty" aria-hidden="true" />
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
           <div id="profile-activity-legend" className="ac-profile-legend" aria-label="Activity intensity: less to more">
@@ -183,14 +179,15 @@ export function ProfileLanguages({ stats }: { stats: MyProfileStats }) {
   return (
     <ProfilePanel title="Languages" description="Based on all submitted solutions.">
       {languages.length === 0 ? (
-        <p className="ac-profile-empty-copy">No language usage yet.</p>
+        <p className="ac-profile-empty-copy">No language activity yet.</p>
       ) : (
         <div className="ac-profile-language-list">
           {languages.map((item) => (
             <div key={item.code} className="ac-profile-language-row">
               <span className="ac-profile-language-label"><i style={{ background: item.color }} />{item.label}</span>
-              <span className="ac-profile-language-bar" aria-hidden="true"><i style={{ width: `${item.pct}%`, background: item.color }} /></span>
-              <span className="ac-profile-language-value">{item.count.toLocaleString()} · {item.pct}%</span>
+              <span className="ac-profile-language-value">
+                {item.count.toLocaleString()} submission{item.count === 1 ? '' : 's'}
+              </span>
             </div>
           ))}
         </div>
@@ -234,38 +231,40 @@ export function OwnProfileActions() {
   );
 }
 
-type LanguageUsageItem = { code: string; label: string; count: number; pct: number; color: string };
+type LanguageUsageItem = { code: string; label: string; count: number; color: string };
 
 function buildLanguageUsage(stats: MyProfileStats): LanguageUsageItem[] {
-  const total = stats.total_submissions || 1;
-  return stats.language_distribution
-    .map(({ language, count }) => {
-      const code = language.toUpperCase();
-      return {
-        code,
-        label: languageLabel(code),
-        count,
-        pct: Math.round((count / total) * 100),
-        color: LANGUAGES.find((item) => item.code === code)?.color ?? 'var(--text3)',
-      };
-    })
-    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+  return stats.language_distribution.map(({ language, count }) => {
+    const code = language.toUpperCase();
+    return {
+      code,
+      label: languageLabel(code),
+      count,
+      color: LANGUAGES.find((item) => item.code === code)?.color ?? 'var(--text3)',
+    };
+  });
 }
 
 const LEVEL_COLORS = ['var(--surface3)', 'var(--accent-soft2)', '#B4A0F0', 'var(--accent)', 'var(--accent-strong)'];
-const ACTIVITY_WEEKS = 52;
+const ACTIVITY_DAYS = 365;
 const DAYS_PER_WEEK = 7;
 const SHORT_MONTH_FORMATTER = new Intl.DateTimeFormat('en-US', { month: 'short', timeZone: 'UTC' });
 const ACCESSIBLE_MONTH_FORMATTER = new Intl.DateTimeFormat(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' });
 
 type CalendarCell = { key: string; count: number; level: number };
+type MonthGroup = {
+  key: string;
+  label: string;
+  accessibleLabel: string;
+  cells: Array<CalendarCell | null>;
+};
 
 function buildCalendar(activity: ProfileStatsActivity[]): CalendarCell[] {
   const counts = new Map(activity.map(({ date, count }) => [date, count]));
   const today = new Date();
   const start = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
-  start.setUTCDate(start.getUTCDate() - (ACTIVITY_WEEKS * DAYS_PER_WEEK - 1) - start.getUTCDay());
-  return Array.from({ length: ACTIVITY_WEEKS * DAYS_PER_WEEK }, (_, index) => {
+  start.setUTCDate(start.getUTCDate() - (ACTIVITY_DAYS - 1));
+  return Array.from({ length: ACTIVITY_DAYS }, (_, index) => {
     const date = new Date(start);
     date.setUTCDate(start.getUTCDate() + index);
     const key = date.toISOString().slice(0, 10);
@@ -275,38 +274,33 @@ function buildCalendar(activity: ProfileStatsActivity[]): CalendarCell[] {
   });
 }
 
-function buildMonthLabels(calendar: CalendarCell[]) {
-  const boundaries: Array<{
-    key: string;
-    label: string;
-    accessibleLabel: string;
-    weekIndex: number;
-  }> = [];
-  let previousMonth = '';
+function buildMonthGroups(calendar: CalendarCell[]): MonthGroup[] {
+  const grouped = new Map<string, CalendarCell[]>();
 
-  for (let weekIndex = 0; weekIndex < ACTIVITY_WEEKS; weekIndex += 1) {
-    const firstDay = calendar[weekIndex * DAYS_PER_WEEK];
-    if (!firstDay) continue;
-    const monthKey = firstDay.key.slice(0, 7);
-    if (monthKey === previousMonth) continue;
-
-    const date = new Date(`${firstDay.key}T00:00:00Z`);
-    boundaries.push({
-      key: monthKey,
-      label: SHORT_MONTH_FORMATTER.format(date),
-      accessibleLabel: ACCESSIBLE_MONTH_FORMATTER.format(date),
-      weekIndex,
-    });
-    previousMonth = monthKey;
+  for (const cell of calendar) {
+    const monthKey = cell.key.slice(0, 7);
+    const monthCells = grouped.get(monthKey);
+    if (monthCells) monthCells.push(cell);
+    else grouped.set(monthKey, [cell]);
   }
 
-  return boundaries
-    .map((month, index) => ({
-      ...month,
-      column: month.weekIndex + 1,
-      span: (boundaries[index + 1]?.weekIndex ?? ACTIVITY_WEEKS) - month.weekIndex,
-    }))
-    .filter((month, index, labels) => month.span >= 2 || index === labels.length - 1);
+  return Array.from(grouped, ([key, monthCells]) => {
+    const firstDate = new Date(`${monthCells[0].key}T00:00:00Z`);
+    const mondayFirstOffset = (firstDate.getUTCDay() + 6) % DAYS_PER_WEEK;
+    const occupiedPositions = mondayFirstOffset + monthCells.length;
+    const trailingPositions = (DAYS_PER_WEEK - (occupiedPositions % DAYS_PER_WEEK)) % DAYS_PER_WEEK;
+
+    return {
+      key,
+      label: SHORT_MONTH_FORMATTER.format(firstDate),
+      accessibleLabel: ACCESSIBLE_MONTH_FORMATTER.format(firstDate),
+      cells: [
+        ...Array.from<null>({ length: mondayFirstOffset }).fill(null),
+        ...monthCells,
+        ...Array.from<null>({ length: trailingPositions }).fill(null),
+      ],
+    };
+  });
 }
 
 function activityLabel(date: string, count: number) {

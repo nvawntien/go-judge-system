@@ -169,7 +169,13 @@ function RecentSubmissions({
           {submissions.map((submission) => {
             const verdict = verdictMeta(submission.status);
             return (
-              <div key={submission.id} className="ac-profile-submission-row">
+              <Link
+                key={submission.id}
+                href={`/submissions/${submission.id}`}
+                prefetch={false}
+                className="ac-profile-submission-row"
+                aria-label={`Open submission ${submission.id} for ${submission.problem_title}`}
+              >
                 <span className="ac-profile-submission-problem">
                   <span aria-hidden="true" className="ac-profile-submission-icon" style={{ background: verdict.bg, color: verdict.color }}>{verdict.icon}</span>
                   <span>{submission.problem_title}</span>
@@ -179,7 +185,7 @@ function RecentSubmissions({
                   <span>{languageLabel(submission.language)}</span>
                   <time dateTime={submission.created_at}>{timeAgo(submission.created_at)}</time>
                 </span>
-              </div>
+              </Link>
             );
           })}
         </div>
