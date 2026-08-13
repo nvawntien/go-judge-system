@@ -613,6 +613,47 @@ p {
 .ac-submission-list-row > a:hover { color: var(--accent-fg) !important; }
 .ac-submission-expand:hover { background: var(--surface3) !important; }
 
+/* ------------------------------------------------------ problem workspace */
+
+.ac-problem-panel-content { padding: 14px 22px 28px; }
+.ac-problem-statement-header { margin: -14px -22px 12px; padding: 8px 22px; }
+.ac-statement-section-heading {
+  margin: 22px 0 9px;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+.ac-statement-paragraph { max-width: 70ch; margin: 0 0 13px; font-size: 13.5px; line-height: 1.65; }
+.ac-problem-constraints { max-width: 70ch; margin: 0 0 20px; padding-left: 20px; font-size: 12px; line-height: 1.85; color: var(--text2); }
+.ac-problem-constraints li { margin-bottom: 2px; }
+.ac-problem-examples { margin: 0 0 18px; }
+.ac-problem-example { padding: 14px 0; border-bottom: 1px solid var(--border); }
+.ac-problem-example:last-child { padding-bottom: 0; border-bottom: 0; }
+.ac-problem-example-header { margin-bottom: 9px; }
+.ac-problem-example-header h3 { margin: 0; color: var(--text2); font-size: 12.5px; font-weight: 650; }
+.ac-problem-example-data { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.ac-problem-example-code h4,
+.ac-problem-example-explanation h4 { margin: 0 0 6px; color: var(--text2); font-size: 11px; font-weight: 650; }
+.ac-problem-example-code pre {
+  max-height: 260px;
+  min-height: 76px;
+  margin: 0;
+  overflow: auto;
+  padding: 10px 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--code-bg);
+  color: var(--code-fg);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: pre;
+}
+.ac-problem-example-explanation { max-width: 70ch; margin-top: 12px; }
+.ac-problem-example-explanation p { margin: 0; color: var(--text2); font-size: 13px; line-height: 1.6; white-space: pre-wrap; }
+
 @media (max-width: 640px) {
   .ac-page-main { padding: 20px 16px 44px; }
   .ac-page-header, .ac-admin-page-header { align-items: flex-start; margin-bottom: 16px; }
@@ -634,6 +675,10 @@ p {
   .ac-home-submission-row { padding-inline: 16px; }
   .ac-problem-toolbar > [role='group'] { width: 100%; display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ac-problem-toolbar select, .ac-problem-tag-filter { width: 100%; max-width: none !important; }
+  .ac-problem-panel-content { padding: 12px 16px 24px; }
+  .ac-problem-statement-header { margin: -12px -16px 10px; padding: 8px 16px; }
+  .ac-statement-section-heading { margin-top: 20px; }
+  .ac-problem-example-data { grid-template-columns: 1fr; }
 }
 
 @media (min-width: 641px) and (max-width: 920px) {

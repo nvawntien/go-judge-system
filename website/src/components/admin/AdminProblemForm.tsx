@@ -239,7 +239,10 @@ export function AdminProblemForm({
           </label>
         </div>
         <label style={{ display: 'grid', gap: 6, marginTop: 12, fontSize: 12, fontWeight: 650 }}>
-          Statement
+          Statement / description
+          <span style={{ fontSize: 11.5, fontWeight: 400, color: 'var(--text3)' }}>
+            Write the public statement. Use a standalone “Input” or “Output” line to create a section heading.
+          </span>
           <textarea
             required
             value={values.description}
@@ -303,9 +306,9 @@ export function AdminProblemForm({
         <h2 style={{ margin: '0 0 10px', fontSize: 15 }}>Examples</h2>
         <div style={{ display: 'grid', gap: 12 }}>
           {values.examples.map((example, index) => (
-            <div key={index} style={{ display: 'grid', gap: 8, padding: 12, border: '1px solid var(--border)', borderRadius: 8 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                <strong style={{ fontSize: 12.5 }}>Example {index + 1}</strong>
+            <fieldset key={index} style={{ display: 'grid', gap: 10, margin: 0, padding: 12, border: '1px solid var(--border)', borderRadius: 8 }}>
+              <legend style={{ padding: '0 6px', fontSize: 12.5, fontWeight: 650 }}>Example {index + 1}</legend>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
                 {values.examples.length > 1 && (
                   <button
                     type="button"
@@ -317,36 +320,43 @@ export function AdminProblemForm({
                   </button>
                 )}
               </div>
-              <textarea
-                aria-label={`Example ${index + 1} input`}
-                required
-                value={example.input}
-                onChange={(event) => updateExample(index, { input: event.target.value })}
-                placeholder="Input"
-                className="ac-input"
-                rows={3}
-                style={{ ...adminField, height: 'auto', padding: 10, fontFamily: 'var(--font-mono)', resize: 'vertical' }}
-              />
-              <textarea
-                aria-label={`Example ${index + 1} expected output`}
-                required
-                value={example.expected_output}
-                onChange={(event) => updateExample(index, { expected_output: event.target.value })}
-                placeholder="Expected output"
-                className="ac-input"
-                rows={3}
-                style={{ ...adminField, height: 'auto', padding: 10, fontFamily: 'var(--font-mono)', resize: 'vertical' }}
-              />
-              <textarea
-                aria-label={`Example ${index + 1} explanation`}
-                value={example.explanation ?? ''}
-                onChange={(event) => updateExample(index, { explanation: event.target.value })}
-                placeholder="Explanation"
-                className="ac-input"
-                rows={2}
-                style={{ ...adminField, height: 'auto', padding: 10, resize: 'vertical' }}
-              />
-            </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
+                <label style={{ display: 'grid', gap: 6, fontSize: 12, fontWeight: 650 }}>
+                  Input
+                  <textarea
+                    required
+                    value={example.input}
+                    onChange={(event) => updateExample(index, { input: event.target.value })}
+                    className="ac-input"
+                    rows={4}
+                    spellCheck={false}
+                    style={{ ...adminField, height: 'auto', minHeight: 96, padding: 10, fontFamily: 'var(--font-mono)', resize: 'vertical' }}
+                  />
+                </label>
+                <label style={{ display: 'grid', gap: 6, fontSize: 12, fontWeight: 650 }}>
+                  Output
+                  <textarea
+                    required
+                    value={example.expected_output}
+                    onChange={(event) => updateExample(index, { expected_output: event.target.value })}
+                    className="ac-input"
+                    rows={4}
+                    spellCheck={false}
+                    style={{ ...adminField, height: 'auto', minHeight: 96, padding: 10, fontFamily: 'var(--font-mono)', resize: 'vertical' }}
+                  />
+                </label>
+              </div>
+              <label style={{ display: 'grid', gap: 6, fontSize: 12, fontWeight: 650 }}>
+                Explanation <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(optional)</span>
+                <textarea
+                  value={example.explanation ?? ''}
+                  onChange={(event) => updateExample(index, { explanation: event.target.value })}
+                  className="ac-input"
+                  rows={3}
+                  style={{ ...adminField, height: 'auto', minHeight: 76, padding: 10, resize: 'vertical' }}
+                />
+              </label>
+            </fieldset>
           ))}
         </div>
         <button

@@ -85,7 +85,7 @@ export function CodeEditor({
   };
 
   const lineHeight = 1.65;
-  const gutterWidth = `${Math.max(2, String(lines.length).length) * 0.62 + 1.6}em`;
+  const gutterWidth = `${Math.max(2, String(lines.length).length) * 0.58 + 0.95}em`;
 
   const textLayer: React.CSSProperties = {
     margin: 0,
@@ -120,12 +120,12 @@ export function CodeEditor({
               zIndex: 2,
               background: 'var(--code-bg)',
               borderRight: '1px solid var(--code-line)',
-              padding: '10px 8px 10px 10px',
+              padding: '10px 5px 10px 7px',
               textAlign: 'right',
               minWidth: gutterWidth,
               boxSizing: 'content-box',
               fontFamily: 'var(--font-mono)',
-              fontSize,
+              fontSize: Math.max(11, fontSize - 1),
               lineHeight,
               color: 'var(--gutter)',
               userSelect: 'none',
@@ -145,7 +145,7 @@ export function CodeEditor({
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'flex-end',
-                      gap: 5,
+                      gap: 3,
                       color: hasDiagnostic
                         ? 'var(--error)'
                         : lineNo === caret.line
@@ -159,15 +159,15 @@ export function CodeEditor({
                         role="img"
                         aria-label="Error"
                         style={{
-                          width: 12,
-                          height: 12,
+                          width: 10,
+                          height: 10,
                           borderRadius: '50%',
                           background: 'var(--error-bg)',
                           color: 'var(--error)',
                           display: 'inline-flex',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          fontSize: 9,
+                          fontSize: 8,
                           lineHeight: 1,
                         }}
                       >

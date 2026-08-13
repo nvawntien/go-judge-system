@@ -17,6 +17,8 @@ const CODE_STYLE: React.CSSProperties = {
   padding: '1px 5px',
 };
 
+const SECTION_TITLES = new Set(['input', 'output', 'constraints', 'examples', 'explanation', 'notes']);
+
 function renderInline(text: string, keyPrefix: string) {
   const parts = text.split(/(`[^`]*`|\*\*[^*]+\*\*)/g);
   return parts.map((part, index) => {
@@ -45,21 +47,15 @@ export function RichText({ text, muted = false }: { text: string; muted?: boolea
         if (!trimmed) return null;
 
         const heading = /^(#{1,4})\s+(.*)$/.exec(trimmed);
-        if (heading) {
+        const sectionTitle = heading?.[2] ?? (SECTION_TITLES.has(trimmed.toLowerCase()) ? trimmed : null);
+        if (sectionTitle) {
           return (
-            <h3
+            <h2
               key={blockIndex}
-              style={{
-                margin: '18px 0 8px',
-                fontSize: 12,
-                fontWeight: 650,
-                letterSpacing: '.07em',
-                textTransform: 'uppercase',
-                color: 'var(--text3)',
-              }}
+              className="ac-statement-section-heading"
             >
-              {heading[2]}
-            </h3>
+              {sectionTitle}
+            </h2>
           );
         }
 
@@ -90,12 +86,9 @@ export function RichText({ text, muted = false }: { text: string; muted?: boolea
         return (
           <p
             key={blockIndex}
+            className="ac-statement-paragraph"
             style={{
-              margin: '0 0 14px',
-              fontSize: 13.5,
-              lineHeight: 1.65,
               color: muted ? 'var(--text2)' : 'var(--text)',
-              maxWidth: '70ch',
               whiteSpace: 'pre-wrap',
             }}
           >
