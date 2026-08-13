@@ -32,6 +32,17 @@ type GetProfileRequest struct {
 	Username string `uri:"username" binding:"required"`
 }
 
+// ResolvePublicUserRequest is an internal service-to-service request. The
+// resolver intentionally returns only stable identity fields for public data.
+type ResolvePublicUserRequest struct {
+	Username string
+}
+
+type ResolvePublicUserResponse struct {
+	UserID   string
+	Username string
+}
+
 type GetProfileResponse struct {
 	FullName    string  `json:"full_name"`
 	Username    string  `json:"username"`
@@ -45,6 +56,31 @@ type GetProfileResponse struct {
 	WebsiteURL  *string `json:"website_url,omitempty"`
 	LinkedinURL *string `json:"linkedin_url,omitempty"`
 	CreatedAt   string  `json:"created_at"`
+}
+
+type SearchPublicUsersRequest struct {
+	Query string `form:"q"`
+	Page  *int   `form:"page"`
+	Limit *int   `form:"limit"`
+}
+
+type PublicUserSearchItem struct {
+	Username  string  `json:"username"`
+	FullName  string  `json:"full_name"`
+	AvatarURL *string `json:"avatar_url,omitempty"`
+	Rating    int     `json:"rating"`
+}
+
+type PublicUserSearchPagination struct {
+	Page       int   `json:"page"`
+	Limit      int   `json:"limit"`
+	Total      int64 `json:"total"`
+	TotalPages int   `json:"total_pages"`
+}
+
+type SearchPublicUsersResponse struct {
+	Items      []PublicUserSearchItem     `json:"items"`
+	Pagination PublicUserSearchPagination `json:"pagination"`
 }
 
 type UpdateProfileRequest struct {

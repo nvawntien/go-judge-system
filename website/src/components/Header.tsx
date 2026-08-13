@@ -2,12 +2,14 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from './AuthProvider';
 import { useTheme } from './ThemeProvider';
 import { useToast } from './ToastProvider';
-import { useDismissable, useViewportWidth } from '@/lib/hooks';
-import { initials, ratingTier } from '@/lib/format';
+import { API_BASE_URL, userApi } from '@/lib/api';
+import { useDebounced, useDismissable, useViewportWidth } from '@/lib/hooks';
+import { avatarUrl, initials, ratingTier } from '@/lib/format';
+import type { PublicUserSearchItem } from '@/lib/types';
 import { Icon, Logo, Wordmark, buttonStyles } from './ui';
 import { AdminIcon } from './admin/AdminIcons';
 import { ADMIN_CONSOLE_MIN_ROLE } from './admin/AdminNavigation';
@@ -32,10 +34,22 @@ export function Header() {
 
   const [menu, setMenu] = useState<'notif' | 'user' | 'mobile' | null>(null);
   const [query, setQuery] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState(false);
+  const [searchResults, setSearchResults] = useState<PublicUserSearchItem[]>([]);
+  const [activeSearchIndex, setActiveSearchIndex] = useState(-1);
+  const debouncedQuery = useDebounced(query, 250);
+  const latestSearchQuery = useRef('');
 
   const close = useCallback(() => setMenu(null), []);
+  const closeSearch = useCallback(() => {
+    setSearchOpen(false);
+    setActiveSearchIndex(-1);
+  }, []);
   const notifRef = useDismissable<HTMLDivElement>(menu === 'notif', close);
   const userRef = useDismissable<HTMLDivElement>(menu === 'user', close);
+  const searchRef = useDismissable<HTMLDivElement>(searchOpen, closeSearch);
 
   // ⌘K / Ctrl+K focuses search, as advertised by the kbd hint.
   useEffect(() => {
@@ -51,12 +65,89 @@ export function Header() {
 
   useEffect(() => {
     setMenu(null);
-  }, [pathname]);
+    closeSearch();
+  }, [pathname, closeSearch]);
+
+  useEffect(() => {
+    const trimmed = debouncedQuery.trim();
+    if (trimmed.length < 2) {
+      setSearchLoading(false);
+      setSearchError(false);
+      setSearchResults([]);
+      return;
+    }
+
+    const controller = new AbortController();
+    setSearchOpen(true);
+    setSearchLoading(true);
+    setSearchError(false);
+    setSearchResults([]);
+    setActiveSearchIndex(-1);
+
+    void userApi
+      .searchUsers({ q: trimmed, page: 1, limit: 10 }, controller.signal)
+      .then((response) => {
+        if (controller.signal.aborted || latestSearchQuery.current !== trimmed) return;
+        setSearchResults(response.items);
+      })
+      .catch(() => {
+        if (controller.signal.aborted || latestSearchQuery.current !== trimmed) return;
+        setSearchError(true);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted && latestSearchQuery.current === trimmed) setSearchLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [debouncedQuery]);
+
+  const onSearchChange = (value: string) => {
+    const trimmed = value.trim();
+    latestSearchQuery.current = trimmed;
+    setQuery(value);
+    setActiveSearchIndex(-1);
+    setSearchResults([]);
+    setSearchError(false);
+    if (trimmed.length < 2) {
+      setSearchLoading(false);
+      setSearchOpen(false);
+    } else {
+      setSearchLoading(true);
+      setSearchOpen(true);
+    }
+  };
+
+  const navigateToUser = (result: PublicUserSearchItem) => {
+    closeSearch();
+    latestSearchQuery.current = '';
+    setQuery('');
+    setSearchResults([]);
+    router.push(`/u/${encodeURIComponent(result.username)}`);
+  };
 
   const submitSearch = (event: React.FormEvent) => {
     event.preventDefault();
-    const trimmed = query.trim();
-    router.push(trimmed ? `/problems?search=${encodeURIComponent(trimmed)}` : '/problems');
+    if (activeSearchIndex >= 0 && activeSearchIndex < searchResults.length) {
+      navigateToUser(searchResults[activeSearchIndex]);
+    }
+  };
+
+  const onSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Escape') {
+      closeSearch();
+      return;
+    }
+    if (searchResults.length === 0) return;
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setSearchOpen(true);
+      setActiveSearchIndex((index) => (index + 1) % searchResults.length);
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setSearchOpen(true);
+      setActiveSearchIndex((index) => (index <= 0 ? searchResults.length - 1 : index - 1));
+    }
   };
 
   const onSignOut = async () => {
@@ -149,50 +240,22 @@ export function Header() {
 
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
           {!isMobile && (
-            <form
-              onSubmit={submitSearch}
-              style={{ position: 'relative', display: 'flex', alignItems: 'center' }}
-            >
-              <span style={{ position: 'absolute', left: 11, display: 'flex' }}>
-                <Icon.Search color="var(--text3)" />
-              </span>
-              <input
-                id="ac-global-search"
-                type="search"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search AstraCode…"
-                aria-label="Search AstraCode"
-                className="ac-input"
-                style={{
-                  height: 34,
-                  width: 210,
-                  borderRadius: 8,
-                  border: '1px solid var(--border)',
-                  background: 'var(--surface2)',
-                  padding: '0 44px 0 33px',
-                  fontSize: 13,
-                  color: 'var(--text)',
-                  transition: 'border-color .15s, background-color .25s',
-                }}
+            <div ref={searchRef}>
+              <UserSearch
+                query={query}
+                open={searchOpen && query.trim().length >= 2}
+                loading={searchLoading}
+                failed={searchError}
+                results={searchResults}
+                activeIndex={activeSearchIndex}
+                onChange={onSearchChange}
+                onFocus={() => query.trim().length >= 2 && setSearchOpen(true)}
+                onKeyDown={onSearchKeyDown}
+                onSubmit={submitSearch}
+                onActivate={setActiveSearchIndex}
+                onSelect={navigateToUser}
               />
-              <span
-                aria-hidden="true"
-                style={{
-                  position: 'absolute',
-                  right: 9,
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: 10,
-                  color: 'var(--text3)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 4,
-                  padding: '1px 5px',
-                  background: 'var(--surface)',
-                }}
-              >
-                ⌘K
-              </span>
-            </form>
+            </div>
           )}
 
           <button
@@ -319,7 +382,7 @@ export function Header() {
                     </span>
                   </div>
                   {[
-                    { label: 'Public profile', href: '/profile' },
+                    { label: 'Public profile', href: `/u/${encodeURIComponent(user.username)}` },
                     { label: 'Profile settings', href: '/settings' },
                     { label: 'Design system notes', href: '/design-system' },
                   ].map((item) => (
@@ -472,14 +535,86 @@ export function Header() {
               </Link>
             );
           })}
-          <form onSubmit={submitSearch}>
-            <input
-              type="search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search AstraCode…"
-              aria-label="Search AstraCode"
-              style={{
+          <div ref={searchRef}>
+            <UserSearch
+              mobile
+              query={query}
+              open={searchOpen && query.trim().length >= 2}
+              loading={searchLoading}
+              failed={searchError}
+              results={searchResults}
+              activeIndex={activeSearchIndex}
+              onChange={onSearchChange}
+              onFocus={() => query.trim().length >= 2 && setSearchOpen(true)}
+              onKeyDown={onSearchKeyDown}
+              onSubmit={submitSearch}
+              onActivate={setActiveSearchIndex}
+              onSelect={navigateToUser}
+            />
+          </div>
+        </nav>
+      )}
+    </header>
+  );
+}
+
+function UserSearch({
+  mobile = false,
+  query,
+  open,
+  loading,
+  failed,
+  results,
+  activeIndex,
+  onChange,
+  onFocus,
+  onKeyDown,
+  onSubmit,
+  onActivate,
+  onSelect,
+}: {
+  mobile?: boolean;
+  query: string;
+  open: boolean;
+  loading: boolean;
+  failed: boolean;
+  results: PublicUserSearchItem[];
+  activeIndex: number;
+  onChange: (value: string) => void;
+  onFocus: () => void;
+  onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
+  onSubmit: (event: React.FormEvent) => void;
+  onActivate: (index: number) => void;
+  onSelect: (result: PublicUserSearchItem) => void;
+}) {
+  const listboxID = mobile ? 'ac-global-search-results-mobile' : 'ac-global-search-results';
+  const activeID = activeIndex >= 0 ? `${listboxID}-${activeIndex}` : undefined;
+
+  return (
+    <form onSubmit={onSubmit} style={{ position: 'relative', display: mobile ? 'block' : 'flex', alignItems: 'center' }}>
+      {!mobile && (
+        <span aria-hidden="true" style={{ position: 'absolute', left: 11, display: 'flex' }}>
+          <Icon.Search color="var(--text3)" />
+        </span>
+      )}
+      <input
+        id="ac-global-search"
+        type="search"
+        role="combobox"
+        aria-autocomplete="list"
+        aria-expanded={open}
+        aria-controls={open ? listboxID : undefined}
+        aria-activedescendant={open ? activeID : undefined}
+        value={query}
+        onChange={(event) => onChange(event.target.value)}
+        onFocus={onFocus}
+        onKeyDown={onKeyDown}
+        placeholder="Search AstraCode…"
+        aria-label="Search AstraCode users"
+        className={!mobile ? 'ac-input' : undefined}
+        style={
+          mobile
+            ? {
                 marginTop: 8,
                 width: '100%',
                 boxSizing: 'border-box',
@@ -490,12 +625,151 @@ export function Header() {
                 padding: '0 14px',
                 fontSize: 14,
                 color: 'var(--text)',
-              }}
-            />
-          </form>
-        </nav>
+              }
+            : {
+                height: 34,
+                width: 210,
+                borderRadius: 8,
+                border: '1px solid var(--border)',
+                background: 'var(--surface2)',
+                padding: '0 44px 0 33px',
+                fontSize: 13,
+                color: 'var(--text)',
+                transition: 'border-color .15s, background-color .25s',
+              }
+        }
+      />
+      {!mobile && (
+        <span
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            right: 9,
+            fontFamily: 'var(--font-mono)',
+            fontSize: 10,
+            color: 'var(--text3)',
+            border: '1px solid var(--border)',
+            borderRadius: 4,
+            padding: '1px 5px',
+            background: 'var(--surface)',
+          }}
+        >
+          ⌘K
+        </span>
       )}
-    </header>
+
+      {open && (
+        <div
+          id={listboxID}
+          role="listbox"
+          aria-label="User search results"
+          style={
+            mobile
+              ? {
+                  marginTop: 6,
+                  width: '100%',
+                  boxSizing: 'border-box',
+                  background: 'var(--surface)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 10,
+                  boxShadow: 'var(--shadow)',
+                  padding: 4,
+                }
+              : {
+                  position: 'absolute',
+                  zIndex: 50,
+                  top: 40,
+                  left: 0,
+                  width: 320,
+                  background: 'var(--surface)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 10,
+                  boxShadow: 'var(--shadow-lg)',
+                  padding: 4,
+                  animation: 'acPop .15s ease',
+                }
+          }
+        >
+          {loading ? (
+            <p aria-live="polite" style={{ margin: 0, padding: '10px 12px', fontSize: 12.5, color: 'var(--text3)' }}>
+              Searching users…
+            </p>
+          ) : failed ? (
+            <p role="alert" style={{ margin: 0, padding: '10px 12px', fontSize: 12.5, color: 'var(--error)' }}>
+              Could not search users. Try again.
+            </p>
+          ) : results.length === 0 ? (
+            <p style={{ margin: 0, padding: '10px 12px', fontSize: 12.5, color: 'var(--text3)' }}>
+              No users found.
+            </p>
+          ) : (
+            results.map((result, index) => {
+              const avatar = avatarUrl(result.avatar_url, API_BASE_URL);
+              const selected = index === activeIndex;
+              return (
+                <button
+                  id={`${listboxID}-${index}`}
+                  key={result.username}
+                  type="button"
+                  role="option"
+                  aria-selected={selected}
+                  onMouseEnter={() => onActivate(index)}
+                  onClick={() => onSelect(result)}
+                  className="ac-hover-surface2"
+                  style={{
+                    display: 'flex',
+                    width: '100%',
+                    alignItems: 'center',
+                    gap: 9,
+                    padding: '8px 9px',
+                    border: 'none',
+                    borderRadius: 7,
+                    background: selected ? 'var(--accent-soft)' : 'transparent',
+                    color: 'var(--text)',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                  }}
+                >
+                  {avatar ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={avatar} alt="" width={30} height={30} style={{ width: 30, height: 30, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+                  ) : (
+                    <span
+                      aria-hidden="true"
+                      style={{
+                        width: 30,
+                        height: 30,
+                        borderRadius: '50%',
+                        background: 'var(--accent-soft2)',
+                        color: 'var(--accent-fg)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: 11,
+                        fontWeight: 650,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {initials(result.full_name || result.username)}
+                    </span>
+                  )}
+                  <span style={{ minWidth: 0 }}>
+                    <span style={{ display: 'block', fontFamily: 'var(--font-mono)', fontSize: 12.5, fontWeight: 650 }}>
+                      @{result.username}
+                    </span>
+                    {result.full_name && (
+                      <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11.5, color: 'var(--text3)' }}>
+                        {result.full_name}
+                      </span>
+                    )}
+                  </span>
+                </button>
+              );
+            })
+          )}
+        </div>
+      )}
+    </form>
   );
 }
 

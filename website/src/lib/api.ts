@@ -26,6 +26,8 @@ import type {
   MyProfileStats,
   Problem,
   PublicProfile,
+  SearchUsersParams,
+  SearchUsersResponse,
   RegisterRequest,
   RejudgeAdminSubmissionResponse,
   RunCodeRequest,
@@ -239,6 +241,12 @@ export const userApi = {
 
   profile: (username: string, signal?: AbortSignal) =>
     apiRequest<PublicProfile>(`/api/v1/users/${encodeURIComponent(username)}/profile`, { signal }),
+
+  searchUsers: (params: SearchUsersParams, signal?: AbortSignal) =>
+    apiRequest<SearchUsersResponse>('/api/v1/users/search', {
+      query: { q: params.q, page: params.page, limit: params.limit },
+      signal,
+    }),
 };
 
 /* --------------------------------------------------------------- problem */
@@ -407,6 +415,9 @@ export const submissionApi = {
 
   getMyProfileStats: (signal?: AbortSignal) =>
     apiRequest<MyProfileStats>('/api/v1/me/profile-stats', { signal }),
+
+  getPublicProfileStats: (username: string, signal?: AbortSignal) =>
+    apiRequest<MyProfileStats>(`/api/v1/users/${encodeURIComponent(username)}/profile-stats`, { signal }),
 
   /** Custom-test execution through the submission-service synchronous run API. */
   run: (body: RunCodeRequest) =>

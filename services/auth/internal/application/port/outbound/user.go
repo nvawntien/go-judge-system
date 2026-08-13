@@ -22,6 +22,19 @@ type ListUsersResult struct {
 	Total int64
 }
 
+// SearchPublicUsersFilter is deliberately limited to public discovery fields.
+// Visibility is enforced by the repository implementation, not supplied by a caller.
+type SearchPublicUsersFilter struct {
+	Query  string
+	Limit  int
+	Offset int
+}
+
+type SearchPublicUsersResult struct {
+	Items []*entity.User
+	Total int64
+}
+
 // ProfileUpdates contains only fields owned by the profile-edit operation.
 type ProfileUpdates struct {
 	FullName    *string
@@ -41,6 +54,7 @@ type UserRepository interface {
 	GetUserByUsername(ctx context.Context, username string) (*entity.User, error)
 	GetUserById(ctx context.Context, id string) (*entity.User, error)
 	ListUsers(ctx context.Context, filter ListUsersFilter) (ListUsersResult, error)
+	SearchPublicUsers(ctx context.Context, filter SearchPublicUsersFilter) (SearchPublicUsersResult, error)
 	UpdateUser(ctx context.Context, user *entity.User) error
 	UpdatePassword(ctx context.Context, userID string, passwordHash string, updatedAt time.Time) error
 	UpdateProfile(ctx context.Context, userID string, updates ProfileUpdates) error

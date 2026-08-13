@@ -4,10 +4,10 @@ import { useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { useToast } from '@/components/ToastProvider';
-import { Card, EmptyState, SkeletonBar } from '@/components/ui';
-import { API_BASE_URL, ApiError, userApi } from '@/lib/api';
+import { Card, EmptyState, ErrorState, SkeletonBar } from '@/components/ui';
+import { API_BASE_URL, ApiError, submissionApi, userApi } from '@/lib/api';
 import { avatarUrl, formatDate, initials, ratingTier } from '@/lib/format';
-import type { PublicProfile } from '@/lib/types';
+import type { MyProfileStats, PublicProfile } from '@/lib/types';
 
 export default function PublicProfilePage() {
   const params = useParams<{ username: string }>();
@@ -16,6 +16,10 @@ export default function PublicProfilePage() {
 
   const [profile, setProfile] = useState<PublicProfile | null>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'notfound' | 'error'>('loading');
+  const [stats, setStats] = useState<MyProfileStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(true);
+  const [statsError, setStatsError] = useState(false);
+  const [statsReload, setStatsReload] = useState(0);
 
   useEffect(() => {
     if (!username) return;
@@ -34,6 +38,28 @@ export default function PublicProfilePage() {
 
     return () => controller.abort();
   }, [username]);
+
+  useEffect(() => {
+    if (!username) return;
+    const controller = new AbortController();
+    setStats(null);
+    setStatsLoading(true);
+    setStatsError(false);
+
+    void submissionApi
+      .getPublicProfileStats(username, controller.signal)
+      .then((response) => {
+        if (!controller.signal.aborted) setStats(response);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setStatsError(true);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setStatsLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [username, statsReload]);
 
   if (state === 'loading') {
     return (
@@ -204,14 +230,92 @@ export default function PublicProfilePage() {
         </button>
       </Card>
 
-      <Card padding={0}>
+      {statsLoading ? (
+        <PublicProfileStatsLoading />
+      ) : statsError || !stats ? (
+        <Card label="Competitive statistics" padding={0}>
+          <ErrorState
+            title="Could not load competitive statistics"
+            detail="Profile details are still available."
+            onRetry={() => setStatsReload((value) => value + 1)}
+          />
+        </Card>
+      ) : (
+        <PublicProfileStatCards stats={stats} />
+      )}
+
+      <Card padding={0} style={{ marginTop: 16 }}>
         <EmptyState
           title="Submission history is private"
-          description="The submission service only exposes a user's own history, so public profiles show profile details only."
+          description="Only aggregate competitive statistics are public; individual submissions remain private."
           nodes={4}
           done={2}
         />
       </Card>
     </AppShell>
+  );
+}
+
+function PublicProfileStatCards({ stats }: { stats: MyProfileStats }) {
+  const cards = [
+    { value: stats.solved_problems, label: 'Problems solved' },
+    { value: stats.attempted_problems, label: 'Problems attempted' },
+    { value: stats.total_submissions, label: 'Submissions' },
+    { value: `${stats.acceptance_rate.toFixed(2)}%`, label: 'Acceptance rate' },
+  ];
+
+  return (
+    <section
+      aria-label="Competitive statistics"
+      style={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        background: 'var(--surface)',
+        border: '1px solid var(--border)',
+        borderRadius: 12,
+        boxShadow: 'var(--shadow)',
+        overflow: 'hidden',
+      }}
+    >
+      {cards.map((card) => (
+        <div
+          key={card.label}
+          style={{ flex: 1, minWidth: 150, padding: '14px 18px', borderLeft: '1px solid var(--border)', marginLeft: -1 }}
+        >
+          <span style={{ display: 'block', fontFamily: 'var(--font-mono)', fontSize: 20, fontWeight: 650 }}>
+            {card.value}
+          </span>
+          <span style={{ fontSize: 11.5, color: 'var(--text3)' }}>{card.label}</span>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+function PublicProfileStatsLoading() {
+  return (
+    <section
+      aria-label="Loading competitive statistics"
+      aria-busy="true"
+      style={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        background: 'var(--surface)',
+        border: '1px solid var(--border)',
+        borderRadius: 12,
+        boxShadow: 'var(--shadow)',
+        overflow: 'hidden',
+      }}
+    >
+      {Array.from({ length: 4 }, (_, index) => (
+        <div
+          key={index}
+          style={{ flex: 1, minWidth: 150, padding: '16px 18px', borderLeft: '1px solid var(--border)', marginLeft: -1 }}
+        >
+          <SkeletonBar width={62} height={22} />
+          <SkeletonBar width={104} height={11} style={{ marginTop: 9 }} />
+        </div>
+      ))}
+    </section>
   );
 }

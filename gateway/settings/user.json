@@ -131,6 +131,28 @@
       ]
     },
     {
+      "endpoint": "/api/v1/users/search",
+      "method": "GET",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "*"
+      ],
+      "input_query_strings": [
+        "q",
+        "page",
+        "limit"
+      ],
+      "backend": [
+        {
+          "url_pattern": "/api/v1/users/search",
+          "encoding": "no-op",
+          "host": [
+            "http://auth-service:8081"
+          ]
+        }
+      ]
+    },
+    {
       "endpoint": "/api/v1/users/{username}/profile",
       "method": "GET",
       "output_encoding": "no-op",

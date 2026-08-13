@@ -134,6 +134,32 @@ func (r *userRepository) ListUsers(ctx context.Context, filter outbound.ListUser
 	return outbound.ListUsersResult{Items: items, Total: total}, nil
 }
 
+// SearchPublicUsers searches only profile-visible accounts and identity fields.
+// Keep this separate from ListUsers: admin search intentionally includes email
+// and account-state filters that must never become public discovery behavior.
+func (r *userRepository) SearchPublicUsers(ctx context.Context, filter outbound.SearchPublicUsersFilter) (outbound.SearchPublicUsersResult, error) {
+	pattern := "%" + escapeLikePattern(strings.TrimSpace(filter.Query)) + "%"
+	query := r.db.WithContext(ctx).Model(&UserDAO{}).
+		Where("is_active = ? AND is_suspended = ?", true, false).
+		Where("(username ILIKE ? ESCAPE '\\' OR full_name ILIKE ? ESCAPE '\\')", pattern, pattern)
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return outbound.SearchPublicUsersResult{}, err
+	}
+
+	var daos []UserDAO
+	if err := query.Order("username ASC").Order("id ASC").Offset(filter.Offset).Limit(filter.Limit).Find(&daos).Error; err != nil {
+		return outbound.SearchPublicUsersResult{}, err
+	}
+
+	items := make([]*entity.User, 0, len(daos))
+	for i := range daos {
+		items = append(items, toUserEntity(&daos[i]))
+	}
+	return outbound.SearchPublicUsersResult{Items: items, Total: total}, nil
+}
+
 func (r *userRepository) UpdateUser(ctx context.Context, user *entity.User) error {
 	return r.db.WithContext(ctx).Model(&UserDAO{}).
 		Where("id = ?", user.ID).

@@ -47,6 +47,10 @@ kafka:
   dlt_topic: "judge.submission.jobs.dlt"
   consumer_group: "submission-service-v1"
 
+auth_grpc:
+  address: "auth-service:9091"
+  timeout: 1s
+
 problem_grpc:
   address: "problem-service:9092"
   timeout: 1s

@@ -14,6 +14,8 @@ import (
 	"go-judge-system/pkg/logger"
 	"go-judge-system/pkg/middleware"
 	"go-judge-system/pkg/minio"
+	grpc "go-judge-system/services/auth/internal/adapter/inbound/grpc"
+	grpc2 "go-judge-system/services/auth/internal/adapter/inbound/grpc/handler"
 	"go-judge-system/services/auth/internal/adapter/inbound/http"
 	"go-judge-system/services/auth/internal/adapter/inbound/http/handler"
 	admin2 "go-judge-system/services/auth/internal/adapter/inbound/http/handler/admin"
@@ -83,6 +85,12 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	getMeHandler := user2.NewGetMeHandler(getMeUseCase)
 	getProfileUseCase := user.NewGetProfileUseCase(userRepository)
 	getProfileHandler := user2.NewGetProfileHandler(getProfileUseCase)
+	resolvePublicUserUseCase := user.NewResolvePublicUserUseCase(userRepository)
+	resolvePublicUserHandler := grpc2.NewResolvePublicUserHandler(resolvePublicUserUseCase)
+	publicUserServer := grpc.NewPublicUserServer(resolvePublicUserHandler)
+	grpcServer := grpc.NewServer(serverConfig, publicUserServer)
+	searchPublicUsersUseCase := user.NewSearchPublicUsersUseCase(userRepository)
+	searchPublicUsersHandler := user2.NewSearchPublicUsersHandler(searchPublicUsersUseCase)
 	updateProfileUseCase := user.NewUpdateProfileUseCase(userRepository)
 	updateProfileHandler := user2.NewUpdateProfileHandler(updateProfileUseCase)
 	minIOConfig := &cfg.MinIO
@@ -97,7 +105,7 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	}
 	uploadAvatarUseCase := user.NewUploadAvatarUseCase(userRepository, avatarStorage)
 	uploadAvatarHandler := user2.NewUploadAvatarHandler(uploadAvatarUseCase)
-	userHandler := handler.NewUserHandler(getMeHandler, getProfileHandler, updateProfileHandler, uploadAvatarHandler)
+	userHandler := handler.NewUserHandler(getMeHandler, getProfileHandler, searchPublicUsersHandler, updateProfileHandler, uploadAvatarHandler)
 	assignRoleUseCase := admin.NewAssignRoleUseCase(userRepository)
 	assignRoleHandler := admin2.NewAssignRoleHandler(assignRoleUseCase)
 	adminUsersUseCase := admin.NewAdminUsersUseCase(userRepository, logoutAllIATStore)
@@ -105,7 +113,7 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	adminHandler := handler.NewAdminHandler(assignRoleHandler, adminUsersHandler)
 	handlerFunc := middleware.NewAuthMiddleware(logoutAllIATStore)
 	router := http.NewRouter(authHandler, userHandler, adminHandler, handlerFunc, zapLogger)
-	app := container.NewApp(cfg, router, zapLogger)
+	app := container.NewApp(cfg, router, grpcServer, zapLogger)
 	return app, nil
 }
 

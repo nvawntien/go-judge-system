@@ -17,6 +17,7 @@ type Config struct {
 	JWT         JWTConfig         `mapstructure:"jwt"`
 	Kafka       KafkaConfig       `mapstructure:"kafka"`
 	MinIO       MinIOConfig       `mapstructure:"minio"`
+	AuthGRPC    AuthGRPCConfig    `mapstructure:"auth_grpc"`
 	ProblemGRPC ProblemGRPCConfig `mapstructure:"problem_grpc"`
 	JudgeGRPC   JudgeGRPCConfig   `mapstructure:"judge_grpc"`
 	RunCode     RunCodeConfig     `mapstructure:"run_code"`
@@ -82,6 +83,11 @@ type MinIOConfig struct {
 	UseSSL    bool   `mapstructure:"use_ssl"`
 	Bucket    string `mapstructure:"bucket"`
 	PublicURL string `mapstructure:"public_url"`
+}
+
+type AuthGRPCConfig struct {
+	Address string        `mapstructure:"address"`
+	Timeout time.Duration `mapstructure:"timeout"`
 }
 
 type ProblemGRPCConfig struct {

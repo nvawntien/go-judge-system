@@ -51,6 +51,48 @@ func TestGetProfileHidesNonPublicAccountStates(t *testing.T) {
 	}
 }
 
+func TestResolvePublicUserReturnsOnlyActiveUnsuspendedIdentity(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		active  bool
+		suspend bool
+		wantErr error
+	}{
+		{name: "active", active: true},
+		{name: "unverified", wantErr: domain.ErrUserNotFound},
+		{name: "suspended", active: true, suspend: true, wantErr: domain.ErrUserNotFound},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			user := profileTestUser()
+			user.IsActive = tt.active
+			user.IsSuspended = tt.suspend
+			got, err := NewResolvePublicUserUseCase(&profileHardeningRepository{user: user}).Execute(
+				context.Background(), dto.ResolvePublicUserRequest{Username: user.Username},
+			)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("Execute() error = %v, want %v", err, tt.wantErr)
+			}
+			if tt.wantErr == nil && (got.UserID != user.ID || got.Username != user.Username) {
+				t.Fatalf("public user = %+v", got)
+			}
+		})
+	}
+
+	_, err := NewResolvePublicUserUseCase(&profileHardeningRepository{getErr: errors.New("database unavailable")}).Execute(
+		context.Background(), dto.ResolvePublicUserRequest{Username: "missing"},
+	)
+	if !errors.Is(err, domain.ErrInternalServer) {
+		t.Fatalf("repository error = %v, want internal", err)
+	}
+
+	_, err = NewResolvePublicUserUseCase(&profileHardeningRepository{getErr: domain.ErrUserNotFound}).Execute(
+		context.Background(), dto.ResolvePublicUserRequest{Username: "missing"},
+	)
+	if !errors.Is(err, domain.ErrUserNotFound) {
+		t.Fatalf("unknown user error = %v, want not found", err)
+	}
+}
+
 func TestUpdateProfileUsesScopedWriteAndOnlyAllowsHTTPURLs(t *testing.T) {
 	user := profileTestUser()
 	repo := &profileHardeningRepository{user: user}
@@ -143,6 +185,9 @@ func (r *profileHardeningRepository) GetUserById(context.Context, string) (*enti
 }
 func (r *profileHardeningRepository) ListUsers(context.Context, outbound.ListUsersFilter) (outbound.ListUsersResult, error) {
 	return outbound.ListUsersResult{}, nil
+}
+func (r *profileHardeningRepository) SearchPublicUsers(context.Context, outbound.SearchPublicUsersFilter) (outbound.SearchPublicUsersResult, error) {
+	return outbound.SearchPublicUsersResult{}, nil
 }
 func (r *profileHardeningRepository) UpdateUser(context.Context, *entity.User) error {
 	r.fullUpdateCalled = true

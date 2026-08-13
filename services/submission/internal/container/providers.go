@@ -13,6 +13,7 @@ import (
 	"go-judge-system/pkg/kafka"
 	"go-judge-system/pkg/logger"
 	"go-judge-system/pkg/middleware"
+	authv1 "go-judge-system/pkg/pb/auth/v1"
 	judgev1 "go-judge-system/pkg/pb/judge/v1"
 	problemv1 "go-judge-system/pkg/pb/problem/v1"
 	"go-judge-system/services/submission/internal/adapter/inbound/http"
@@ -20,6 +21,7 @@ import (
 	adminhandler "go-judge-system/services/submission/internal/adapter/inbound/http/handler/admin"
 	userhandler "go-judge-system/services/submission/internal/adapter/inbound/http/handler/user"
 	resultconsumer "go-judge-system/services/submission/internal/adapter/inbound/kafka"
+	authreader "go-judge-system/services/submission/internal/adapter/outbound/auth"
 	attemptid "go-judge-system/services/submission/internal/adapter/outbound/id"
 	judgepublisher "go-judge-system/services/submission/internal/adapter/outbound/judge"
 	"go-judge-system/services/submission/internal/adapter/outbound/outbox"
@@ -54,6 +56,41 @@ func ProvideProblemGRPCConfig(cfg *config.Config) (config.ProblemGRPCConfig, err
 	}
 
 	return problemCfg, nil
+}
+
+type AuthClientConn struct {
+	*googlegrpc.ClientConn
+}
+
+func ProvideAuthGRPCConfig(cfg *config.Config) (config.AuthGRPCConfig, error) {
+	authCfg := cfg.AuthGRPC
+	authCfg.Address = strings.TrimSpace(authCfg.Address)
+	if authCfg.Address == "" {
+		authCfg.Address = "auth-service:9091"
+	}
+	if authCfg.Timeout == 0 {
+		authCfg.Timeout = time.Second
+	}
+	if authCfg.Timeout < 0 {
+		return config.AuthGRPCConfig{}, fmt.Errorf("auth gRPC timeout must be greater than zero")
+	}
+	return authCfg, nil
+}
+
+func ProvideAuthClientConn(cfg config.AuthGRPCConfig) (AuthClientConn, error) {
+	conn, err := sharedgrpc.NewClientConn(cfg.Address, sharedgrpc.WithInsecureTransport())
+	if err != nil {
+		return AuthClientConn{}, fmt.Errorf("create Auth Service gRPC connection: %w", err)
+	}
+	return AuthClientConn{ClientConn: conn}, nil
+}
+
+func ProvidePublicUserServiceClient(conn AuthClientConn) authv1.PublicUserServiceClient {
+	return authv1.NewPublicUserServiceClient(conn.ClientConn)
+}
+
+func ProvideAuthGRPCTimeout(cfg config.AuthGRPCConfig) time.Duration {
+	return cfg.Timeout
 }
 
 func ProvideProblemClientConn(cfg config.ProblemGRPCConfig) (*googlegrpc.ClientConn, error) {
@@ -188,6 +225,10 @@ var InfrastructureProviderSet = wire.NewSet(
 	ProvideProblemClientConn,
 	ProvideProblemServiceClient,
 	ProvideProblemGRPCTimeout,
+	ProvideAuthGRPCConfig,
+	ProvideAuthClientConn,
+	ProvidePublicUserServiceClient,
+	ProvideAuthGRPCTimeout,
 	ProvideJudgeGRPCConfig,
 	ProvideJudgeClientConn,
 	ProvideJudgeServiceClient,
@@ -213,6 +254,7 @@ var OutboundProviderSet = wire.NewSet(
 	outbox.NewOutboxRelay,
 	resultconsumer.NewDLTPublisher,
 	problemreader.NewGRPCProblemReader,
+	authreader.NewGRPCPublicUserResolver,
 	judgepublisher.NewGRPCRunner,
 	streamadapter.NewHMACSubmissionStreamTicketService,
 	streamadapter.NewSubmissionEventHub,
@@ -228,6 +270,7 @@ var UseCaseProviderSet = wire.NewSet(
 	userusecase.NewGetSubmissionUseCase,
 	userusecase.NewListMySubmissionsUseCase,
 	userusecase.NewGetMyProfileStatsUseCase,
+	userusecase.NewGetPublicProfileStatsUseCase,
 	userusecase.NewIssueSubmissionStreamTicketUseCase,
 )
 
@@ -240,6 +283,7 @@ var InboundProviderSet = wire.NewSet(
 	userhandler.NewGetSubmissionHandler,
 	userhandler.NewListMySubmissionsHandler,
 	userhandler.NewGetMyProfileStatsHandler,
+	userhandler.NewGetPublicProfileStatsHandler,
 	userhandler.NewIssueSubmissionStreamTicketHandler,
 	userhandler.NewSubmissionEventsHandler,
 	ProvideAdminHandler,

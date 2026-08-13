@@ -76,6 +76,7 @@ func (r *Router) SetupRoutes() {
 
 	user := r.engine.Group("/api/v1/users")
 	{
+		user.GET("/search", r.user.SearchPublicUsers.Handle)
 		user.GET("/:username/profile", r.user.GetProfile.Handle)
 	}
 

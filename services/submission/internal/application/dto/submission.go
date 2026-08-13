@@ -205,6 +205,10 @@ type GetMyProfileStatsResponse struct {
 	Activity             []ProfileStatsActivityResponse `json:"activity"`
 }
 
+type GetPublicProfileStatsRequest struct {
+	Username string `uri:"username" binding:"required"`
+}
+
 type ProfileStatsVerdictResponse struct {
 	Verdict string `json:"verdict"`
 	Count   int64  `json:"count"`

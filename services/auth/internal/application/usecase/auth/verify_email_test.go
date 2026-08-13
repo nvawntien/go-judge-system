@@ -176,6 +176,9 @@ func (r *verifyUserRepository) GetUserById(ctx context.Context, id string) (*ent
 func (r *verifyUserRepository) ListUsers(context.Context, outbound.ListUsersFilter) (outbound.ListUsersResult, error) {
 	return outbound.ListUsersResult{}, nil
 }
+func (r *verifyUserRepository) SearchPublicUsers(context.Context, outbound.SearchPublicUsersFilter) (outbound.SearchPublicUsersResult, error) {
+	return outbound.SearchPublicUsersResult{}, nil
+}
 
 func (r *verifyUserRepository) UpdateUser(ctx context.Context, user *entity.User) error {
 	if r.updateErr != nil {

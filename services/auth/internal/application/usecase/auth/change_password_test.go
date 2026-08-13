@@ -153,6 +153,9 @@ func (r *passwordChangeRepository) GetUserById(context.Context, string) (*entity
 func (r *passwordChangeRepository) ListUsers(context.Context, outbound.ListUsersFilter) (outbound.ListUsersResult, error) {
 	return outbound.ListUsersResult{}, nil
 }
+func (r *passwordChangeRepository) SearchPublicUsers(context.Context, outbound.SearchPublicUsersFilter) (outbound.SearchPublicUsersResult, error) {
+	return outbound.SearchPublicUsersResult{}, nil
+}
 func (r *passwordChangeRepository) UpdateUser(context.Context, *entity.User) error { return nil }
 func (r *passwordChangeRepository) UpdatePassword(_ context.Context, _ string, passwordHash string, _ time.Time) error {
 	r.passwordUpdated = true

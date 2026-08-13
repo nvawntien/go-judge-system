@@ -13,6 +13,8 @@ var (
 	ErrProblemActorForbidden       = response.NewAppError(response.CodeForbidden, "problem access forbidden", nil)
 	ErrProblemNotFound             = response.NewAppError(response.CodeNotFound, "problem not found", nil)
 	ErrProblemServiceUnavailable   = response.NewAppError(response.CodeServiceUnavailable, "problem service unavailable", nil)
+	ErrAuthServiceUnavailable      = response.NewAppError(response.CodeServiceUnavailable, "auth service unavailable", nil)
+	ErrPublicProfileNotFound       = response.NewAppError(response.CodeNotFound, "public profile not found", nil)
 	ErrInvalidLanguage             = response.NewAppError(response.CodeBadRequest, "invalid submission language", nil)
 	ErrInvalidSourceCode           = response.NewAppError(response.CodeBadRequest, "invalid source code", nil)
 	ErrSourceCodeTooLarge          = response.NewAppError(response.CodeBadRequest, "source code is too large", nil)

@@ -36,10 +36,19 @@ func (uc *getMyProfileStatsUseCase) Execute(ctx context.Context, claims auth.Cla
 		return dto.GetMyProfileStatsResponse{}, domain.ErrSubmissionForbidden
 	}
 
-	now := uc.now().UTC()
+	return getProfileStats(ctx, uc.statsRepo, uc.now, claims.UserID)
+}
+
+func getProfileStats(
+	ctx context.Context,
+	statsRepo outbound.ProfileStatsRepository,
+	nowFn func() time.Time,
+	userID string,
+) (dto.GetMyProfileStatsResponse, error) {
+	now := nowFn().UTC()
 	activitySince := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC).
 		AddDate(0, 0, -(profileStatsActivityDays - 1))
-	stats, err := uc.statsRepo.GetUserProfileStats(ctx, claims.UserID, activitySince)
+	stats, err := statsRepo.GetUserProfileStats(ctx, userID, activitySince)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return dto.GetMyProfileStatsResponse{}, err

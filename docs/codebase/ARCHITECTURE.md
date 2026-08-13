@@ -6,9 +6,9 @@ All four Go runtime components follow the same directional dependency pattern: i
 
 | Runtime | Responsibility | Inbound | Outbound |
 | --- | --- | --- | --- |
-| Auth | Identity, sessions, roles, user suspension and profile media | Gin HTTP | PostgreSQL, Redis, JWT signer, bcrypt, SMTP, MinIO |
+| Auth | Identity, sessions, roles, user suspension and profile media | Gin HTTP, gRPC `PublicUserService` | PostgreSQL, Redis, JWT signer, bcrypt, SMTP, MinIO |
 | Problem | Problem catalogue and testcase administration | Gin HTTP, gRPC `ProblemService` | PostgreSQL, MinIO presigned URLs |
-| Submission | Submission lifecycle and client result delivery | Gin HTTP/SSE, Kafka result consumer | PostgreSQL, Kafka, Problem gRPC, Judge gRPC |
+| Submission | Submission lifecycle and client result delivery | Gin HTTP/SSE, Kafka result consumer | PostgreSQL, Kafka, Auth gRPC, Problem gRPC, Judge gRPC |
 | Judge Worker | Durable judging and synchronous run-code service | Kafka job consumer, gRPC `JudgeService` | Problem gRPC, HTTP go-judge executor, Kafka results, local testcase cache |
 
 ## Communication graph
@@ -29,6 +29,7 @@ flowchart TB
   auth --> pg & redis & minio
   problem --> pg & minio
   submission --> pg
+  submission -->|PublicUserService.ResolvePublicUser gRPC| auth
   submission -->|ProblemService.GetProblem gRPC| problem
   submission -->|JudgeService.RunCode gRPC| worker
   submission -->|judge.submission.jobs| kafka
@@ -44,6 +45,7 @@ flowchart TB
 
 * Client -> gateway -> Gin services: KrakenD endpoint JSON is authoritative for public exposure. Service routers may contain endpoints that are not necessarily routed publicly; compare `gateway/settings/` with router files before changing an API.
 * Submission -> Problem gRPC `GetProblem`: verifies canonical problem metadata/access before persisting a submission (`services/submission/internal/adapter/outbound/problem/grpc_client.go`).
+* Submission -> Auth gRPC `ResolvePublicUser`: resolves an active, non-suspended username to a stable user ID before serving public competitive aggregates. Auth owns this visibility decision; Submission then reads only its own database.
 * Submission -> Judge Worker gRPC `RunCode`: serves the interactive `/api/v1/submissions/run` feature, with request validation/limits in the Submission use case and worker execution adapter.
 * Judge Worker -> Problem gRPC `GetTestCase`: obtains a presigned testcase ZIP URL, count and version; the worker downloads it itself (`workers/judge/internal/adapter/outbound/problem/grpc_metadata_reader.go`).
 * Judge Worker -> go-judge: HTTP `/run`; compilation/execution commands and limits are built in `workers/judge/internal/adapter/outbound/execute/go_judge_client.go`.
@@ -74,6 +76,6 @@ Admin Gin handlers enforce gateway-derived claims plus role middleware. Use case
 
 ## Lifecycle
 
-All services load `/app/config/config.yaml` with Viper and environment overrides (`pkg/config/config.go`). Auth and Submission run HTTP plus signal-driven graceful shutdown. Problem runs HTTP and gRPC concurrently. Judge Worker runs Kafka consumption and gRPC concurrently. Submission starts two background activities: outbox relay and Kafka result consumer. Connection/database/producer cleanup is explicit in Submission and Worker `Close`; Auth/Problem resource close behavior is provided through Wire cleanups and needs verification before lifecycle changes.
+All services load `/app/config/config.yaml` with Viper and environment overrides (`pkg/config/config.go`). Auth and Problem run HTTP and gRPC concurrently; Auth gracefully stops both listeners on a signal. Submission runs HTTP plus signal-driven graceful shutdown and starts two background activities: outbox relay and Kafka result consumer. Judge Worker runs Kafka consumption and gRPC concurrently. Connection/database/producer cleanup is explicit in Submission and Worker `Close`; Auth/Problem resource close behavior is provided through Wire cleanups and needs verification before lifecycle changes.
 
 The Compose deployment is the operational source of truth: `docker-compose.yml` defines dependencies, health checks, profiles and ports. No Kubernetes deployment layer was found.

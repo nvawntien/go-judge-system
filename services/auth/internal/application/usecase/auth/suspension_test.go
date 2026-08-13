@@ -72,6 +72,9 @@ func (r *sessionUserRepository) GetUserById(context.Context, string) (*entity.Us
 func (r *sessionUserRepository) ListUsers(context.Context, outbound.ListUsersFilter) (outbound.ListUsersResult, error) {
 	return outbound.ListUsersResult{}, nil
 }
+func (r *sessionUserRepository) SearchPublicUsers(context.Context, outbound.SearchPublicUsersFilter) (outbound.SearchPublicUsersResult, error) {
+	return outbound.SearchPublicUsersResult{}, nil
+}
 func (r *sessionUserRepository) UpdateUser(context.Context, *entity.User) error { return nil }
 func (r *sessionUserRepository) UpdatePassword(context.Context, string, string, time.Time) error {
 	return nil

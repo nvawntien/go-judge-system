@@ -8,7 +8,7 @@ Go Judge System is an online-judge backend. It manages identities, authoring and
 
 The repository is a Go workspace with five modules: the shared `pkg/` module plus `services/auth`, `services/problem`, `services/submission`, and `workers/judge` (`go.work`). Each Go service uses a ports-and-adapters shape: `cmd/server` composes dependencies with Google Wire; `internal/domain` holds entities/errors; `internal/application` exposes use cases and port interfaces; and `internal/adapter` implements HTTP/gRPC/Kafka/storage concerns.
 
-Public traffic enters Envoy on port 8080, then KrakenD. KrakenD validates HS256 JWTs on protected endpoints and propagates identity headers. Auth, Problem, and Submission are independently deployable HTTP services. Problem and Judge Worker additionally expose internal gRPC servers. The durable judging path is Kafka-based and uses a submission-side transactional outbox.
+Public traffic enters Envoy on port 8080, then KrakenD. KrakenD validates HS256 JWTs on protected endpoints and propagates identity headers. Auth, Problem, and Submission are independently deployable HTTP services. Auth, Problem and Judge Worker additionally expose internal gRPC servers. The durable judging path is Kafka-based and uses a submission-side transactional outbox.
 
 ## Components
 
@@ -34,6 +34,7 @@ flowchart LR
   gateway --> auth[Auth :8081]
   gateway --> problem[Problem HTTP :8082]
   gateway --> submission[Submission :8083]
+  submission -->|ResolvePublicUser| authgrpc[Auth gRPC :9091]
   submission -->|transactional outbox| jobs[(Kafka jobs)]
   jobs --> worker[Judge Worker]
   worker -->|gRPC GetTestCase| problemgrpc[Problem gRPC :9092]

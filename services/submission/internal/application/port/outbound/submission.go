@@ -24,6 +24,17 @@ type ProfileStatsRepository interface {
 	GetUserProfileStats(ctx context.Context, userID string, activitySince time.Time) (UserProfileStats, error)
 }
 
+// PublicUserResolver confirms that an Auth-owned account is currently allowed
+// to have public Submission-owned statistics served for it.
+type PublicUserResolver interface {
+	ResolvePublicUser(ctx context.Context, username string) (PublicUser, error)
+}
+
+type PublicUser struct {
+	ID       string
+	Username string
+}
+
 type UserProfileStats struct {
 	TotalSubmissions    int64
 	AttemptedProblems   int64

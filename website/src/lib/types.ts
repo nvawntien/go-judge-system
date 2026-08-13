@@ -77,6 +77,24 @@ export interface PublicProfile {
   created_at: string;
 }
 
+export interface PublicUserSearchItem {
+  username: string;
+  full_name: string;
+  avatar_url?: string | null;
+  rating: number;
+}
+
+export interface SearchUsersParams {
+  q: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface SearchUsersResponse {
+  items: PublicUserSearchItem[];
+  pagination: Pagination;
+}
+
 export interface UpdateProfileRequest {
   full_name?: string | null;
   bio?: string | null;

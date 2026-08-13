@@ -7,6 +7,8 @@ import (
 	"go-judge-system/pkg/logger"
 	"go-judge-system/pkg/middleware"
 	minioclient "go-judge-system/pkg/minio"
+	authgrpc "go-judge-system/services/auth/internal/adapter/inbound/grpc"
+	grpchandler "go-judge-system/services/auth/internal/adapter/inbound/grpc/handler"
 	"go-judge-system/services/auth/internal/adapter/inbound/http"
 	"go-judge-system/services/auth/internal/adapter/inbound/http/handler"
 	adminhandler "go-judge-system/services/auth/internal/adapter/inbound/http/handler/admin"
@@ -61,6 +63,8 @@ var UseCaseProviderSet = wire.NewSet(
 
 	userusecase.NewGetMeUseCase,
 	userusecase.NewGetProfileUseCase,
+	userusecase.NewResolvePublicUserUseCase,
+	userusecase.NewSearchPublicUsersUseCase,
 	userusecase.NewUpdateProfileUseCase,
 	userusecase.NewUploadAvatarUseCase,
 
@@ -69,6 +73,9 @@ var UseCaseProviderSet = wire.NewSet(
 )
 
 var InboundProviderSet = wire.NewSet(
+	grpchandler.NewResolvePublicUserHandler,
+	authgrpc.NewPublicUserServer,
+	authgrpc.NewServer,
 	authhandler.NewRegisterHandler,
 	authhandler.NewVerifyEmailHandler,
 	authhandler.NewResendVerificationHandler,
@@ -82,6 +89,7 @@ var InboundProviderSet = wire.NewSet(
 
 	userhandler.NewGetMeHandler,
 	userhandler.NewGetProfileHandler,
+	userhandler.NewSearchPublicUsersHandler,
 	userhandler.NewUpdateProfileHandler,
 	userhandler.NewUploadAvatarHandler,
 

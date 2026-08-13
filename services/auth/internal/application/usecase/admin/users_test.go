@@ -168,6 +168,9 @@ func (r *adminUsersRepository) ListUsers(_ context.Context, filter outbound.List
 	r.filter = filter
 	return r.listResult, r.listErr
 }
+func (r *adminUsersRepository) SearchPublicUsers(context.Context, outbound.SearchPublicUsersFilter) (outbound.SearchPublicUsersResult, error) {
+	return outbound.SearchPublicUsersResult{}, nil
+}
 func (r *adminUsersRepository) UpdateUser(_ context.Context, user *entity.User) error {
 	r.updateCalls++
 	if r.updateErr != nil {
