@@ -23,6 +23,14 @@ type ListMySubmissionsUseCase interface {
 	Execute(ctx context.Context, claims auth.Claims, req dto.ListMySubmissionsRequest) (dto.ListMySubmissionsResponse, error)
 }
 
+type GetMyProfileStatsUseCase interface {
+	Execute(ctx context.Context, claims auth.Claims) (dto.GetMyProfileStatsResponse, error)
+}
+
+type GetPublicProfileStatsUseCase interface {
+	Execute(ctx context.Context, req dto.GetPublicProfileStatsRequest) (dto.GetMyProfileStatsResponse, error)
+}
+
 type IssueSubmissionStreamTicketUseCase interface {
 	Execute(ctx context.Context, claims auth.Claims, req dto.IssueSubmissionStreamTicketRequest) (dto.IssueSubmissionStreamTicketResponse, error)
 }

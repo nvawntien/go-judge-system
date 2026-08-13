@@ -350,8 +350,10 @@ func TestSubmissionRepositoryResultSummariesAggregatesCounts(t *testing.T) {
 	normalized := strings.ToUpper(query)
 	for _, fragment := range []string{
 		"SUBMISSION_ID",
-		"SUM(CASE WHEN STATUS =",
+		"SUM(CASE WHEN SUBMISSION_RESULTS.STATUS =",
 		"COUNT(*) AS TOTAL",
+		"JOIN SUBMISSIONS",
+		"ATTEMPT_ID = SUBMISSIONS.CURRENT_ATTEMPT_ID",
 		"GROUP BY",
 	} {
 		if !strings.Contains(normalized, fragment) {
@@ -367,6 +369,37 @@ func TestSubmissionRepositoryResultSummariesAggregatesCounts(t *testing.T) {
 		!containsDriverValue(queryArgs, int64(123)) ||
 		!containsDriverValue(queryArgs, int64(122)) {
 		t.Fatalf("summary query args = %+v, want accepted status and submission IDs", queryArgs)
+	}
+}
+
+func TestSubmissionRepositoryResultSummariesUsesOnlyCurrentAttempt(t *testing.T) {
+	var query string
+	db := newRepositoryReadGormDB(t, func(
+		_ context.Context,
+		actualQuery string,
+		_ []driver.NamedValue,
+	) (driver.Rows, error) {
+		query = actualQuery
+		// The current attempt has four accepted results. Historical attempt rows
+		// are intentionally absent from this grouped result.
+		return &repositoryReadRows{
+			columns: []string{"submission_id", "passed", "total"},
+			values:  [][]driver.Value{{int64(77), int64(4), int64(4)}},
+		}, nil
+	})
+
+	got, err := (&submissionRepository{db: db}).ResultSummaries(context.Background(), []int64{77})
+	if err != nil {
+		t.Fatalf("ResultSummaries() error = %v", err)
+	}
+	if got[77] != (outbound.SubmissionResultSummary{SubmissionID: 77, Passed: 4, Total: 4}) {
+		t.Fatalf("summary = %+v, want current attempt 4/4", got[77])
+	}
+
+	normalized := strings.ToUpper(query)
+	if !strings.Contains(normalized, "JOIN SUBMISSIONS") ||
+		!strings.Contains(normalized, "SUBMISSION_RESULTS.ATTEMPT_ID = SUBMISSIONS.CURRENT_ATTEMPT_ID") {
+		t.Fatalf("summary query is not scoped to the current attempt: %s", query)
 	}
 }
 

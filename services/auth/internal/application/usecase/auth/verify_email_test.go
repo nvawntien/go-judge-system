@@ -115,6 +115,17 @@ func (r *verifyTokenRepository) FindByToken(ctx context.Context, hashedToken str
 	return identifier, nil
 }
 
+func (r *verifyTokenRepository) Consume(ctx context.Context, hashedToken string) (string, error) {
+	identifier, err := r.FindByToken(ctx, hashedToken)
+	if err != nil {
+		return "", err
+	}
+	if err := r.Delete(ctx, hashedToken); err != nil {
+		return "", err
+	}
+	return identifier, nil
+}
+
 func (r *verifyTokenRepository) Delete(ctx context.Context, hashedToken string) error {
 	r.deleteCalled = true
 	delete(r.tokens, hashedToken)
@@ -165,6 +176,9 @@ func (r *verifyUserRepository) GetUserById(ctx context.Context, id string) (*ent
 func (r *verifyUserRepository) ListUsers(context.Context, outbound.ListUsersFilter) (outbound.ListUsersResult, error) {
 	return outbound.ListUsersResult{}, nil
 }
+func (r *verifyUserRepository) SearchPublicUsers(context.Context, outbound.SearchPublicUsersFilter) (outbound.SearchPublicUsersResult, error) {
+	return outbound.SearchPublicUsersResult{}, nil
+}
 
 func (r *verifyUserRepository) UpdateUser(ctx context.Context, user *entity.User) error {
 	if r.updateErr != nil {
@@ -172,6 +186,18 @@ func (r *verifyUserRepository) UpdateUser(ctx context.Context, user *entity.User
 	}
 	r.updateCalled = true
 	r.users[user.ID] = user
+	return nil
+}
+
+func (r *verifyUserRepository) UpdatePassword(context.Context, string, string, time.Time) error {
+	return nil
+}
+
+func (r *verifyUserRepository) UpdateProfile(context.Context, string, outbound.ProfileUpdates) error {
+	return nil
+}
+
+func (r *verifyUserRepository) UpdateAvatar(context.Context, string, string, string, time.Time) error {
 	return nil
 }
 

@@ -48,6 +48,8 @@ func (r *Router) SetupRoutes() {
 	v1.POST("/submissions/:submission_id/events/ticket", r.authMiddleware, r.userHandler.IssueStreamTicket.Handle)
 	v1.GET("/submissions/:submission_id", r.authMiddleware, r.userHandler.GetSubmission.Handle)
 	v1.GET("/me/submissions", r.authMiddleware, r.userHandler.ListMySubmissions.Handle)
+	v1.GET("/me/profile-stats", r.authMiddleware, r.userHandler.GetMyProfileStats.Handle)
+	v1.GET("/users/:username/profile-stats", r.userHandler.GetPublicProfileStats.Handle)
 	v1.GET("/admin/submissions", r.authMiddleware, r.adminHandler.ListSubmissions.Handle)
 	v1.GET("/admin/submissions/:submission_id", r.authMiddleware, r.adminHandler.GetSubmissionDetail.Handle)
 	if r.adminHandler.RejudgeSubmission != nil {

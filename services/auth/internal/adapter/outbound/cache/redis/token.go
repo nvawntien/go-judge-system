@@ -2,6 +2,7 @@ package redis
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"go-judge-system/services/auth/internal/application/port/outbound"
@@ -70,34 +71,89 @@ func (r *tokenRepository) FindByToken(ctx context.Context, hashedToken string) (
 	return identifier, nil
 }
 
+func (r *tokenRepository) Consume(ctx context.Context, hashedToken string) (string, error) {
+	tokenKey := verificationTokenKey(hashedToken)
+
+	// Resolve the user-specific latest-token key before watching both keys. The
+	// transaction rechecks every value after WATCH, so a concurrent consume,
+	// expiry, or newer token makes this reset token invalid instead of reusable.
+	identifier, err := r.rdb.Get(ctx, tokenKey).Result()
+	if err == redis.Nil {
+		return "", domain.ErrInvalidOrExpiredToken
+	}
+	if err != nil {
+		return "", err
+	}
+
+	latestKey := latestVerificationTokenKey(identifier)
+	err = r.rdb.Watch(ctx, func(tx *redis.Tx) error {
+		currentIdentifier, err := tx.Get(ctx, tokenKey).Result()
+		if err == redis.Nil {
+			return domain.ErrInvalidOrExpiredToken
+		}
+		if err != nil {
+			return err
+		}
+		if currentIdentifier != identifier {
+			return domain.ErrInvalidOrExpiredToken
+		}
+
+		latestHashedToken, err := tx.Get(ctx, latestKey).Result()
+		if err == redis.Nil {
+			return domain.ErrInvalidOrExpiredToken
+		}
+		if err != nil {
+			return err
+		}
+		if latestHashedToken != hashedToken {
+			return domain.ErrInvalidOrExpiredToken
+		}
+
+		_, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+			pipe.Del(ctx, tokenKey)
+			pipe.Del(ctx, latestKey)
+			return nil
+		})
+		return err
+	}, tokenKey, latestKey)
+	if errors.Is(err, redis.TxFailedErr) {
+		return "", domain.ErrInvalidOrExpiredToken
+	}
+	if err != nil {
+		return "", err
+	}
+
+	return identifier, nil
+}
+
 func (r *tokenRepository) Delete(ctx context.Context, hashedToken string) error {
-    tokenKey := verificationTokenKey(hashedToken)
+	tokenKey := verificationTokenKey(hashedToken)
 
-    identifier, err := r.rdb.Get(ctx, tokenKey).Result()
-    if err == redis.Nil {
-        return nil
-    }
-    if err != nil {
-        return err
-    }
+	identifier, err := r.rdb.Get(ctx, tokenKey).Result()
+	if err == redis.Nil {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
 
-    latestKey := latestVerificationTokenKey(identifier)
+	latestKey := latestVerificationTokenKey(identifier)
 
-    latestHashedToken, err := r.rdb.Get(ctx, latestKey).Result()
-    if err != nil && err != redis.Nil {
-        return err
-    }
+	latestHashedToken, err := r.rdb.Get(ctx, latestKey).Result()
+	if err != nil && err != redis.Nil {
+		return err
+	}
 
-    _, err = r.rdb.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
-        pipe.Del(ctx, tokenKey)
-        
-        if latestHashedToken == hashedToken {
-            pipe.Del(ctx, latestKey)
-        }
-        return nil
-    })
+	_, err = r.rdb.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+		pipe.Del(ctx, tokenKey)
 
-    return err
+		if latestHashedToken == hashedToken {
+			pipe.Del(ctx, latestKey)
+		}
+		return nil
+	})
+
+	return err
 }
 
 func (r *tokenRepository) TryAcquireResendCooldown(ctx context.Context, identifier string, ttl time.Duration) (bool, error) {

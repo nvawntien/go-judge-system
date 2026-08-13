@@ -140,6 +140,7 @@ export const STATUS_FILTERS: { value: SubmissionStatus | ''; label: string }[] =
   { value: 'OUTPUT_LIMIT_EXCEEDED', label: 'Output Limit Exceeded' },
   { value: 'RUNTIME_ERROR', label: 'Runtime Error' },
   { value: 'COMPILATION_ERROR', label: 'Compilation Error' },
+  { value: 'SYSTEM_ERROR', label: 'System Error' },
   { value: 'PENDING', label: 'Queued' },
   { value: 'JUDGING', label: 'Judging' },
 ];
@@ -301,18 +302,6 @@ export function formatTestcaseCount(
 ): string {
   if (passed === null || passed === undefined || total === null || total === undefined) return '—';
   return `${passed}/${total}`;
-}
-
-/** Rating tiers used for the badge next to a username. */
-export function ratingTier(rating: number): string {
-  if (rating >= 2600) return 'Legend';
-  if (rating >= 2400) return 'Grandmaster';
-  if (rating >= 2100) return 'Master';
-  if (rating >= 1900) return 'Candidate Master';
-  if (rating >= 1600) return 'Expert';
-  if (rating >= 1400) return 'Specialist';
-  if (rating >= 1200) return 'Apprentice';
-  return 'Newbie';
 }
 
 export function greeting(date = new Date()): string {

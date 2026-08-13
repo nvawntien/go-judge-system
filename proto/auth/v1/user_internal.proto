@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package auth.v1;
+
+option go_package = "go-judge-system/pkg/pb/auth/v1;authv1";
+
+// PublicUserService exposes the minimum identity check needed by other
+// services to safely serve public, user-owned data.
+service PublicUserService {
+  rpc ResolvePublicUser(ResolvePublicUserRequest) returns (ResolvePublicUserResponse);
+}
+
+message ResolvePublicUserRequest {
+  string username = 1;
+}
+
+message ResolvePublicUserResponse {
+  string user_id = 1;
+  string username = 2;
+}

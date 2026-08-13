@@ -540,7 +540,7 @@ function ProblemSubmissions({
       })
       .catch((err) => {
         if (controller.signal.aborted) return;
-        if (err instanceof NetworkError) setFailed('Cannot reach the API gateway.');
+        if (err instanceof NetworkError) setFailed('AstraCode is temporarily unreachable. Check your connection and try again.');
         else if (err instanceof ApiError) setFailed(err.message || 'Submission history request failed.');
         else setFailed('Submission history request failed.');
       });
@@ -766,7 +766,7 @@ function SubmissionDetailPanel({
         }
       } catch (err) {
         if (controller.signal.aborted) return;
-        if (err instanceof NetworkError) setFailed('Cannot reach the API gateway.');
+        if (err instanceof NetworkError) setFailed('AstraCode is temporarily unreachable. Check your connection and try again.');
         else if (err instanceof ApiError) setFailed(err.message || 'Submission detail request failed.');
         else setFailed('Submission detail request failed.');
       } finally {

@@ -17,6 +17,49 @@ type SubmissionRepository interface {
 	ResultSummaries(ctx context.Context, submissionIDs []int64) (map[int64]SubmissionResultSummary, error)
 }
 
+// ProfileStatsRepository reads bounded, submission-owned aggregates for one
+// authenticated user's profile. It deliberately aggregates the mutable current
+// submission state rather than historical attempt/result rows.
+type ProfileStatsRepository interface {
+	GetUserProfileStats(ctx context.Context, userID string, activitySince time.Time) (UserProfileStats, error)
+}
+
+// PublicUserResolver confirms that an Auth-owned account is currently allowed
+// to have public Submission-owned statistics served for it.
+type PublicUserResolver interface {
+	ResolvePublicUser(ctx context.Context, username string) (PublicUser, error)
+}
+
+type PublicUser struct {
+	ID       string
+	Username string
+}
+
+type UserProfileStats struct {
+	TotalSubmissions    int64
+	AttemptedProblems   int64
+	AcceptedSubmissions int64
+	SolvedProblems      int64
+	Verdicts            []ProfileStatsVerdict
+	Languages           []ProfileStatsLanguage
+	Activity            []ProfileStatsActivity
+}
+
+type ProfileStatsVerdict struct {
+	Verdict string
+	Count   int64
+}
+
+type ProfileStatsLanguage struct {
+	Language string
+	Count    int64
+}
+
+type ProfileStatsActivity struct {
+	Date  string
+	Count int64
+}
+
 type SubmissionAttemptRepository interface {
 	Create(ctx context.Context, attempt *entity.SubmissionAttempt) error
 	GetByAttemptID(ctx context.Context, attemptID string) (*entity.SubmissionAttempt, error)

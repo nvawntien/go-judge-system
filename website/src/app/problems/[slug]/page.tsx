@@ -92,8 +92,8 @@ export default function WorkspacePage() {
         } else {
           setLoadError(
             err instanceof NetworkError
-              ? 'Cannot reach the API gateway'
-              : `GET /api/v1/problems/${slug} failed`,
+              ? 'AstraCode is temporarily unreachable. Check your connection and try again.'
+              : 'This problem could not be loaded.',
           );
           setLoadState('error');
         }
@@ -385,20 +385,20 @@ export default function WorkspacePage() {
       setConsoleLines(buildRunConsoleLines(result));
     } catch (err) {
       if (err instanceof ApiError && err.isUnimplemented) {
-        showToast('The judge has no custom-run endpoint yet — use Submit', 'error');
+        showToast('Custom runs are unavailable right now — use Submit', 'error');
         setConsoleLines([
           {
             text: `POST ${process.env.NEXT_PUBLIC_RUN_ENDPOINT ?? '/api/v1/submissions/run'} → ${err.httpStatus}`,
             color: 'var(--text3)',
           },
           {
-            text: 'Custom-test execution is not exposed by the gateway yet. Submit runs the full judge.',
+            text: 'Custom tests are unavailable right now. Submit runs the official test suite.',
             color: 'var(--warn)',
           },
         ]);
         setBottomTab('console');
       } else if (err instanceof NetworkError) {
-        showToast('Cannot reach the API gateway', 'error');
+        showToast('AstraCode is temporarily unreachable. Check your connection and try again.', 'error');
       } else if (err instanceof ApiError) {
         showToast(err.message || 'Run failed', 'error');
       }
@@ -466,7 +466,7 @@ export default function WorkspacePage() {
         setActiveSubmissionId(null);
         setDetailFetchError(
           err instanceof NetworkError
-            ? 'Verdict received, but the detail request could not reach the API gateway.'
+            ? 'Verdict received, but submission details could not be loaded. Check your connection and try again.'
             : err instanceof ApiError
               ? err.message || 'Verdict received, but submission detail could not be loaded.'
               : 'Verdict received, but submission detail could not be loaded.',
@@ -494,7 +494,7 @@ export default function WorkspacePage() {
       }
     } catch (err) {
       if (err instanceof NetworkError) {
-        setDetailFetchError('Cannot reach the API gateway.');
+        setDetailFetchError('AstraCode is temporarily unreachable. Check your connection and try again.');
       } else if (err instanceof ApiError) {
         setDetailFetchError(err.message || 'Could not read the submission.');
       } else {
@@ -583,7 +583,7 @@ export default function WorkspacePage() {
     } catch (err) {
       setSubmitting(false);
       if (err instanceof NetworkError) {
-        showToast('Cannot reach the API gateway', 'error');
+        showToast('AstraCode is temporarily unreachable. Check your connection and try again.', 'error');
       } else if (err instanceof ApiError) {
         showToast(err.message || 'Submission rejected', 'error');
       } else {

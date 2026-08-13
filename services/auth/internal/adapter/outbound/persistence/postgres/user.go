@@ -134,6 +134,32 @@ func (r *userRepository) ListUsers(ctx context.Context, filter outbound.ListUser
 	return outbound.ListUsersResult{Items: items, Total: total}, nil
 }
 
+// SearchPublicUsers searches only profile-visible accounts and identity fields.
+// Keep this separate from ListUsers: admin search intentionally includes email
+// and account-state filters that must never become public discovery behavior.
+func (r *userRepository) SearchPublicUsers(ctx context.Context, filter outbound.SearchPublicUsersFilter) (outbound.SearchPublicUsersResult, error) {
+	pattern := "%" + escapeLikePattern(strings.TrimSpace(filter.Query)) + "%"
+	query := r.db.WithContext(ctx).Model(&UserDAO{}).
+		Where("is_active = ? AND is_suspended = ?", true, false).
+		Where("(username ILIKE ? ESCAPE '\\' OR full_name ILIKE ? ESCAPE '\\')", pattern, pattern)
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return outbound.SearchPublicUsersResult{}, err
+	}
+
+	var daos []UserDAO
+	if err := query.Order("username ASC").Order("id ASC").Offset(filter.Offset).Limit(filter.Limit).Find(&daos).Error; err != nil {
+		return outbound.SearchPublicUsersResult{}, err
+	}
+
+	items := make([]*entity.User, 0, len(daos))
+	for i := range daos {
+		items = append(items, toUserEntity(&daos[i]))
+	}
+	return outbound.SearchPublicUsersResult{Items: items, Total: total}, nil
+}
+
 func (r *userRepository) UpdateUser(ctx context.Context, user *entity.User) error {
 	return r.db.WithContext(ctx).Model(&UserDAO{}).
 		Where("id = ?", user.ID).
@@ -156,6 +182,55 @@ func (r *userRepository) UpdateUser(ctx context.Context, user *entity.User) erro
 			"website_url":       user.WebsiteURL,
 			"linkedin_url":      user.LinkedinURL,
 			"updated_at":        user.UpdatedAt,
+		}).Error
+}
+
+func (r *userRepository) UpdatePassword(ctx context.Context, userID string, passwordHash string, updatedAt time.Time) error {
+	return r.db.WithContext(ctx).Model(&UserDAO{}).
+		Where("id = ?", userID).
+		Updates(map[string]interface{}{
+			"password":   passwordHash,
+			"updated_at": updatedAt,
+		}).Error
+}
+
+func (r *userRepository) UpdateProfile(ctx context.Context, userID string, updates outbound.ProfileUpdates) error {
+	values := map[string]interface{}{"updated_at": updates.UpdatedAt}
+	if updates.FullName != nil {
+		values["full_name"] = *updates.FullName
+	}
+	if updates.Bio != nil {
+		values["bio"] = updates.Bio
+	}
+	if updates.Country != nil {
+		values["country"] = updates.Country
+	}
+	if updates.School != nil {
+		values["school"] = updates.School
+	}
+	if updates.Company != nil {
+		values["company"] = updates.Company
+	}
+	if updates.GithubURL != nil {
+		values["github_url"] = updates.GithubURL
+	}
+	if updates.WebsiteURL != nil {
+		values["website_url"] = updates.WebsiteURL
+	}
+	if updates.LinkedinURL != nil {
+		values["linkedin_url"] = updates.LinkedinURL
+	}
+
+	return r.db.WithContext(ctx).Model(&UserDAO{}).Where("id = ?", userID).Updates(values).Error
+}
+
+func (r *userRepository) UpdateAvatar(ctx context.Context, userID string, avatarURL string, avatarObjectKey string, updatedAt time.Time) error {
+	return r.db.WithContext(ctx).Model(&UserDAO{}).
+		Where("id = ?", userID).
+		Updates(map[string]interface{}{
+			"avatar_url":        avatarURL,
+			"avatar_object_key": avatarObjectKey,
+			"updated_at":        updatedAt,
 		}).Error
 }
 

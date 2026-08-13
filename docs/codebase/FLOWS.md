@@ -38,9 +38,21 @@ Code trace:
 
 `POST /api/v1/submissions/run` is synchronous. The user handler calls `application/usecase/user/run_code.go`, which validates source/testcase/limit caps from `submission/config/config.yaml`. The Submission gRPC runner calls Judge Worker's `JudgeService.RunCode`; worker gRPC adapter/handler executes through the same go-judge client and returns diagnostic/test outputs. It does not enter Kafka or persist an official submission.
 
+## Self profile statistics
+
+`GET /api/v1/me/profile-stats` follows gateway-derived authenticated claims to a Submission-only use case. It issues a fixed set of PostgreSQL aggregate/group queries over the caller's `submissions` rows for totals, distinct attempted problems, current terminal verdicts, languages, and the last 365 UTC submission days. It has no Auth/Problem dependency and does not load paginated submission history into the application.
+
+## Public competitive profile statistics
+
+`GET /api/v1/users/:username/profile-stats` is public at the gateway but is owned by Submission. Its use case first calls Auth's internal `PublicUserService.ResolvePublicUser(username)`, which is the source of truth for a stable ID and active/non-suspended public visibility. Only then does Submission execute the same bounded aggregate queries against `submission_db` using that ID. It returns totals, current-status verdict/language distributions and the 365-day UTC activity series only—never individual submissions, source code, testcases, ranking or rating. Auth `NotFound` is mapped to the same public-profile not-found response for missing, inactive and suspended accounts; an Auth timeout/unavailable error becomes 503. A suspension immediately after resolve can race with the read, so visibility is rechecked on the next request rather than cached.
+
+## Public user discovery
+
+`GET /api/v1/users/search?q=...` is a public gateway route to Auth. The Auth use case trims and bounds the query, and its PostgreSQL repository applies a parameterized case-insensitive username/full-name match with literal LIKE wildcard escaping. The database query restricts results and pagination totals to `is_active = true AND is_suspended = false`, matching public-profile visibility. It returns only public identity preview fields for browser navigation to `/u/{username}`; no Submission dependency or public judging statistics are involved.
+
 ## Authentication and revocation
 
-Auth handlers call use cases in `services/auth/internal/application/usecase/auth/`. Registration creates an inactive user, sends mail through SMTP and verification activates it. Login and refresh both load the current user and reject inactive or suspended accounts before issuing tokens. Logout-all records an issued-at threshold in Redis. An admin suspension writes the same threshold before its user update, which immediately rejects access tokens issued at or before that moment in protected-service middleware; unsuspension leaves the threshold in place and therefore requires a new login. Protected gateway routes validate the cookie JWT and propagate identity headers; each receiving service's `pkg/middleware/auth.go` checks the Redis threshold and installs typed claims in Gin context. Role checks follow with `pkg/middleware/role.go`.
+Auth handlers call use cases in `services/auth/internal/application/usecase/auth/`. Registration creates an inactive user, sends mail through SMTP and verification activates it. Login and refresh both load the current user and reject inactive or suspended accounts before issuing tokens. Logout-all records an issued-at threshold in Redis. An admin suspension, authenticated password change, and successful password reset write the same threshold before their database mutation, which immediately rejects access tokens issued at or before that moment in protected-service middleware; password persistence failure therefore returns an error while keeping old sessions invalidated. Password reset atomically consumes its one-time Redis token before this invalidation step, so any later failure requires the user to request a new reset token rather than allowing replay. Unsuspension leaves the threshold in place and therefore requires a new login. Protected gateway routes validate the cookie JWT and propagate identity headers; each receiving service's `pkg/middleware/auth.go` checks the Redis threshold and installs typed claims in Gin context. Role checks follow with `pkg/middleware/role.go`.
 
 ## Testcase upload and worker delivery
 

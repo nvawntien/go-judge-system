@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"go-judge-system/pkg/config"
+	authgrpc "go-judge-system/services/auth/internal/adapter/inbound/grpc"
 	"go-judge-system/services/auth/internal/adapter/inbound/http"
 
 	"go.uber.org/zap"
@@ -19,25 +20,33 @@ import (
 type App struct {
 	Config *config.Config
 	Router *http.Router
+	GRPC   *authgrpc.Server
 	Logger *zap.Logger
 }
 
-func NewApp(cfg *config.Config, router *http.Router, logger *zap.Logger) *App {
+func NewApp(cfg *config.Config, router *http.Router, grpcServer *authgrpc.Server, logger *zap.Logger) *App {
 	return &App{
 		Config: cfg,
 		Router: router,
+		GRPC:   grpcServer,
 		Logger: logger,
 	}
 }
 
 func (a *App) Run() error {
 	a.Router.SetupRoutes()
-	port := fmt.Sprintf("%d", a.Config.Server.Port)
-	a.Logger.Info("Starting Auth Service", zap.String("port", port))
+	httpPort := fmt.Sprintf("%d", a.Config.Server.Port)
+	grpcPort := fmt.Sprintf("%d", a.Config.Server.GRPCPort)
 
-	serverErrCh := make(chan error, 1)
+	httpErrCh := make(chan error, 1)
+	grpcErrCh := make(chan error, 1)
 	go func() {
-		serverErrCh <- a.Router.Start(port)
+		a.Logger.Info("Starting Auth Service HTTP server", zap.String("port", httpPort))
+		httpErrCh <- a.Router.Start(httpPort)
+	}()
+	go func() {
+		a.Logger.Info("Starting Auth Service gRPC server", zap.String("port", grpcPort))
+		grpcErrCh <- a.GRPC.Start()
 	}()
 
 	signalCh := make(chan os.Signal, 1)
@@ -45,11 +54,18 @@ func (a *App) Run() error {
 	defer signal.Stop(signalCh)
 
 	select {
-	case err := <-serverErrCh:
+	case err := <-httpErrCh:
+		a.GRPC.Stop()
+		grpcErr := <-grpcErrCh
 		if err != nil && !errors.Is(err, nethttp.ErrServerClosed) {
-			return err
+			return errors.Join(fmt.Errorf("start HTTP server: %w", err), grpcErr)
 		}
-		return nil
+		return grpcErr
+	case err := <-grpcErrCh:
+		if err == nil {
+			err = errors.New("gRPC server stopped")
+		}
+		return errors.Join(fmt.Errorf("start gRPC server: %w", err), a.shutdownHTTP(httpErrCh))
 	case sig := <-signalCh:
 		a.Logger.Info("shutdown signal received", zap.String("signal", sig.String()))
 	}
@@ -57,14 +73,29 @@ func (a *App) Run() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	if err := a.Router.Shutdown(ctx); err != nil {
-		return err
-	}
+	a.GRPC.Stop()
+	return errors.Join(a.Router.Shutdown(ctx), a.waitForHTTP(httpErrCh), a.waitForGRPC(grpcErrCh))
+}
 
-	err := <-serverErrCh
+func (a *App) shutdownHTTP(httpErrCh <-chan error) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	a.GRPC.Stop()
+	return errors.Join(a.Router.Shutdown(ctx), a.waitForHTTP(httpErrCh))
+}
+
+func (a *App) waitForHTTP(httpErrCh <-chan error) error {
+	err := <-httpErrCh
 	if err != nil && !errors.Is(err, nethttp.ErrServerClosed) {
-		return err
+		return fmt.Errorf("stop HTTP server: %w", err)
 	}
+	return nil
+}
 
+func (a *App) waitForGRPC(grpcErrCh <-chan error) error {
+	err := <-grpcErrCh
+	if err != nil {
+		return fmt.Errorf("stop gRPC server: %w", err)
+	}
 	return nil
 }

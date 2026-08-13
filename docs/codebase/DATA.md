@@ -18,7 +18,8 @@ Problem persistence stores examples, constraints and hints as PostgreSQL JSONB. 
 
 * Problem create/update wraps the problem write and `problem_tags` synchronization in a GORM transaction (`problem.go`).
 * Submission creation/rejudge use the transaction manager that injects a GORM transaction into context. The submission/attempt/outbox writes are intended to commit together (`tx_manager.go`, relevant use cases).
-* Result application uses transaction-backed repositories to update the terminal submission/attempt and replace matching attempt result rows (`apply_judge_result.go`, `submission_result.go`).
+* Result application uses transaction-backed repositories to update the terminal submission/attempt and replace matching attempt result rows (`apply_judge_result.go`, `submission_result.go`). Read-side submission summaries join result rows to `submissions.current_attempt_id`, so historical rows do not affect current passed/total counts.
+* Self and public profile stats aggregate Submission-owned rows scoped by `user_id`; `attempted_problems` is distinct submitted `problem_id` values regardless of status, while solved counts use current `submissions.status`. They do not aggregate historical `submission_attempts` or `submission_results`. The activity response is bounded to the most recent 365 UTC submission dates. For a public request, Auth resolves the public username to that ID over gRPC first; Submission never reads `auth_db`.
 * The outbox relay is intentionally outside the creation transaction: it polls committed pending records, Kafka-publishes, then marks publication/failure (`outbox/relay.go`).
 
 ## Redis

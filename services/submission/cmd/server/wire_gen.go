@@ -19,6 +19,7 @@ import (
 	admin2 "go-judge-system/services/submission/internal/adapter/inbound/http/handler/admin"
 	user2 "go-judge-system/services/submission/internal/adapter/inbound/http/handler/user"
 	kafka2 "go-judge-system/services/submission/internal/adapter/inbound/kafka"
+	auth2 "go-judge-system/services/submission/internal/adapter/outbound/auth"
 	"go-judge-system/services/submission/internal/adapter/outbound/id"
 	"go-judge-system/services/submission/internal/adapter/outbound/judge"
 	"go-judge-system/services/submission/internal/adapter/outbound/outbox"
@@ -40,6 +41,18 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 		return nil, err
 	}
 	submissionRepository := postgres.NewSubmissionRepository(db)
+	profileStatsRepository := postgres.NewProfileStatsRepository(db)
+	authGRPCConfig, err := container.ProvideAuthGRPCConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
+	authClientConn, err := container.ProvideAuthClientConn(authGRPCConfig)
+	if err != nil {
+		return nil, err
+	}
+	publicUserServiceClient := container.ProvidePublicUserServiceClient(authClientConn)
+	duration2 := container.ProvideAuthGRPCTimeout(authGRPCConfig)
+	grpcPublicUserResolver := auth2.NewGRPCPublicUserResolver(publicUserServiceClient, duration2)
 	submissionResultRepository := postgres.NewSubmissionResultRepository(db)
 	submissionAttemptRepository := postgres.NewSubmissionAttemptRepository(db)
 	transactionManager := postgres.NewTransactionManager(db)
@@ -76,7 +89,11 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	getSubmissionUseCase := user.NewGetSubmissionUseCase(submissionRepository)
 	getSubmissionHandler := user2.NewGetSubmissionHandler(getSubmissionUseCase)
 	listMySubmissionsUseCase := user.NewListMySubmissionsUseCase(submissionRepository)
+	getMyProfileStatsUseCase := user.NewGetMyProfileStatsUseCase(profileStatsRepository)
+	getPublicProfileStatsUseCase := user.NewGetPublicProfileStatsUseCase(grpcPublicUserResolver, profileStatsRepository)
 	listMySubmissionsHandler := user2.NewListMySubmissionsHandler(listMySubmissionsUseCase)
+	getMyProfileStatsHandler := user2.NewGetMyProfileStatsHandler(getMyProfileStatsUseCase)
+	getPublicProfileStatsHandler := user2.NewGetPublicProfileStatsHandler(getPublicProfileStatsUseCase)
 	submissionStreamSnapshotRepository := postgres.NewSubmissionStreamSnapshotRepository(db)
 	sseConfig, err := container.ProvideSSEConfig(cfg)
 	if err != nil {
@@ -91,7 +108,7 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	string2 := provideServerMode(serverConfig)
 	zapLogger := logger.NewLogger(loggerConfig, string2)
 	submissionEventsHandler := user2.NewSubmissionEventsHandler(submissionStreamSnapshotRepository, submissionStreamTicketService, submissionEventHub, sseConfig, zapLogger)
-	userHandler := handler.NewUserHandler(createSubmissionHandler, runCodeHandler, getSubmissionHandler, listMySubmissionsHandler, issueSubmissionStreamTicketHandler, submissionEventsHandler)
+	userHandler := handler.NewUserHandler(createSubmissionHandler, runCodeHandler, getSubmissionHandler, listMySubmissionsHandler, getMyProfileStatsHandler, getPublicProfileStatsHandler, issueSubmissionStreamTicketHandler, submissionEventsHandler)
 	listAdminSubmissionsUseCase := admin.NewListAdminSubmissionsUseCase(submissionRepository)
 	listSubmissionsHandler := admin2.NewListSubmissionsHandler(listAdminSubmissionsUseCase)
 	getAdminSubmissionDetailUseCase := admin.NewGetAdminSubmissionDetailUseCase(submissionRepository, submissionResultRepository, submissionAttemptRepository)
@@ -120,7 +137,7 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	applyJudgeResultUseCase := result.NewApplyJudgeResultUseCase(submissionRepository, submissionResultRepository, transactionManager, submissionEventHub, zapLogger, submissionAttemptRepository)
 	dltPublisher := kafka2.NewDLTPublisher(syncProducer, kafkaConfig, zapLogger)
 	judgeResultConsumer := kafka2.NewJudgeResultConsumer(consumerGroup, kafkaConfig, applyJudgeResultUseCase, dltPublisher, zapLogger)
-	app := container.NewApp(cfg, db, router, outboxRelay, judgeResultConsumer, zapLogger, syncProducer, consumerGroup, clientConn, judgeClientConn)
+	app := container.NewApp(cfg, db, router, outboxRelay, judgeResultConsumer, zapLogger, syncProducer, consumerGroup, clientConn, authClientConn, judgeClientConn)
 	return app, nil
 }
 

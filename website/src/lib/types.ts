@@ -77,9 +77,26 @@ export interface PublicProfile {
   created_at: string;
 }
 
+export interface PublicUserSearchItem {
+  username: string;
+  full_name: string;
+  avatar_url?: string | null;
+  rating: number;
+}
+
+export interface SearchUsersParams {
+  q: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface SearchUsersResponse {
+  items: PublicUserSearchItem[];
+  pagination: Pagination;
+}
+
 export interface UpdateProfileRequest {
   full_name?: string | null;
-  avatar_url?: string | null;
   bio?: string | null;
   country?: string | null;
   school?: string | null;
@@ -428,6 +445,34 @@ export interface Pagination {
 export interface ListSubmissionsResponse {
   items: SubmissionListItem[];
   pagination: Pagination;
+}
+
+/** Authoritative aggregates returned by Submission for the signed-in user. */
+export interface MyProfileStats {
+  total_submissions: number;
+  attempted_problems: number;
+  accepted_submissions: number;
+  solved_problems: number;
+  acceptance_rate: number;
+  verdict_distribution: ProfileStatsVerdict[];
+  language_distribution: ProfileStatsLanguage[];
+  activity: ProfileStatsActivity[];
+}
+
+export interface ProfileStatsVerdict {
+  verdict: string;
+  count: number;
+}
+
+export interface ProfileStatsLanguage {
+  language: string;
+  count: number;
+}
+
+export interface ProfileStatsActivity {
+  /** UTC calendar date in YYYY-MM-DD format. */
+  date: string;
+  count: number;
 }
 
 export interface ListSubmissionsParams {

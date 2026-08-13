@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { AppShell, PageHeading } from '@/components/AppShell';
 import { useAuth } from '@/components/AuthProvider';
+import { SubmissionDetail } from '@/components/submission/SubmissionDetail';
 import { EmptyState, ErrorState, Icon, SkeletonBar } from '@/components/ui';
 import { ApiError, NetworkError, submissionApi } from '@/lib/api';
 import {
@@ -19,7 +20,6 @@ import {
 import { useViewportWidth } from '@/lib/hooks';
 import type {
   LanguageCode,
-  Submission,
   SubmissionListItem,
   SubmissionStatus,
 } from '@/lib/types';
@@ -66,10 +66,10 @@ export default function SubmissionsPage() {
         if (controller.signal.aborted) return;
         setError(
           err instanceof NetworkError
-            ? 'Cannot reach the API gateway'
+            ? 'AstraCode is temporarily unreachable. Check your connection and try again.'
             : err instanceof ApiError
-              ? `GET /api/v1/me/submissions — ${err.httpStatus} ${err.message}`
-              : 'Unexpected error',
+              ? err.message || 'Could not load your submissions.'
+              : 'Could not load your submissions.',
         );
         setItems([]);
       })
@@ -98,7 +98,7 @@ export default function SubmissionsPage() {
     <AppShell maxWidth={1100}>
       <PageHeading
         title="Submissions"
-        subtitle="Your recent judge activity"
+        subtitle="Review your submission history"
         actions={
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <select
@@ -138,27 +138,15 @@ export default function SubmissionsPage() {
 
       <section
         aria-label="Submission history"
-        style={{
-          background: 'var(--surface)',
-          border: '1px solid var(--border)',
-          borderRadius: 14,
-          boxShadow: 'var(--shadow)',
-          overflow: 'hidden',
-        }}
+        className="ac-data-frame"
       >
         <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '12px 18px',
-            borderBottom: '1px solid var(--border)',
-          }}
+          className="ac-toolbar"
+          style={{ justifyContent: 'space-between' }}
         >
           <span style={{ fontSize: 12, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>
             {loading ? 'loading…' : `${total} submission${total === 1 ? '' : 's'}`}
           </span>
-          <span style={{ fontSize: 11.5, color: 'var(--text3)' }}>Click a row for details</span>
         </div>
 
         {loading && (
@@ -215,30 +203,26 @@ export default function SubmissionsPage() {
             <div style={{ minWidth: isMobile ? undefined : 860 }}>
               {!isMobile && (
                 <div
-                  role="row"
+                  aria-hidden="true"
+                  className="ac-table-head"
                   style={{
                     display: 'grid',
                     gridTemplateColumns: GRID,
                     gap: 12,
                     alignItems: 'center',
                     padding: '9px 18px',
-                    fontSize: 11,
-                    fontWeight: 650,
-                    letterSpacing: '.06em',
-                    textTransform: 'uppercase',
-                    color: 'var(--text3)',
                   }}
                 >
-                  <span role="columnheader">Problem</span>
-                  <span role="columnheader">Result</span>
-                  <span role="columnheader">Language</span>
-                  <span role="columnheader" style={{ textAlign: 'right' }}>
+                  <span>Problem</span>
+                  <span>Result</span>
+                  <span>Language</span>
+                  <span style={{ textAlign: 'right' }}>
                     Submission
                   </span>
-                  <span role="columnheader" style={{ textAlign: 'right' }}>
+                  <span style={{ textAlign: 'right' }}>
                     Submitted
                   </span>
-                  <span role="columnheader" aria-label="Details" />
+                  <span />
                 </div>
               )}
 
@@ -248,12 +232,9 @@ export default function SubmissionsPage() {
                   const open = expanded === item.id;
 
                   return (
-                    <div key={item.id} style={{ borderTop: '1px solid var(--border)' }}>
-                      <button
-                        type="button"
-                        onClick={() => toggle(item.id)}
-                        aria-expanded={open}
-                        className="ac-hover-surface2"
+                    <div key={item.id}>
+                      <div
+                        className="ac-table-row ac-submission-list-row"
                         style={
                           isMobile
                             ? {
@@ -262,9 +243,7 @@ export default function SubmissionsPage() {
                                 gap: 10,
                                 width: '100%',
                                 padding: '12px 16px',
-                                border: 'none',
                                 background: open ? 'var(--surface2)' : 'transparent',
-                                cursor: 'pointer',
                                 textAlign: 'left',
                                 color: 'var(--text)',
                               }
@@ -275,9 +254,7 @@ export default function SubmissionsPage() {
                                 alignItems: 'center',
                                 width: '100%',
                                 padding: 'var(--rowpad) 18px',
-                                border: 'none',
                                 background: open ? 'var(--surface2)' : 'transparent',
-                                cursor: 'pointer',
                                 textAlign: 'left',
                                 color: 'var(--text)',
                                 transition: 'background .12s',
@@ -304,7 +281,7 @@ export default function SubmissionsPage() {
                             >
                               {verdict.icon}
                             </span>
-                            <span style={{ flex: 1, minWidth: 0 }}>
+                            <Link href={`/submissions/${item.id}`} style={{ flex: 1, minWidth: 0, color: 'var(--text)', textDecoration: 'none' }}>
                               <span
                                 style={{
                                   display: 'block',
@@ -321,23 +298,37 @@ export default function SubmissionsPage() {
                                 {verdict.label} · {languageLabel(item.language)} ·{' '}
                                 {timeAgo(item.created_at)}
                               </span>
-                            </span>
+                            </Link>
+                            <button
+                              type="button"
+                              onClick={() => toggle(item.id)}
+                              aria-expanded={open}
+                              aria-label={`${open ? 'Hide' : 'Preview'} submission ${item.id}`}
+                              className="ac-icon-button ac-submission-expand"
+                            >
+                              <span style={{ display: 'flex', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }}>
+                                <Icon.Chevron color="var(--text3)" />
+                              </span>
+                            </button>
                           </>
                         ) : (
                           <>
                             <span style={{ minWidth: 0 }}>
-                              <span
+                              <Link
+                                href={`/submissions/${item.id}`}
                                 style={{
                                   display: 'block',
                                   fontSize: 13,
                                   fontWeight: 550,
+                                  color: 'var(--text)',
+                                  textDecoration: 'none',
                                   whiteSpace: 'nowrap',
                                   overflow: 'hidden',
                                   textOverflow: 'ellipsis',
                                 }}
                               >
                                 {item.problem_title}
-                              </span>
+                              </Link>
                               <span
                                 style={{
                                   fontSize: 11,
@@ -417,19 +408,32 @@ export default function SubmissionsPage() {
                             >
                               {timeAgo(item.created_at)}
                             </span>
-                            <span
+                            <button
+                              type="button"
+                              onClick={() => toggle(item.id)}
+                              aria-expanded={open}
+                              aria-label={`${open ? 'Hide' : 'Preview'} submission ${item.id}`}
+                              className="ac-submission-expand"
                               style={{
                                 justifySelf: 'end',
                                 display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                width: 28,
+                                height: 28,
+                                padding: 0,
+                                border: 0,
+                                borderRadius: 6,
+                                background: 'transparent',
                                 transform: open ? 'rotate(180deg)' : 'none',
                                 transition: 'transform .2s',
                               }}
                             >
                               <Icon.Chevron color="var(--text3)" />
-                            </span>
+                            </button>
                           </>
                         )}
-                      </button>
+                      </div>
 
                       {open && <SubmissionDetail id={item.id} />}
                     </div>
@@ -442,19 +446,12 @@ export default function SubmissionsPage() {
 
         {!error && !loading && items.length > 0 && (
           <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 10,
-              padding: '12px 18px',
-              borderTop: '1px solid var(--border)',
-            }}
+            className="ac-pagination"
           >
-            <span style={{ fontSize: 12, color: 'var(--text3)' }}>
+            <span className="ac-pagination-meta">
               Page {page} of {totalPages}
             </span>
-            <div style={{ display: 'flex', gap: 6 }}>
+            <div className="ac-pagination-actions">
               <button
                 type="button"
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
@@ -478,98 +475,6 @@ export default function SubmissionsPage() {
         )}
       </section>
     </AppShell>
-  );
-}
-
-/** Row expansion: the full submission, including the source that was judged. */
-function SubmissionDetail({ id }: { id: number }) {
-  const [detail, setDetail] = useState<Submission | null>(null);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    submissionApi
-      .get(id, controller.signal)
-      .then(setDetail)
-      .catch(() => {
-        if (!controller.signal.aborted) setFailed(true);
-      });
-    return () => controller.abort();
-  }, [id]);
-
-  if (failed) {
-    return (
-      <div style={{ padding: '8px 18px 16px 54px', background: 'var(--surface2)' }}>
-        <p style={{ margin: 0, fontSize: 12, color: 'var(--error)' }}>
-          Couldn&apos;t load submission #{id}.
-        </p>
-      </div>
-    );
-  }
-
-  if (!detail) {
-    return (
-      <div style={{ padding: '8px 18px 16px 54px', background: 'var(--surface2)' }}>
-        <SkeletonBar height={60} radius={8} />
-      </div>
-    );
-  }
-
-  const verdict = verdictMeta(detail.status);
-
-  return (
-    <div
-      style={{ padding: '4px 18px 16px 54px', background: 'var(--surface2)', animation: 'acFadeUp .2s ease' }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'center',
-          gap: 14,
-          marginBottom: 10,
-          fontSize: 11.5,
-          color: 'var(--text3)',
-        }}
-      >
-        <span>
-          Verdict <strong style={{ color: verdict.color }}>{verdict.label}</strong>
-        </span>
-        <span>
-          Submitted{' '}
-          <strong style={{ color: 'var(--text2)', fontFamily: 'var(--font-mono)' }}>
-            {formatDateTime(detail.created_at)}
-          </strong>
-        </span>
-        <span>
-          Judged{' '}
-          <strong style={{ color: 'var(--text2)', fontFamily: 'var(--font-mono)' }}>
-            {formatDateTime(detail.updated_at)}
-          </strong>
-        </span>
-        <Link href={`/problems?search=${encodeURIComponent(detail.problem_title)}`} style={{ fontSize: 11.5 }}>
-          Open problem →
-        </Link>
-      </div>
-
-      <pre
-        style={{
-          margin: 0,
-          maxHeight: 260,
-          overflow: 'auto',
-          border: '1px solid var(--border)',
-          borderRadius: 8,
-          background: 'var(--code-bg)',
-          color: 'var(--code-fg)',
-          padding: '10px 12px',
-          fontFamily: 'var(--font-mono)',
-          fontSize: 11.5,
-          lineHeight: 1.7,
-        }}
-      >
-        {detail.source_code}
-      </pre>
-    </div>
   );
 }
 

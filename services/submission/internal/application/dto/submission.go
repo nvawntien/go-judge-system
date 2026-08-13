@@ -194,6 +194,36 @@ type ListMySubmissionsResponse struct {
 	Pagination PaginationResponse   `json:"pagination"`
 }
 
+type GetMyProfileStatsResponse struct {
+	TotalSubmissions     int64                          `json:"total_submissions"`
+	AttemptedProblems    int64                          `json:"attempted_problems"`
+	AcceptedSubmissions  int64                          `json:"accepted_submissions"`
+	SolvedProblems       int64                          `json:"solved_problems"`
+	AcceptanceRate       float64                        `json:"acceptance_rate"`
+	VerdictDistribution  []ProfileStatsVerdictResponse  `json:"verdict_distribution"`
+	LanguageDistribution []ProfileStatsLanguageResponse `json:"language_distribution"`
+	Activity             []ProfileStatsActivityResponse `json:"activity"`
+}
+
+type GetPublicProfileStatsRequest struct {
+	Username string `uri:"username" binding:"required"`
+}
+
+type ProfileStatsVerdictResponse struct {
+	Verdict string `json:"verdict"`
+	Count   int64  `json:"count"`
+}
+
+type ProfileStatsLanguageResponse struct {
+	Language string `json:"language"`
+	Count    int64  `json:"count"`
+}
+
+type ProfileStatsActivityResponse struct {
+	Date  string `json:"date"`
+	Count int64  `json:"count"`
+}
+
 type AdminSubmissionListItem struct {
 	ID           int64     `json:"id"`
 	ProblemID    int64     `json:"problem_id"`

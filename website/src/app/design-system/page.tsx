@@ -1,6 +1,6 @@
 'use client';
 
-import { AppShell } from '@/components/AppShell';
+import { AppShell, PageHeading } from '@/components/AppShell';
 import { Card, CodePath, Icon } from '@/components/ui';
 
 const TOKENS = [
@@ -21,12 +21,7 @@ const TOKENS = [
 export default function DesignSystemPage() {
   return (
     <AppShell maxWidth={900}>
-      <h1 style={{ margin: 0, fontSize: 22, fontWeight: 650, letterSpacing: '-0.02em' }}>
-        Design system notes
-      </h1>
-      <p style={{ margin: '4px 0 22px', color: 'var(--text2)', fontSize: 13.5 }}>
-        The reusable AstraCode component language, in both themes.
-      </p>
+      <PageHeading title="Design system notes" subtitle="The reusable AstraCode component language, in both themes." />
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <Card padding={20}>
@@ -73,23 +68,22 @@ export default function DesignSystemPage() {
           <div
             style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, marginBottom: 14 }}
           >
-            <button type="button" className="ac-hover-accent" style={btn.primary}>
+            <button type="button" className="ac-button ac-button-primary">
               Primary
             </button>
-            <button type="button" className="ac-hover-surface2" style={btn.secondary}>
+            <button type="button" className="ac-button ac-button-secondary">
               Secondary
             </button>
-            <button type="button" className="ac-hover-accent-soft2" style={btn.ghost}>
+            <button type="button" className="ac-button ac-button-ghost">
               Ghost
             </button>
-            <button type="button" className="ac-hover-opacity" style={btn.destructive}>
+            <button type="button" className="ac-button ac-button-danger">
               Destructive
             </button>
             <button
               type="button"
               aria-label="Icon button example"
-              className="ac-hover-surface2"
-              style={btn.icon}
+              className="ac-icon-button"
             >
               <Icon.Search />
             </button>
@@ -202,65 +196,6 @@ function Badge({
     </span>
   );
 }
-
-const btn = {
-  primary: {
-    height: 38,
-    padding: '0 16px',
-    border: 'none',
-    borderRadius: 8,
-    background: 'var(--accent)',
-    color: 'var(--accent-ink)',
-    fontSize: 13,
-    fontWeight: 600,
-    cursor: 'pointer',
-  } as React.CSSProperties,
-  secondary: {
-    height: 38,
-    padding: '0 16px',
-    border: '1px solid var(--border2)',
-    borderRadius: 8,
-    background: 'var(--surface)',
-    color: 'var(--text)',
-    fontSize: 13,
-    fontWeight: 600,
-    cursor: 'pointer',
-  } as React.CSSProperties,
-  ghost: {
-    height: 38,
-    padding: '0 16px',
-    border: 'none',
-    borderRadius: 8,
-    background: 'none',
-    color: 'var(--accent-fg)',
-    fontSize: 13,
-    fontWeight: 600,
-    cursor: 'pointer',
-  } as React.CSSProperties,
-  destructive: {
-    height: 38,
-    padding: '0 16px',
-    border: 'none',
-    borderRadius: 8,
-    background: 'var(--error)',
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: 600,
-    cursor: 'pointer',
-  } as React.CSSProperties,
-  icon: {
-    width: 38,
-    height: 38,
-    border: '1px solid var(--border)',
-    borderRadius: 8,
-    background: 'var(--surface)',
-    color: 'var(--text2)',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  } as React.CSSProperties,
-};
 
 const input: React.CSSProperties = {
   height: 38,

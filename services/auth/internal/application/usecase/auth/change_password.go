@@ -3,6 +3,8 @@ package auth
 import (
 	"context"
 	"errors"
+	"time"
+
 	"go-judge-system/pkg/auth"
 	"go-judge-system/services/auth/internal/application/dto"
 	"go-judge-system/services/auth/internal/application/port/inbound"
@@ -14,15 +16,18 @@ import (
 type changePasswordUseCase struct {
 	userRepo        outbound.UserRepository
 	passwordEncoder outbound.PasswordEncoder
+	logoutAllStore  auth.LogoutAllIATStore
 }
 
 func NewChangePasswordUseCase(
 	userRepo outbound.UserRepository,
 	passwordEncoder outbound.PasswordEncoder,
+	logoutAllStore auth.LogoutAllIATStore,
 ) inbound.ChangePasswordUseCase {
 	return &changePasswordUseCase{
 		userRepo:        userRepo,
 		passwordEncoder: passwordEncoder,
+		logoutAllStore:  logoutAllStore,
 	}
 }
 
@@ -63,9 +68,12 @@ func (uc *changePasswordUseCase) Execute(ctx context.Context, claims auth.Claims
 
 	passwordVO := valueobject.NewPasswordFromHash(hashedPassword)
 
-	// Update the user's password
+	if err := uc.logoutAllStore.SetLogoutAllIAT(ctx, user.ID, time.Now().Unix()); err != nil {
+		return domain.ErrInternalServer.Wrap(err)
+	}
+
 	user.UpdatePassword(passwordVO)
-	if err := uc.userRepo.UpdateUser(ctx, user); err != nil {
+	if err := uc.userRepo.UpdatePassword(ctx, user.ID, user.Password, user.UpdatedAt); err != nil {
 		return domain.ErrInternalServer.Wrap(err)
 	}
 

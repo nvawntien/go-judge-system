@@ -39,7 +39,17 @@ func (uc *updateProfileUseCase) Execute(ctx context.Context, claims pkgAuth.Clai
 
     user.UpdateProfile(fullName, bio, country, school, company, githubURL, websiteURL, linkedinURL)
 
-    if err := uc.userRepo.UpdateUser(ctx, user); err != nil {
+    if err := uc.userRepo.UpdateProfile(ctx, user.ID, outbound.ProfileUpdates{
+        FullName: fullName,
+        Bio: bio,
+        Country: country,
+        School: school,
+        Company: company,
+        GithubURL: githubURL,
+        WebsiteURL: websiteURL,
+        LinkedinURL: linkedinURL,
+        UpdatedAt: user.UpdatedAt,
+    }); err != nil {
         return nil, domain.ErrInternalServer.Wrap(err)
     }
 
@@ -85,7 +95,7 @@ func validateOptionalURL(raw *string, field string, maxLen int) (*string, error)
     }
 
     parsed, err := url.ParseRequestURI(*value)
-    if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+    if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
         return nil, response.NewAppError(response.CodeBadRequest, field+" must be a valid URL", nil)
     }
 

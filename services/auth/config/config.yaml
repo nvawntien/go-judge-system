@@ -8,6 +8,7 @@ app:
 server:
   name: auth-service
   port: 8081
+  grpc_port: 9091
   mode: debug
 
 logger:

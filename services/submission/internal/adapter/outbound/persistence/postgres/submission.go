@@ -18,7 +18,7 @@ type SubmissionDAO struct {
 	ID               int64     `gorm:"primaryKey;autoIncrement"`
 	ProblemID        int64     `gorm:"not null;index"`
 	ProblemName      string    `gorm:"not null;size:500"`
-	UserID           string    `gorm:"not null;size:100;index"`
+	UserID           string    `gorm:"not null;size:100;index;index:idx_submission_user_created,priority:1"`
 	Username         string    `gorm:"not null;size:255"`
 	Language         string    `gorm:"type:varchar(20);not null;index"`
 	SourceCode       string    `gorm:"type:text;not null"`
@@ -28,7 +28,7 @@ type SubmissionDAO struct {
 	MemoryUsed       *int      `gorm:"type:int"`
 	CompileOutput    *string   `gorm:"type:text"`
 	ErrorMessage     *string   `gorm:"type:text"`
-	CreatedAt        time.Time `gorm:"autoCreateTime;index"`
+	CreatedAt        time.Time `gorm:"autoCreateTime;index;index:idx_submission_user_created,priority:2"`
 	UpdatedAt        time.Time `gorm:"autoUpdateTime"`
 }
 
@@ -40,6 +40,10 @@ type submissionRepository struct {
 
 func NewSubmissionRepository(db *gorm.DB) outbound.SubmissionRepository {
 	db.AutoMigrate(&SubmissionDAO{})
+	return &submissionRepository{db: db}
+}
+
+func NewProfileStatsRepository(db *gorm.DB) outbound.ProfileStatsRepository {
 	return &submissionRepository{db: db}
 }
 
@@ -129,6 +133,102 @@ func (r *submissionRepository) Update(ctx context.Context, submission *entity.Su
 	return nil
 }
 
+func (r *submissionRepository) GetUserProfileStats(
+	ctx context.Context,
+	userID string,
+	activitySince time.Time,
+) (outbound.UserProfileStats, error) {
+	type summaryRow struct {
+		TotalSubmissions    int64
+		AttemptedProblems   int64
+		AcceptedSubmissions int64
+		SolvedProblems      int64
+	}
+	type verdictRow struct {
+		Verdict string
+		Count   int64
+	}
+	type languageRow struct {
+		Language string
+		Count    int64
+	}
+	type activityRow struct {
+		Date  string
+		Count int64
+	}
+
+	terminalStatuses := []string{
+		string(entity.StatusAccepted),
+		string(entity.StatusWrongAnswer),
+		string(entity.StatusTimeLimitExceed),
+		string(entity.StatusMemoryLimitExceed),
+		string(entity.StatusOutputLimitExceed),
+		string(entity.StatusRuntimeError),
+		string(entity.StatusCompilationError),
+		string(entity.StatusSystemError),
+	}
+
+	var summary summaryRow
+	if err := getDB(ctx, r.db).Model(&SubmissionDAO{}).Select(
+		"COUNT(*) AS total_submissions, "+
+			"COUNT(DISTINCT problem_id) AS attempted_problems, "+
+			"COUNT(*) FILTER (WHERE status = ?) AS accepted_submissions, "+
+			"COUNT(DISTINCT problem_id) FILTER (WHERE status = ?) AS solved_problems",
+		string(entity.StatusAccepted),
+		string(entity.StatusAccepted),
+	).Where("user_id = ?", userID).Scan(&summary).Error; err != nil {
+		return outbound.UserProfileStats{}, fmt.Errorf("get user profile stats summary: %w", err)
+	}
+
+	var verdictRows []verdictRow
+	if err := getDB(ctx, r.db).Model(&SubmissionDAO{}).Select("status AS verdict, COUNT(*) AS count").
+		Where("user_id = ? AND status IN ?", userID, terminalStatuses).
+		Group("status").
+		Order("count DESC, status ASC").
+		Scan(&verdictRows).Error; err != nil {
+		return outbound.UserProfileStats{}, fmt.Errorf("get user profile stats verdict distribution: %w", err)
+	}
+
+	var languageRows []languageRow
+	if err := getDB(ctx, r.db).Model(&SubmissionDAO{}).Select("language, COUNT(*) AS count").
+		Where("user_id = ?", userID).
+		Group("language").
+		Order("count DESC, language ASC").
+		Scan(&languageRows).Error; err != nil {
+		return outbound.UserProfileStats{}, fmt.Errorf("get user profile stats language distribution: %w", err)
+	}
+
+	const utcDay = "(created_at AT TIME ZONE 'UTC')::date"
+	var activityRows []activityRow
+	if err := getDB(ctx, r.db).Model(&SubmissionDAO{}).Select("TO_CHAR("+utcDay+", 'YYYY-MM-DD') AS date, COUNT(*) AS count").
+		Where("user_id = ? AND created_at >= ?", userID, activitySince).
+		Group(utcDay).
+		Order(utcDay + " ASC").
+		Scan(&activityRows).Error; err != nil {
+		return outbound.UserProfileStats{}, fmt.Errorf("get user profile stats activity: %w", err)
+	}
+
+	stats := outbound.UserProfileStats{
+		TotalSubmissions:    summary.TotalSubmissions,
+		AttemptedProblems:   summary.AttemptedProblems,
+		AcceptedSubmissions: summary.AcceptedSubmissions,
+		SolvedProblems:      summary.SolvedProblems,
+		Verdicts:            make([]outbound.ProfileStatsVerdict, 0, len(verdictRows)),
+		Languages:           make([]outbound.ProfileStatsLanguage, 0, len(languageRows)),
+		Activity:            make([]outbound.ProfileStatsActivity, 0, len(activityRows)),
+	}
+	for _, row := range verdictRows {
+		stats.Verdicts = append(stats.Verdicts, outbound.ProfileStatsVerdict{Verdict: row.Verdict, Count: row.Count})
+	}
+	for _, row := range languageRows {
+		stats.Languages = append(stats.Languages, outbound.ProfileStatsLanguage{Language: row.Language, Count: row.Count})
+	}
+	for _, row := range activityRows {
+		stats.Activity = append(stats.Activity, outbound.ProfileStatsActivity{Date: row.Date, Count: row.Count})
+	}
+	return stats, nil
+}
+
 func (r *submissionRepository) List(
 	ctx context.Context,
 	filter outbound.ListSubmissionsFilter,
@@ -180,13 +280,14 @@ func (r *submissionRepository) ResultSummaries(
 	if err := r.db.WithContext(ctx).
 		Model(&SubmissionResultDAO{}).
 		Select(
-			"submission_id, "+
-				"SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS passed, "+
+			"submission_results.submission_id, "+
+				"SUM(CASE WHEN submission_results.status = ? THEN 1 ELSE 0 END) AS passed, "+
 				"COUNT(*) AS total",
 			string(entity.ResultAccepted),
 		).
-		Where("submission_id IN ?", submissionIDs).
-		Group("submission_id").
+		Joins("JOIN submissions ON submissions.id = submission_results.submission_id").
+		Where("submission_results.submission_id IN ? AND submission_results.attempt_id = submissions.current_attempt_id", submissionIDs).
+		Group("submission_results.submission_id").
 		Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("summarize submission results: %w", err)
 	}

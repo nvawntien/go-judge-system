@@ -2,7 +2,7 @@
 
 ## Goroutines and shutdown
 
-* Auth launches the HTTP server in a goroutine and waits on server error or SIGINT/SIGTERM, then uses a 10-second HTTP shutdown context (`services/auth/internal/container/app.go`).
+* Auth launches HTTP and internal gRPC servers in separate goroutines, waits on either listener or SIGINT/SIGTERM, and gracefully stops both during shutdown (`services/auth/internal/container/app.go`).
 * Problem concurrently launches HTTP and gRPC, stops HTTP on a signal or gRPC error (`services/problem/internal/container/app.go`). The observed code does not call gRPC graceful-stop in the signal path; treat shutdown semantics as a change-sensitive area.
 * Submission concurrently runs HTTP, outbox relay and Kafka result consumption from a cancelable worker context. It cancels workers, shuts down HTTP, and closes connections/resources in `Close`.
 * Worker concurrently runs Kafka consumption and gRPC. It stops gRPC and waits up to 10 seconds for consumer completion during signal shutdown.
@@ -15,10 +15,14 @@ Submission's result consumer is another consumer-group loop. Broker delivery rem
 
 ## Timeouts and limits
 
-* gRPC caller deadlines come from Problem/Judge configuration and adapters.
+* gRPC caller deadlines come from Auth/Problem/Judge configuration and adapters. The public-profile-stats Auth call defaults to one second.
 * Worker testcase download uses 30 seconds, limits ZIP to 64 MiB and extracted content to 128 MiB (`official_loader.go`).
 * go-judge REST client has a 120-second client timeout; requests set CPU, wall clock, memory, process and output limits. Interactive requests may batch up to 50 testcases. Official submissions use one testcase per run request so execution can stop at the first failure; compiled languages compile once and each testcase run receives the cached compiled artifact.
 * Interactive run-code has explicit source/stdin/expected-output/testcase/concurrency/timeout limits in Submission config and use case.
+
+## Session cutoff resolution
+
+Auth session invalidation uses Unix-second JWT `iat` values. A login immediately after a logout-all, suspension, authenticated password change, or password-reset cutoff waits cancelably until the next second before minting tokens, so a fresh token cannot be rejected by the same cutoff. This bounded wait can approach one second and remains a timestamp-resolution trade-off.
 
 ## In-process SSE
 
