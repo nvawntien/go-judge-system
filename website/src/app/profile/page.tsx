@@ -14,7 +14,7 @@ import {
   ProfileStatGrid,
   ProfileStatsLoading,
 } from '@/components/profile/ProfileViews';
-import { Card, EmptyState, ErrorState, SkeletonBar } from '@/components/ui';
+import { EmptyState, ErrorState, SkeletonBar } from '@/components/ui';
 import { submissionApi } from '@/lib/api';
 import { languageLabel, timeAgo, verdictMeta } from '@/lib/format';
 import type { MyProfileStats, SubmissionListItem } from '@/lib/types';
@@ -66,9 +66,9 @@ export default function ProfilePage() {
   if (!user) return null;
 
   return (
-    <AppShell maxWidth={1180}>
-      <div className="ac-profile-page">
-        <ProfileHero profile={user} eyebrow="My competitive dashboard" actions={<OwnProfileActions username={user.username} />} />
+    <AppShell maxWidth={1240}>
+      <div className="ac-profile-page ac-profile-own">
+        <ProfileHero profile={user} eyebrow="My competitive dashboard" actions={<OwnProfileActions />} />
 
         {statsLoading ? <ProfileStatsLoading /> : statsError || !profileStats ? (
           <ProfileSectionError
@@ -78,19 +78,14 @@ export default function ProfilePage() {
           />
         ) : <ProfileStatGrid stats={profileStats} />}
 
-        <div className="ac-profile-content-grid">
-          <div className="ac-profile-side-stack">
+        <div className="ac-profile-dashboard-grid">
+          <div className="ac-profile-grid-module ac-profile-grid-activity">
             {statsLoading ? <ActivityLoading /> : statsError || !profileStats ? null : <ProfileActivity stats={profileStats} />}
-            {user.bio && (
-              <section className="ac-profile-about" aria-labelledby="profile-about">
-                <h2 id="profile-about">About</h2>
-                <p>{user.bio}</p>
-              </section>
-            )}
           </div>
-
-          <div className="ac-profile-side-stack">
+          <div className="ac-profile-grid-module ac-profile-grid-languages">
             {statsLoading ? <LanguageLoading /> : statsError || !profileStats ? null : <ProfileLanguages stats={profileStats} />}
+          </div>
+          <div className="ac-profile-grid-module ac-profile-grid-recent">
             <RecentSubmissions
               submissions={recentSubmissions}
               loading={recentLoading}
@@ -98,6 +93,12 @@ export default function ProfilePage() {
               onRetry={() => setRecentReload((value) => value + 1)}
             />
           </div>
+          {user.bio && (
+            <section className="ac-profile-about ac-profile-grid-about" aria-labelledby="profile-about">
+              <h2 id="profile-about">About</h2>
+              <p>{user.bio}</p>
+            </section>
+          )}
         </div>
       </div>
     </AppShell>
@@ -135,13 +136,16 @@ function RecentSubmissions({
   onRetry: () => void;
 }) {
   return (
-    <Card label="Recent submissions" padding={0} style={{ overflow: 'hidden' }}>
-      <div style={{ padding: '16px 18px 10px' }}>
-        <span className="ac-profile-eyebrow">My latest work</span>
-        <h2 style={{ margin: '4px 0 0', fontSize: 15, fontWeight: 650 }}>Recent submissions</h2>
+    <section className="ac-profile-panel ac-profile-recent" aria-labelledby="profile-recent-submissions">
+      <div className="ac-profile-panel-heading">
+        <div>
+          <span className="ac-profile-eyebrow">My latest work</span>
+          <h2 id="profile-recent-submissions">Recent submissions</h2>
+        </div>
+        <p>Latest {RECENT_SUBMISSION_LIMIT} judge runs.</p>
       </div>
       {loading ? (
-        <div aria-busy="true" aria-label="Loading recent submissions" style={{ padding: '2px 18px 14px' }}>
+        <div aria-busy="true" aria-label="Loading recent submissions">
           {Array.from({ length: 4 }, (_, index) => <SkeletonSubmission key={index} />)}
         </div>
       ) : failed ? (
@@ -153,25 +157,37 @@ function RecentSubmissions({
           action={<Link href="/problems" className="ac-profile-action-link">Browse problems</Link>}
         />
       ) : (
-        <div>
+        <div className="ac-profile-submission-list">
+          <div className="ac-profile-submission-head" aria-hidden="true">
+            <span>Problem</span>
+            <span className="ac-profile-submission-meta">
+              <span>Verdict</span>
+              <span>Language</span>
+              <span>Submitted</span>
+            </span>
+          </div>
           {submissions.map((submission) => {
             const verdict = verdictMeta(submission.status);
             return (
-              <div key={submission.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 18px', borderTop: '1px solid var(--border)' }}>
-                <span aria-hidden="true" style={{ width: 22, height: 22, borderRadius: 6, background: verdict.bg, color: verdict.color, display: 'grid', placeItems: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{verdict.icon}</span>
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12.5, fontWeight: 600 }}>{submission.problem_title}</span>
-                  <span style={{ display: 'block', marginTop: 2, color: 'var(--text3)', fontSize: 11 }}>{verdict.label} · {languageLabel(submission.language)} · {timeAgo(submission.created_at)}</span>
+              <div key={submission.id} className="ac-profile-submission-row">
+                <span className="ac-profile-submission-problem">
+                  <span aria-hidden="true" className="ac-profile-submission-icon" style={{ background: verdict.bg, color: verdict.color }}>{verdict.icon}</span>
+                  <span>{submission.problem_title}</span>
+                </span>
+                <span className="ac-profile-submission-meta">
+                  <span className="ac-profile-submission-verdict" style={{ color: verdict.color }}>{verdict.label}</span>
+                  <span>{languageLabel(submission.language)}</span>
+                  <time dateTime={submission.created_at}>{timeAgo(submission.created_at)}</time>
                 </span>
               </div>
             );
           })}
         </div>
       )}
-    </Card>
+    </section>
   );
 }
 
 function SkeletonSubmission() {
-  return <div style={{ padding: '10px 0', borderTop: '1px solid var(--border)' }}><SkeletonBar width="70%" height={12} /><SkeletonBar width="48%" height={10} style={{ marginTop: 7 }} /></div>;
+  return <div className="ac-profile-submission-skeleton"><SkeletonBar width="42%" height={12} /><SkeletonBar width="34%" height={10} /></div>;
 }

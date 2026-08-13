@@ -206,12 +206,9 @@ export function PublicPrivacyNote() {
   );
 }
 
-export function OwnProfileActions({ username }: { username: string }) {
+export function OwnProfileActions() {
   return (
-    <>
-      <Link href={`/u/${encodeURIComponent(username)}`} className="ac-profile-action-link">View public profile</Link>
-      <Link href="/settings" className="ac-profile-action-primary">Edit profile</Link>
-    </>
+    <Link href="/settings" className="ac-profile-action-primary">Edit profile</Link>
   );
 }
 
