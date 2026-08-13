@@ -9,9 +9,8 @@ import { useToast } from './ToastProvider';
 import { API_BASE_URL, userApi } from '@/lib/api';
 import { useDebounced, useDismissable, useViewportWidth } from '@/lib/hooks';
 import { avatarUrl, initials, ratingTier } from '@/lib/format';
-import type { PublicUserSearchItem } from '@/lib/types';
+import type { Me, PublicUserSearchItem } from '@/lib/types';
 import { Icon, Logo, Wordmark, buttonStyles } from './ui';
-import { AdminIcon } from './admin/AdminIcons';
 import { ADMIN_CONSOLE_MIN_ROLE } from './admin/AdminNavigation';
 import { roleAtLeast } from './admin/roles';
 
@@ -29,11 +28,14 @@ export function Header() {
   const { resolved, toggle } = useTheme();
   const { showToast } = useToast();
   const width = useViewportWidth();
-  // The desktop navigation, search, and account controls no longer fit reliably
-  // at tablet widths. Switch to the compact navigation before it can create a
-  // page-level horizontal scroll.
-  const isMobile = width < 960;
   const canAccessAdminConsole = roleAtLeast(user?.role, ADMIN_CONSOLE_MIN_ROLE);
+  const navItems = canAccessAdminConsole
+    ? [...NAV_ITEMS, { label: 'Admin Console', href: '/admin' }]
+    : NAV_ITEMS;
+  // The desktop navigation, search, and account controls no longer fit reliably
+  // at tablet widths. Privileged navigation needs one extra item, so it moves
+  // to the compact menu slightly earlier to prevent page-level overflow.
+  const isMobile = width < (canAccessAdminConsole ? 1120 : 960);
 
   const [menu, setMenu] = useState<'notif' | 'user' | 'mobile' | null>(null);
   const [query, setQuery] = useState('');
@@ -70,6 +72,15 @@ export function Header() {
     setMenu(null);
     closeSearch();
   }, [pathname, closeSearch]);
+
+  useEffect(() => {
+    if (menu !== 'user') return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMenu(null);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [menu]);
 
   useEffect(() => {
     const trimmed = debouncedQuery.trim();
@@ -202,7 +213,7 @@ export function Header() {
 
         {!isMobile && (
           <nav aria-label="Primary" style={{ display: 'flex', alignItems: 'center', gap: 4, height: '100%' }}>
-            {NAV_ITEMS.map((item) => {
+            {navItems.map((item) => {
               const current = isCurrent(item.href);
               return (
                 <Link
@@ -315,8 +326,9 @@ export function Header() {
               <button
                 type="button"
                 onClick={() => setMenu(menu === 'user' ? null : 'user')}
-                aria-label="Account menu"
+                aria-label={`Account menu for ${user.username}`}
                 aria-expanded={menu === 'user'}
+                aria-haspopup="menu"
                 className="ac-hover-surface2"
                 style={{
                   display: 'flex',
@@ -331,23 +343,7 @@ export function Header() {
                   color: 'var(--text)',
                 }}
               >
-                <span
-                  aria-hidden="true"
-                  style={{
-                    width: 28,
-                    height: 28,
-                    borderRadius: '50%',
-                    background: 'var(--accent-soft2)',
-                    color: 'var(--accent-fg)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: 11.5,
-                    fontWeight: 650,
-                  }}
-                >
-                  {initials(user.full_name || user.username)}
-                </span>
+                <AccountAvatar user={user} size={28} />
                 <Icon.Chevron color="var(--text3)" />
               </button>
 
@@ -359,7 +355,7 @@ export function Header() {
                     position: 'absolute',
                     right: 0,
                     top: 44,
-                    width: 208,
+                    width: 224,
                     background: 'var(--surface)',
                     border: '1px solid var(--border)',
                     borderRadius: 12,
@@ -368,75 +364,33 @@ export function Header() {
                     animation: 'acPop .15s ease',
                   }}
                 >
-                  <div
+                  <Link
+                    role="menuitem"
+                    href="/profile"
+                    onClick={() => setMenu(null)}
+                    className="ac-hover-surface2"
                     style={{
-                      padding: '8px 10px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      padding: '9px 10px',
+                      borderRadius: 8,
                       borderBottom: '1px solid var(--border)',
                       marginBottom: 4,
+                      color: 'var(--text)',
+                      textDecoration: 'none',
                     }}
                   >
-                    <span style={{ display: 'block', fontSize: 13, fontWeight: 600 }}>
-                      {user.full_name || user.username}
+                    <AccountAvatar user={user} size={34} />
+                    <span style={{ minWidth: 0 }}>
+                      <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13, fontWeight: 600 }}>
+                        {user.full_name || user.username}
+                      </span>
+                      <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text3)' }}>
+                        @{user.username}
+                      </span>
                     </span>
-                    <span
-                      style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text3)' }}
-                    >
-                      @{user.username}{user.rating > 0 ? ` · ${user.rating.toLocaleString()}` : ''}
-                    </span>
-                  </div>
-                  {[
-                    { label: 'Profile', href: '/profile' },
-                    { label: 'Public profile', href: `/u/${encodeURIComponent(user.username)}` },
-                    { label: 'Settings', href: '/settings' },
-                  ].map((item) => (
-                    <Link
-                      key={item.href}
-                      role="menuitem"
-                      href={item.href}
-                      className="ac-hover-surface2"
-                      style={{
-                        display: 'flex',
-                        width: '100%',
-                        alignItems: 'center',
-                        gap: 8,
-                        padding: '8px 10px',
-                        borderRadius: 8,
-                        fontSize: 13,
-                        color: 'var(--text)',
-                        textDecoration: 'none',
-                        boxSizing: 'border-box',
-                      }}
-                    >
-                      {item.label}
-                    </Link>
-                  ))}
-                  {canAccessAdminConsole && (
-                    <>
-                      <div aria-hidden="true" style={{ height: 1, margin: '4px 0', background: 'var(--border)' }} />
-                      <Link
-                        role="menuitem"
-                        href="/admin"
-                        className="ac-hover-surface2"
-                        style={{
-                          display: 'flex',
-                          width: '100%',
-                          alignItems: 'center',
-                          gap: 8,
-                          minHeight: 36,
-                          padding: '8px 10px',
-                          borderRadius: 8,
-                          fontSize: 13,
-                          fontWeight: 600,
-                          color: 'var(--accent-fg)',
-                          textDecoration: 'none',
-                          boxSizing: 'border-box',
-                        }}
-                      >
-                        <AdminIcon.Dashboard size={15} />
-                        Admin Console
-                      </Link>
-                    </>
-                  )}
+                  </Link>
                   <div aria-hidden="true" style={{ height: 1, margin: '4px 0', background: 'var(--border)' }} />
                   <button
                     type="button"
@@ -506,7 +460,7 @@ export function Header() {
             animation: 'acFadeUp .18s ease',
           }}
         >
-          {NAV_ITEMS.map((item) => {
+          {navItems.map((item) => {
             const current = isCurrent(item.href);
             return (
               <Link
@@ -558,6 +512,43 @@ export function Header() {
         </nav>
       )}
     </header>
+  );
+}
+
+function AccountAvatar({ user, size }: { user: Me; size: number }) {
+  const source = avatarUrl(user.avatar_url, API_BASE_URL);
+  const displayName = user.full_name || user.username;
+
+  return (
+    <span
+      aria-hidden="true"
+      style={{
+        position: 'relative',
+        width: size,
+        height: size,
+        flex: `0 0 ${size}px`,
+        overflow: 'hidden',
+        borderRadius: '50%',
+        background: 'var(--accent-soft2)',
+        color: 'var(--accent-fg)',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: Math.max(11, Math.round(size * 0.4)),
+        fontWeight: 650,
+      }}
+    >
+      {initials(displayName)}
+      {source && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={source}
+          alt=""
+          onError={(event) => { event.currentTarget.style.display = 'none'; }}
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', background: 'var(--surface)' }}
+        />
+      )}
+    </span>
   );
 }
 
