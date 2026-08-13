@@ -68,7 +68,7 @@ export default function ProfilePage() {
   return (
     <AppShell maxWidth={1240}>
       <div className="ac-profile-page ac-profile-own">
-        <ProfileHero profile={user} eyebrow="My competitive dashboard" actions={<OwnProfileActions />} />
+        <ProfileHero profile={user} actions={<OwnProfileActions />} />
 
         {statsLoading ? <ProfileStatsLoading /> : statsError || !profileStats ? (
           <ProfileSectionError
@@ -138,12 +138,8 @@ function RecentSubmissions({
   return (
     <section className="ac-profile-panel ac-profile-recent" aria-labelledby="profile-recent-submissions">
       <div className="ac-profile-panel-heading">
-        <div>
-          <span className="ac-profile-eyebrow">My latest work</span>
-          <h2 id="profile-recent-submissions">Recent submissions</h2>
-        </div>
+        <h2 id="profile-recent-submissions">Recent submissions</h2>
         <div className="ac-profile-panel-actions">
-          <p>Latest {RECENT_SUBMISSION_LIMIT} judge runs.</p>
           <Link href="/submissions">View all submissions</Link>
         </div>
       </div>
@@ -152,11 +148,11 @@ function RecentSubmissions({
           {Array.from({ length: 4 }, (_, index) => <SkeletonSubmission key={index} />)}
         </div>
       ) : failed ? (
-        <ErrorState title="Could not load recent submissions" detail="Retry to fetch your latest judge activity." onRetry={onRetry} />
+        <ErrorState title="Could not load recent submissions" detail="Try again to load your recent submissions." onRetry={onRetry} />
       ) : submissions.length === 0 ? (
         <EmptyState
           title="No submissions yet"
-          description="Your latest judge activity will appear here."
+          description="Recent submissions will appear here."
           action={<Link href="/problems" className="ac-profile-action-link">Browse problems</Link>}
         />
       ) : (

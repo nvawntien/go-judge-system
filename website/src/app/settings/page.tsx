@@ -93,7 +93,7 @@ export default function SettingsPage() {
       setSaved(fields);
       showToast('Profile saved', 'success');
     } catch (err) {
-      if (err instanceof NetworkError) showToast('Cannot reach the API gateway', 'error');
+      if (err instanceof NetworkError) showToast('AstraCode is temporarily unreachable. Check your connection and try again.', 'error');
       else if (err instanceof ApiError) showToast(err.message || 'Save failed', 'error');
       else showToast('Save failed', 'error');
     } finally {
@@ -335,6 +335,7 @@ export default function SettingsPage() {
                   key={option.value}
                   type="button"
                   onClick={() => setPreference(option.value)}
+                  aria-pressed={active}
                   className="ac-hover-surface2"
                   style={{
                     height: 36,

@@ -50,7 +50,6 @@ export function SolvedProgress({
           <span>Solved</span>
         </div>
       </div>
-      <span className="ac-solved-progress-caption">Overall progress</span>
       <p className="ac-visually-hidden">{overallLabel}</p>
     </div>
   );
@@ -72,7 +71,6 @@ export function DifficultyBreakdown({ progress }: { progress?: DifficultyProgres
           );
         })}
       </div>
-      {!progress && <p>Difficulty data unavailable</p>}
       <p className="ac-visually-hidden">
         {progress
           ? DIFFICULTIES.map((difficulty) => `${difficultyMeta(difficulty).label}: ${formatDifficultyProgress(progress[difficulty])}`).join('. ')

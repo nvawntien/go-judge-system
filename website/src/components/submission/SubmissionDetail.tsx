@@ -95,10 +95,10 @@ export function SubmissionDetail({ id, standalone = false }: { id: number; stand
 }
 
 function submissionDetailError(cause: unknown, id: number) {
-  if (cause instanceof NetworkError) return 'Cannot reach the API gateway. Check your connection and try again.';
+  if (cause instanceof NetworkError) return 'AstraCode is temporarily unreachable. Check your connection and try again.';
   if (cause instanceof ApiError && cause.httpStatus === 404) {
     return `Submission #${id} was not found or is not available to this account.`;
   }
-  if (cause instanceof ApiError) return `GET /api/v1/submissions/${id} — ${cause.httpStatus} ${cause.message}`;
+  if (cause instanceof ApiError) return cause.message || `Could not load submission #${id}.`;
   return `Could not load submission #${id}.`;
 }

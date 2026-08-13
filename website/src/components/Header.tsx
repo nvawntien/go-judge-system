@@ -326,7 +326,7 @@ export function Header() {
                   <span style={{ fontSize: 13, fontWeight: 600 }}>Notifications</span>
                 </div>
                 <p style={{ margin: 0, padding: '4px 10px 12px', fontSize: 12.5, color: 'var(--text3)' }}>
-                  No notifications yet — the backend does not expose a notification feed.
+                  No notifications yet.
                 </p>
               </div>
             )}

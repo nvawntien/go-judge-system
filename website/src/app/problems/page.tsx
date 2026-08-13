@@ -142,11 +142,11 @@ function ProblemsScreen() {
       .catch((err) => {
         if (controller.signal.aborted) return;
         if (err instanceof NetworkError) {
-          setError('Cannot reach the API gateway');
+          setError('AstraCode is temporarily unreachable. Check your connection and try again.');
         } else if (err instanceof ApiError) {
-          setError(`GET /api/v1/problems — ${err.httpStatus} ${err.message}`);
+          setError(err.message || 'Could not load the problem catalog.');
         } else {
-          setError('Unexpected error');
+          setError('Could not load the problem catalog.');
         }
         setProblems([]);
         setTotal(0);

@@ -9,7 +9,7 @@ import { Header } from './Header';
  */
 export function AppShell({
   children,
-  maxWidth = 1200,
+  maxWidth = 1240,
   flush = false,
   style,
 }: {

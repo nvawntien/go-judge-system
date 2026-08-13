@@ -117,7 +117,7 @@ function AuthCard() {
       }
     } catch (err) {
       if (err instanceof NetworkError) {
-        showToast('Cannot reach the API gateway — is it running on :8080?', 'error');
+        showToast('AstraCode is temporarily unreachable. Check your connection and try again.', 'error');
       } else if (err instanceof ApiError) {
         const message = err.message || 'Request failed';
         if (mode === 'login' && err.httpStatus === 401) {
@@ -144,7 +144,7 @@ function AuthCard() {
       showToast('If that account still needs verification, a new link is on its way', 'success');
     } catch (err) {
       if (err instanceof NetworkError) {
-        showToast('Cannot reach the API gateway — is it running on :8080?', 'error');
+        showToast('AstraCode is temporarily unreachable. Check your connection and try again.', 'error');
       } else if (err instanceof ApiError && err.httpStatus === 429) {
         showToast('Please wait a moment before requesting another link', 'error');
       } else {

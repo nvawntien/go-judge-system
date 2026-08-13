@@ -66,10 +66,10 @@ export default function SubmissionsPage() {
         if (controller.signal.aborted) return;
         setError(
           err instanceof NetworkError
-            ? 'Cannot reach the API gateway'
+            ? 'AstraCode is temporarily unreachable. Check your connection and try again.'
             : err instanceof ApiError
-              ? `GET /api/v1/me/submissions — ${err.httpStatus} ${err.message}`
-              : 'Unexpected error',
+              ? err.message || 'Could not load your submissions.'
+              : 'Could not load your submissions.',
         );
         setItems([]);
       })
@@ -98,7 +98,7 @@ export default function SubmissionsPage() {
     <AppShell maxWidth={1100}>
       <PageHeading
         title="Submissions"
-        subtitle="Your recent judge activity"
+        subtitle="Review your submission history"
         actions={
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <select
@@ -147,7 +147,6 @@ export default function SubmissionsPage() {
           <span style={{ fontSize: 12, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>
             {loading ? 'loading…' : `${total} submission${total === 1 ? '' : 's'}`}
           </span>
-          <span style={{ fontSize: 11.5, color: 'var(--text3)' }}>Click a row for details</span>
         </div>
 
         {loading && (

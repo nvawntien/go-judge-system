@@ -28,12 +28,16 @@ export function ProfileHero({
   actions,
 }: {
   profile: ProfileIdentity;
-  eyebrow: string;
+  eyebrow?: string;
   actions?: ReactNode;
 }) {
   const displayName = profile.full_name || profile.username;
   const avatar = avatarUrl(profile.avatar_url, API_BASE_URL);
-  const details = [profile.country, profile.school, profile.company].filter(Boolean) as string[];
+  const details = [
+    profile.country ? { label: 'Country', value: profile.country } : null,
+    profile.school ? { label: 'School', value: profile.school } : null,
+    profile.company ? { label: 'Company', value: profile.company } : null,
+  ].filter((detail): detail is { label: string; value: string } => Boolean(detail));
   const links = [
     profile.github_url && { label: 'GitHub', href: profile.github_url },
     profile.website_url && { label: 'Website', href: profile.website_url },
@@ -52,14 +56,18 @@ export function ProfileHero({
       )}
 
       <div className="ac-profile-identity">
-        <span className="ac-profile-eyebrow">{eyebrow}</span>
+        {eyebrow && <span className="ac-profile-eyebrow">{eyebrow}</span>}
         <div className="ac-profile-title-row">
           <h1>{displayName}</h1>
           <span className="ac-profile-handle">@{profile.username}</span>
         </div>
         <div className="ac-profile-meta">
           <span>Joined {formatDate(profile.created_at)}</span>
-          {details.map((detail) => <span key={detail}>{detail}</span>)}
+          {details.map((detail) => (
+            <span key={detail.label} title={detail.label} aria-label={`${detail.label}: ${detail.value}`}>
+              {detail.value}
+            </span>
+          ))}
           {links.map((link) => (
             <a key={link.label} href={link.href} target="_blank" rel="noopener noreferrer" title={link.href}>
               {link.label}
@@ -111,7 +119,7 @@ export function ProfileStatsLoading() {
       <SkeletonBar width={172} height={20} />
       <div className="ac-profile-summary-layout" style={{ marginTop: 18 }}>
         <div className="ac-solved-progress-overall" aria-hidden="true">
-          <SkeletonBar width={120} height={120} radius={60} />
+          <SkeletonBar width={108} height={108} radius={54} />
         </div>
         <div className="ac-profile-stat-grid">
           {Array.from({ length: 3 }, (_, index) => (

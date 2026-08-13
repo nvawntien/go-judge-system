@@ -61,10 +61,7 @@ export default function HomePage() {
       <div className="ac-home-dashboard">
         <section className="ac-panel ac-home-overview" aria-labelledby="home-overview-title">
           <div className="ac-section-heading">
-            <div>
-              <span className="ac-eyebrow">Authoritative statistics</span>
-              <h2 id="home-overview-title">Competitive overview</h2>
-            </div>
+            <h2 id="home-overview-title">Competitive overview</h2>
             <Link href="/profile">Open profile</Link>
           </div>
 
@@ -86,10 +83,7 @@ export default function HomePage() {
 
         <section className="ac-panel ac-home-recent" aria-labelledby="home-recent-title">
           <div className="ac-section-heading ac-home-section-heading">
-            <div>
-              <span className="ac-eyebrow">Latest judge activity</span>
-              <h2 id="home-recent-title">Recent submissions</h2>
-            </div>
+            <h2 id="home-recent-title">Recent submissions</h2>
             <Link href="/submissions">View all</Link>
           </div>
 
@@ -100,7 +94,7 @@ export default function HomePage() {
           ) : recentError ? (
             <ErrorState title="Could not load recent submissions" onRetry={() => setReload((value) => value + 1)} />
           ) : recent.length === 0 ? (
-            <EmptyState title="No submissions yet" description="Your latest judge activity will appear here." action={<Link href="/problems" className="ac-button ac-button-secondary">Browse problems</Link>} />
+            <EmptyState title="No submissions yet" description="Recent submissions will appear here." action={<Link href="/problems" className="ac-button ac-button-secondary">Browse problems</Link>} />
           ) : (
             <div className="ac-home-submission-list">
               {recent.map((submission) => {
@@ -123,7 +117,7 @@ export default function HomePage() {
         <nav className="ac-panel ac-home-shortcuts" aria-label="Dashboard shortcuts">
           <HomeShortcut href="/problems" title="Problem catalog" description="Search and filter published challenges." />
           <HomeShortcut href="/submissions" title="Submission history" description="Review verdicts and submitted source." />
-          <HomeShortcut href="/settings" title="Profile settings" description="Update your identity, avatar, and security." />
+          <HomeShortcut href="/settings" title="Profile settings" description="Update your identity, avatar, and security." secondary />
         </nav>
       </div>
     </AppShell>
@@ -136,7 +130,7 @@ function SignedOutHome() {
       <section className="ac-home-hero">
         <div className="ac-home-hero-brand"><Logo size={34} /><Wordmark fontSize={26} /></div>
         <h1>Solve problems. Submit code. Understand every verdict.</h1>
-        <p>Explore the public problem catalog, then sign in when you are ready to run code, submit solutions, and track authoritative progress.</p>
+        <p>Explore the public problem catalog, then sign in when you are ready to run code, submit solutions, and track your progress.</p>
         <div className="ac-home-hero-actions">
           <Link href="/problems" className="ac-button ac-button-primary">Browse problems</Link>
           <Link href="/login" className="ac-button ac-button-secondary">Sign in</Link>
@@ -146,8 +140,8 @@ function SignedOutHome() {
 
       <section className="ac-home-capabilities" aria-label="AstraCode capabilities">
         <HomeCapability index="01" title="Readable problem workspace">Technical statements, examples, constraints, and the editor stay focused on solving.</HomeCapability>
-        <HomeCapability index="02" title="Real judge lifecycle">Queued, judging, and terminal verdicts remain explicit and never rely on color alone.</HomeCapability>
-        <HomeCapability index="03" title="Authoritative progress">Profile statistics come from Submission Service aggregates rather than browser-side guesses.</HomeCapability>
+        <HomeCapability index="02" title="Clear verdict lifecycle">Queued, judging, and final verdicts remain explicit and never rely on color alone.</HomeCapability>
+        <HomeCapability index="03" title="Progress in one place">Review solved problems, submission totals, activity, and language usage from your profile.</HomeCapability>
       </section>
     </AppShell>
   );
@@ -166,8 +160,8 @@ function HomeStat({ label, value }: { label: string; value: number | string }) {
   return <div className="ac-home-stat"><span>{label}</span><strong>{typeof value === 'number' ? value.toLocaleString() : value}</strong></div>;
 }
 
-function HomeShortcut({ href, title, description }: { href: string; title: string; description: string }) {
-  return <Link href={href} className="ac-home-shortcut"><span><strong>{title}</strong><small>{description}</small></span><span aria-hidden="true">→</span></Link>;
+function HomeShortcut({ href, title, description, secondary = false }: { href: string; title: string; description: string; secondary?: boolean }) {
+  return <Link href={href} className={`ac-home-shortcut${secondary ? ' ac-home-shortcut-secondary' : ''}`}><span><strong>{title}</strong><small>{description}</small></span><span aria-hidden="true">→</span></Link>;
 }
 
 function HomeCapability({ index, title, children }: { index: string; title: string; children: React.ReactNode }) {

@@ -158,16 +158,7 @@ export function ErrorState({
         !
       </span>
       <p className="ac-state-title">{title}</p>
-      {detail && (
-        <p
-          className="ac-state-description"
-          style={{
-            fontFamily: 'var(--font-mono)',
-          }}
-        >
-          {detail}
-        </p>
-      )}
+      {detail && <p className="ac-state-description">{detail}</p>}
       {onRetry && (
         <button
           type="button"

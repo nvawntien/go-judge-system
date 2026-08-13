@@ -38,7 +38,7 @@ function ResetPasswordView() {
       setPassword('');
       setConfirm('');
     } catch (cause) {
-      if (cause instanceof NetworkError) setError('Cannot reach the API gateway. Try again.');
+      if (cause instanceof NetworkError) setError('AstraCode is temporarily unreachable. Check your connection and try again.');
       else if (cause instanceof ApiError) setError(cause.message || 'This reset link is invalid or has expired.');
       else setError('Could not reset your password. Try again.');
     } finally {

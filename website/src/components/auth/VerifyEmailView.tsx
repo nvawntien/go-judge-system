@@ -101,7 +101,7 @@ function mapVerifyError(err: unknown): VerifyEmailState {
     return { status: 'checking' };
   }
   if (err instanceof NetworkError) {
-    return { status: 'error', message: 'Cannot reach the API gateway. Check your connection and try again.' };
+    return { status: 'error', message: 'AstraCode is temporarily unreachable. Check your connection and try again.' };
   }
   if (err instanceof ApiError) {
     if (err.code === 40102) {
@@ -247,7 +247,7 @@ export function VerifyEmailView() {
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') return;
       if (err instanceof NetworkError) {
-        setResendState({ status: 'error', message: 'Cannot reach the API gateway. Please try again.' });
+        setResendState({ status: 'error', message: 'AstraCode is temporarily unreachable. Check your connection and try again.' });
       } else if (err instanceof ApiError && err.httpStatus === 429) {
         setResendState({ status: 'error', message: 'Please wait a moment before requesting another link.' });
       } else {
