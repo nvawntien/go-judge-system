@@ -8,7 +8,7 @@ import {
   ProfileHero,
   ProfileLanguages,
   ProfileSectionError,
-  ProfileStatGrid,
+  ProfileCompetitiveOverview,
   ProfileStatsLoading,
   PublicPrivacyNote,
 } from '@/components/profile/ProfileViews';
@@ -83,7 +83,7 @@ export default function PublicProfilePage() {
 
         {statsLoading ? <ProfileStatsLoading /> : statsError || !stats ? (
           <ProfileSectionError title="Could not load competitive statistics" detail="Profile details are still available." onRetry={() => setStatsReload((value) => value + 1)} />
-        ) : <ProfileStatGrid stats={stats} />}
+        ) : <ProfileCompetitiveOverview stats={stats} />}
 
         {statsLoading ? <PublicInsightsLoading /> : statsError || !stats ? null : (
           <div className="ac-profile-content-grid">

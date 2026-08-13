@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AppShell } from '@/components/AppShell';
+import { AppShell, PageHeading } from '@/components/AppShell';
 import { useAuth } from '@/components/AuthProvider';
 import { useTheme, type ThemePreference } from '@/components/ThemeProvider';
 import { useToast } from '@/components/ToastProvider';
@@ -161,15 +161,7 @@ export default function SettingsPage() {
 
   return (
     <AppShell maxWidth={900}>
-      <header style={{ marginBottom: 22 }}>
-        <span className="ac-profile-eyebrow">Account</span>
-        <h1 style={{ margin: '4px 0 0', fontSize: 26, fontWeight: 680, letterSpacing: '-0.03em' }}>
-          Settings
-        </h1>
-        <p style={{ margin: '6px 0 0', color: 'var(--text2)', fontSize: 13.5 }}>
-          Manage the information shown on your public profile and secure your account.
-        </p>
-      </header>
+      <PageHeading title="Settings" subtitle="Manage the information shown on your public profile and secure your account." />
 
       {dirty && (
         <div
@@ -195,7 +187,7 @@ export default function SettingsPage() {
 
       <Card padding={22} style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
         <div>
-          <span className="ac-profile-eyebrow">Public profile</span>
+          <span className="ac-eyebrow">Public profile</span>
           <h2 style={{ margin: '4px 0 0', fontSize: 16, fontWeight: 650 }}>Identity and details</h2>
           <p style={{ margin: '4px 0 0', color: 'var(--text3)', fontSize: 12.5 }}>Optional fields are hidden when left blank.</p>
         </div>
@@ -422,7 +414,7 @@ export default function SettingsPage() {
       <Card padding={22} style={{ marginTop: 18, borderColor: 'var(--border2)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: 220 }}>
-            <span className="ac-profile-eyebrow">Security</span>
+            <span className="ac-eyebrow">Security</span>
             <h2 style={{ margin: '4px 0 3px', fontSize: 16, fontWeight: 650 }}>Password</h2>
             <p style={{ margin: 0, fontSize: 12.5, color: 'var(--text3)' }}>
               Changing it signs out every active session. You will need to sign in again.

@@ -84,6 +84,7 @@ function ProblemsScreen() {
     (searchParams.get('difficulty') as Difficulty) || '',
   );
   const [tagSlug, setTagSlug] = useState(searchParams.get('tag_slug') ?? '');
+  const [tagQuery, setTagQuery] = useState(searchParams.get('tag_slug') ?? '');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [sort, setSort] = useState<SortOption>('default');
   const [page, setPage] = useState(Number(searchParams.get('page')) || 1);
@@ -117,6 +118,12 @@ function ProblemsScreen() {
       .catch(() => setTags([]));
     return () => controller.abort();
   }, []);
+
+  useEffect(() => {
+    if (!tagSlug || tags.length === 0) return;
+    const selected = tags.find((tag) => tag.slug === tagSlug);
+    if (selected) setTagQuery(selected.name);
+  }, [tagSlug, tags]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -193,6 +200,7 @@ function ProblemsScreen() {
     setSearch('');
     setDifficulty('');
     setTagSlug('');
+    setTagQuery('');
     setStatusFilter('all');
     setSort('default');
     setPage(1);
@@ -249,22 +257,12 @@ function ProblemsScreen() {
 
       <section
         aria-label="Problem catalog"
-        style={{
-          background: 'var(--surface)',
-          border: '1px solid var(--border)',
-          borderRadius: 14,
-          boxShadow: 'var(--shadow)',
-          overflow: 'hidden',
-        }}
+        className="ac-data-frame"
       >
         <div
+          className="ac-toolbar ac-problem-toolbar"
           style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            alignItems: 'center',
-            gap: 14,
-            padding: '14px 16px',
-            borderBottom: '1px solid var(--border)',
+            gap: 10,
           }}
         >
           <div
@@ -316,6 +314,7 @@ function ProblemsScreen() {
                 setPage(1);
               }}
               aria-label="Filter by difficulty"
+              className="ac-select"
               style={selectStyle()}
             >
               <option value="">Difficulty: All</option>
@@ -332,6 +331,7 @@ function ProblemsScreen() {
               aria-label="Filter by status"
               disabled={!user}
               title={user ? undefined : 'Sign in to filter by your progress'}
+              className="ac-select"
               style={selectStyle({ opacity: user ? 1 : 0.55 })}
             >
               <option value="all">Status: All</option>
@@ -340,27 +340,40 @@ function ProblemsScreen() {
               <option value="unsolved">Unsolved</option>
             </select>
 
-            <select
-              value={tagSlug}
-              onChange={(event) => {
-                setTagSlug(event.target.value);
-                setPage(1);
-              }}
-              aria-label="Filter by tag"
-              style={selectStyle({ maxWidth: 170 })}
-            >
-              <option value="">Tag: All</option>
-              {tags.map((tag) => (
-                <option key={tag.id} value={tag.slug}>
-                  {tag.name}
-                </option>
-              ))}
-            </select>
+            <div className="ac-problem-tag-filter">
+              <input
+                type="search"
+                list="ac-problem-tag-options"
+                value={tagQuery}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  const normalized = value.trim().toLocaleLowerCase();
+                  const selected = tags.find((tag) =>
+                    tag.name.toLocaleLowerCase() === normalized || tag.slug.toLocaleLowerCase() === normalized,
+                  );
+                  setTagQuery(value);
+                  setTagSlug(selected?.slug ?? '');
+                  setPage(1);
+                }}
+                onBlur={() => {
+                  const selected = tags.find((tag) => tag.slug === tagSlug);
+                  if (selected) setTagQuery(selected.name);
+                  else if (tagQuery.trim()) setTagQuery('');
+                }}
+                placeholder="Tag: All"
+                aria-label="Search and filter by tag"
+                className="ac-input"
+              />
+              <datalist id="ac-problem-tag-options">
+                {tags.map((tag) => <option key={tag.id} value={tag.name}>{tag.slug}</option>)}
+              </datalist>
+            </div>
 
             <select
               value={sort}
               onChange={(event) => setSort(event.target.value as SortOption)}
               aria-label="Sort problems"
+              className="ac-select"
               style={selectStyle()}
             >
               <option value="default">Sort: Default</option>
@@ -472,31 +485,27 @@ function ProblemsScreen() {
 
         {!loading && !error && rows.length > 0 && !isMobile && (
           <div style={{ overflowX: 'auto' }}>
-            <div role="table" aria-label="Problems" style={{ minWidth: 800, animation: 'acFadeUp .25s ease' }}>
+            <div aria-label="Problems" style={{ minWidth: 800, animation: 'acFadeUp .25s ease' }}>
               <div
-                role="row"
+                aria-hidden="true"
+                className="ac-table-head"
                 style={{
                   display: 'grid',
                   gridTemplateColumns: GRID,
                   gap: 10,
                   alignItems: 'center',
                   padding: '9px 18px',
-                  fontSize: 11,
-                  fontWeight: 650,
-                  letterSpacing: '.06em',
-                  textTransform: 'uppercase',
-                  color: 'var(--text3)',
                 }}
               >
-                <span role="columnheader" aria-label="Status" />
-                <span role="columnheader">ID</span>
-                <span role="columnheader">Title</span>
-                <span role="columnheader">Tags</span>
-                <span role="columnheader">Difficulty</span>
-                <span role="columnheader" style={{ textAlign: 'right' }}>
+                <span />
+                <span>ID</span>
+                <span>Title</span>
+                <span>Tags</span>
+                <span>Difficulty</span>
+                <span style={{ textAlign: 'right' }}>
                   Time limit
                 </span>
-                <span role="columnheader" style={{ textAlign: 'right' }}>
+                <span style={{ textAlign: 'right' }}>
                   Memory
                 </span>
               </div>
@@ -510,10 +519,10 @@ function ProblemsScreen() {
                 return (
                   <Link
                     key={problem.id}
-                    role="row"
                     href={`/problems/${problem.slug}`}
                     data-prow="1"
-                    className="ac-hover-accent-row"
+                    data-interactive="true"
+                    className="ac-table-row"
                     style={{
                       display: 'grid',
                       gridTemplateColumns: GRID,
@@ -522,7 +531,6 @@ function ProblemsScreen() {
                       width: '100%',
                       boxSizing: 'border-box',
                       padding: 'var(--rowpad) 18px',
-                      borderTop: '1px solid var(--border)',
                       background: status === 'solved' ? 'var(--surface2)' : 'transparent',
                       textAlign: 'left',
                       color: 'var(--text)',
@@ -634,14 +642,14 @@ function ProblemsScreen() {
                   key={problem.id}
                   href={`/problems/${problem.slug}`}
                   data-prow="1"
-                  className="ac-hover-accent-row"
+                  data-interactive="true"
+                  className="ac-table-row"
                   style={{
                     display: 'flex',
                     gap: 12,
                     alignItems: 'flex-start',
                     minHeight: 44,
                     padding: '12px 16px',
-                    borderTop: '1px solid var(--border)',
                     color: 'var(--text)',
                     textDecoration: 'none',
                   }}
@@ -692,20 +700,13 @@ function ProblemsScreen() {
 
         {!error && (
           <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 10,
-              padding: '12px 18px',
-              borderTop: '1px solid var(--border)',
-            }}
+            className="ac-pagination"
           >
-            <span style={{ fontSize: 12, color: 'var(--text3)' }}>
+            <span className="ac-pagination-meta">
               Page {page} of {totalPages}
               {user && problems.length > 0 ? ` · ${solvedHere} solved on this page` : ''}
             </span>
-            <div style={{ display: 'flex', gap: 6 }}>
+            <div className="ac-pagination-actions">
               <button
                 type="button"
                 onClick={() => setPage((p) => Math.max(1, p - 1))}

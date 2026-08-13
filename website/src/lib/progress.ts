@@ -1,8 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { ApiError, problemApi, submissionApi } from './api';
-import type { Difficulty, Problem, SubmissionListItem } from './types';
+import { ApiError, submissionApi } from './api';
+import type { SubmissionListItem } from './types';
 
 /**
  * Detailed per-problem progress is derived from the caller's own submission
@@ -116,50 +116,4 @@ export function useProgress(enabled: boolean): {
   }, []);
 
   return { progress, loading, reload };
-}
-
-/* -------------------------------------------------------- problem catalog */
-
-export interface ProblemIndex {
-  problems: Problem[];
-  byId: Map<number, Problem>;
-  totalsByDifficulty: Record<Difficulty, number>;
-  total: number;
-}
-
-let indexCache: { at: number; value: Promise<ProblemIndex> } | null = null;
-
-async function loadProblemIndex(): Promise<ProblemIndex> {
-  const problems: Problem[] = [];
-  let total = 0;
-
-  for (let page = 1; page <= MAX_PAGES; page += 1) {
-    const res = await problemApi.list({ page, limit: PAGE_SIZE });
-    problems.push(...res.items);
-    total = res.total;
-    if (problems.length >= res.total || res.items.length === 0) break;
-  }
-
-  const byId = new Map<number, Problem>();
-  const totalsByDifficulty: Record<Difficulty, number> = { easy: 0, medium: 0, hard: 0 };
-  for (const problem of problems) {
-    byId.set(problem.id, problem);
-    const key = problem.difficulty?.toLowerCase() as Difficulty;
-    if (key in totalsByDifficulty) totalsByDifficulty[key] += 1;
-  }
-
-  return { problems, byId, totalsByDifficulty, total: total || problems.length };
-}
-
-/** Whole (public) problem catalog, cached — used for progress-by-difficulty. */
-export function fetchProblemIndex(force = false): Promise<ProblemIndex> {
-  const fresh = indexCache && Date.now() - indexCache.at < 5 * TTL_MS;
-  if (!force && fresh && indexCache) return indexCache.value;
-
-  const value = loadProblemIndex().catch((err) => {
-    indexCache = null;
-    throw err;
-  });
-  indexCache = { at: Date.now(), value };
-  return value;
 }

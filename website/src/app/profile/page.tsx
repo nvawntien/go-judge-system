@@ -11,7 +11,7 @@ import {
   ProfileHero,
   ProfileLanguages,
   ProfileSectionError,
-  ProfileStatGrid,
+  ProfileCompetitiveOverview,
   ProfileStatsLoading,
 } from '@/components/profile/ProfileViews';
 import { EmptyState, ErrorState, SkeletonBar } from '@/components/ui';
@@ -76,7 +76,7 @@ export default function ProfilePage() {
             detail="Your identity and recent submissions are still available."
             onRetry={() => setStatsReload((value) => value + 1)}
           />
-        ) : <ProfileStatGrid stats={profileStats} />}
+        ) : <ProfileCompetitiveOverview stats={profileStats} />}
 
         <div className="ac-profile-dashboard-grid">
           <div className="ac-profile-grid-module ac-profile-grid-activity">
@@ -142,7 +142,10 @@ function RecentSubmissions({
           <span className="ac-profile-eyebrow">My latest work</span>
           <h2 id="profile-recent-submissions">Recent submissions</h2>
         </div>
-        <p>Latest {RECENT_SUBMISSION_LIMIT} judge runs.</p>
+        <div className="ac-profile-panel-actions">
+          <p>Latest {RECENT_SUBMISSION_LIMIT} judge runs.</p>
+          <Link href="/submissions">View all submissions</Link>
+        </div>
       </div>
       {loading ? (
         <div aria-busy="true" aria-label="Loading recent submissions">

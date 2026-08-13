@@ -6,12 +6,11 @@ import { Card, ErrorState, SkeletonBar } from '@/components/ui';
 import { API_BASE_URL } from '@/lib/api';
 import { LANGUAGES, avatarUrl, formatDate, initials, languageLabel } from '@/lib/format';
 import type { MyProfileStats, ProfileStatsActivity } from '@/lib/types';
-import { SolvedProgress, type DifficultyProgress } from './SolvedProgress';
+import { DifficultyBreakdown, SolvedProgress, type DifficultyProgress } from './SolvedProgress';
 
 type ProfileIdentity = {
   full_name: string;
   username: string;
-  rating: number;
   avatar_url?: string | null;
   bio?: string | null;
   country?: string | null;
@@ -57,7 +56,6 @@ export function ProfileHero({
         <div className="ac-profile-title-row">
           <h1>{displayName}</h1>
           <span className="ac-profile-handle">@{profile.username}</span>
-          {profile.rating > 0 && <span className="ac-profile-rating">Rating {profile.rating.toLocaleString()}</span>}
         </div>
         <div className="ac-profile-meta">
           <span>Joined {formatDate(profile.created_at)}</span>
@@ -74,41 +72,34 @@ export function ProfileHero({
   );
 }
 
-export function ProfileStatGrid({
+export function ProfileCompetitiveOverview({
   stats,
   difficultyProgress,
 }: {
   stats: MyProfileStats;
   difficultyProgress?: DifficultyProgress;
 }) {
-  const cards = [
-    { value: stats.solved_problems, label: 'Solved' },
+  const metrics = [
     { value: stats.attempted_problems, label: 'Attempted' },
     { value: stats.total_submissions, label: 'Submissions' },
     { value: formatPercent(stats.acceptance_rate), label: 'Acceptance' },
   ];
   return (
-    <section className="ac-profile-stats" aria-labelledby="competitive-summary">
+    <section className="ac-profile-stats" aria-labelledby="competitive-overview">
       <div className="ac-profile-section-heading">
-        <div>
-          <span className="ac-profile-eyebrow">Competitive summary</span>
-          <h2 id="competitive-summary">Performance at a glance</h2>
-        </div>
+        <h2 id="competitive-overview">Competitive overview</h2>
       </div>
       <div className="ac-profile-summary-layout">
+        <SolvedProgress solved={stats.solved_problems} attempted={stats.attempted_problems} />
         <div className="ac-profile-stat-grid">
-          {cards.map((card, index) => (
-            <div key={card.label} className={index === 0 ? 'ac-profile-stat ac-profile-stat-primary' : 'ac-profile-stat'}>
-              <strong>{typeof card.value === 'number' ? card.value.toLocaleString() : card.value}</strong>
-              <span>{card.label}</span>
+          {metrics.map((metric) => (
+            <div key={metric.label} className="ac-profile-stat">
+              <span>{metric.label}</span>
+              <strong>{typeof metric.value === 'number' ? metric.value.toLocaleString() : metric.value}</strong>
             </div>
           ))}
         </div>
-        <SolvedProgress
-          solved={stats.solved_problems}
-          attempted={stats.attempted_problems}
-          difficultyProgress={difficultyProgress}
-        />
+        <DifficultyBreakdown progress={difficultyProgress} />
       </div>
     </section>
   );
@@ -117,25 +108,24 @@ export function ProfileStatGrid({
 export function ProfileStatsLoading() {
   return (
     <section className="ac-profile-stats" aria-label="Loading competitive statistics" aria-busy="true">
-      <SkeletonBar width={142} height={11} />
-      <SkeletonBar width={220} height={20} style={{ marginTop: 9 }} />
+      <SkeletonBar width={172} height={20} />
       <div className="ac-profile-summary-layout" style={{ marginTop: 18 }}>
+        <div className="ac-solved-progress-overall" aria-hidden="true">
+          <SkeletonBar width={120} height={120} radius={60} />
+        </div>
         <div className="ac-profile-stat-grid">
-          {Array.from({ length: 4 }, (_, index) => (
+          {Array.from({ length: 3 }, (_, index) => (
             <div key={index} className="ac-profile-stat">
-              <SkeletonBar width={60} height={26} />
-              <SkeletonBar width={72} height={11} style={{ marginTop: 8 }} />
+              <SkeletonBar width={72} height={11} />
+              <SkeletonBar width={60} height={26} style={{ marginTop: 8 }} />
             </div>
           ))}
         </div>
-        <div className="ac-solved-progress" aria-hidden="true">
-          <SkeletonBar width={120} height={120} radius={60} />
-          <div style={{ flex: 1 }}>
-            <SkeletonBar width={132} height={11} />
-            <SkeletonBar width="100%" height={10} style={{ marginTop: 15 }} />
-            <SkeletonBar width="82%" height={10} style={{ marginTop: 12 }} />
-            <SkeletonBar width="68%" height={10} style={{ marginTop: 12 }} />
-          </div>
+        <div className="ac-solved-progress-breakdown" aria-hidden="true">
+          <SkeletonBar width={132} height={11} />
+          <SkeletonBar width="100%" height={10} style={{ marginTop: 15 }} />
+          <SkeletonBar width="82%" height={10} style={{ marginTop: 12 }} />
+          <SkeletonBar width="68%" height={10} style={{ marginTop: 12 }} />
         </div>
       </div>
     </section>
@@ -270,7 +260,7 @@ function buildLanguageUsage(stats: MyProfileStats): LanguageUsageItem[] {
   });
 }
 
-const LEVEL_COLORS = ['var(--surface3)', 'var(--accent-soft2)', '#B4A0F0', 'var(--accent)', 'var(--accent-strong)'];
+const LEVEL_COLORS = ['var(--surface3)', 'var(--accent-soft2)', 'var(--accent-mid)', 'var(--accent)', 'var(--accent-strong)'];
 const ACTIVITY_DAYS = 365;
 const DAYS_PER_WEEK = 7;
 const SHORT_MONTH_FORMATTER = new Intl.DateTimeFormat('en-US', { month: 'short', timeZone: 'UTC' });

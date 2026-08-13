@@ -14,19 +14,10 @@ export function AdminPageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexWrap: 'wrap',
-        alignItems: 'flex-end',
-        justifyContent: 'space-between',
-        gap: 14,
-        marginBottom: 18,
-      }}
-    >
-      <div style={{ minWidth: 0 }}>
-        <h1 style={{ margin: 0, fontSize: 22, lineHeight: 1.2, fontWeight: 680 }}>{title}</h1>
-        {description && <p style={{ margin: '5px 0 0', color: 'var(--text2)', fontSize: 13.5 }}>{description}</p>}
+    <div className="ac-admin-page-header">
+      <div className="ac-admin-page-header-copy">
+        <h1 className="ac-page-title">{title}</h1>
+        {description && <p className="ac-page-subtitle">{description}</p>}
       </div>
       {actions && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>{actions}</div>}
     </div>
@@ -216,15 +207,14 @@ export function AdminDialog({
 
 export const adminCard: CSSProperties = {
   border: '1px solid var(--border)',
-  borderRadius: 8,
+  borderRadius: 'var(--radius-lg)',
   background: 'var(--surface)',
-  boxShadow: 'var(--shadow)',
 };
 
 export const adminField: CSSProperties = {
   height: 38,
   border: '1px solid var(--border)',
-  borderRadius: 8,
+  borderRadius: 'var(--radius-md)',
   background: 'var(--surface)',
   color: 'var(--text)',
   padding: '0 10px',

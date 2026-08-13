@@ -117,15 +117,13 @@ export function EmptyState({
   done?: number;
 }) {
   return (
-    <div style={{ padding: '48px 20px', textAlign: 'center' }}>
-      <div style={{ marginBottom: 12, opacity: 0.7, display: 'flex', justifyContent: 'center' }}>
+    <div className="ac-state">
+      <div style={{ marginBottom: 10, opacity: 0.68, display: 'flex', justifyContent: 'center' }}>
         <CodePath total={nodes} done={done} width={72} height={36} dashed />
       </div>
-      <p style={{ margin: '0 0 4px', fontSize: 14, fontWeight: 600 }}>{title}</p>
-      {description && (
-        <p style={{ margin: '0 0 16px', fontSize: 12.5, color: 'var(--text3)' }}>{description}</p>
-      )}
-      {action}
+      <p className="ac-state-title">{title}</p>
+      {description && <p className="ac-state-description">{description}</p>}
+      {action && <div className="ac-state-action">{action}</div>}
     </div>
   );
 }
@@ -140,7 +138,7 @@ export function ErrorState({
   onRetry?: () => void;
 }) {
   return (
-    <div role="alert" style={{ padding: '48px 20px', textAlign: 'center', animation: 'acFadeUp .25s ease' }}>
+    <div role="alert" className="ac-state" style={{ animation: 'acFadeUp .2s ease' }}>
       <span
         aria-hidden="true"
         style={{
@@ -154,18 +152,16 @@ export function ErrorState({
           justifyContent: 'center',
           fontSize: 16,
           fontWeight: 700,
-          marginBottom: 12,
+          marginBottom: 10,
         }}
       >
         !
       </span>
-      <p style={{ margin: '0 0 4px', fontSize: 14, fontWeight: 600 }}>{title}</p>
+      <p className="ac-state-title">{title}</p>
       {detail && (
         <p
+          className="ac-state-description"
           style={{
-            margin: '0 0 16px',
-            fontSize: 12.5,
-            color: 'var(--text3)',
             fontFamily: 'var(--font-mono)',
           }}
         >
@@ -176,18 +172,7 @@ export function ErrorState({
         <button
           type="button"
           onClick={onRetry}
-          className="ac-hover-accent"
-          style={{
-            height: 36,
-            padding: '0 16px',
-            border: 'none',
-            borderRadius: 8,
-            background: 'var(--accent)',
-            color: 'var(--accent-ink)',
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: 'pointer',
-          }}
+          className="ac-button ac-button-primary ac-state-action"
         >
           Retry
         </button>
@@ -212,12 +197,9 @@ export function Card({
   return (
     <section
       aria-label={label}
+      className="ac-panel"
       style={{
-        background: 'var(--surface)',
-        border: '1px solid var(--border)',
-        borderRadius: 14,
         padding,
-        boxShadow: 'var(--shadow)',
         ...style,
       }}
     >
@@ -282,7 +264,7 @@ export const buttonStyles = {
     boxSizing: 'border-box',
     padding: '0 16px',
     border: 'none',
-    borderRadius: 8,
+    borderRadius: 'var(--radius-md)',
     background: 'var(--accent)',
     color: 'var(--accent-ink)',
     fontSize: 13,
@@ -292,7 +274,7 @@ export const buttonStyles = {
     textDecoration: 'none',
     whiteSpace: 'nowrap',
     cursor: 'pointer',
-    transition: 'background .15s',
+    transition: 'background-color .15s, border-color .15s, color .15s',
   }),
   secondary: (height = 38): CSSProperties => ({
     display: 'inline-flex',
@@ -302,7 +284,7 @@ export const buttonStyles = {
     boxSizing: 'border-box',
     padding: '0 16px',
     border: '1px solid var(--border2)',
-    borderRadius: 8,
+    borderRadius: 'var(--radius-md)',
     background: 'var(--surface)',
     color: 'var(--text)',
     fontSize: 13,
@@ -321,7 +303,7 @@ export const buttonStyles = {
     boxSizing: 'border-box',
     padding: '0 16px',
     border: 'none',
-    borderRadius: 8,
+    borderRadius: 'var(--radius-md)',
     background: 'none',
     color: 'var(--accent-fg)',
     fontSize: 13,
@@ -335,7 +317,7 @@ export const buttonStyles = {
   iconButton: (size = 36): CSSProperties => ({
     width: size,
     height: size,
-    borderRadius: 8,
+    borderRadius: 'var(--radius-md)',
     border: '1px solid var(--border)',
     background: 'var(--surface)',
     color: 'var(--text2)',

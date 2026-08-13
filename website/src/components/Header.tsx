@@ -2,14 +2,14 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from './AuthProvider';
 import { useTheme } from './ThemeProvider';
 import { useToast } from './ToastProvider';
-import { API_BASE_URL, userApi } from '@/lib/api';
+import { API_BASE_URL, problemApi, userApi } from '@/lib/api';
 import { useDebounced, useDismissable, useViewportWidth } from '@/lib/hooks';
-import { avatarUrl, initials, ratingTier } from '@/lib/format';
-import type { Me, PublicUserSearchItem } from '@/lib/types';
+import { avatarUrl, difficultyMeta, initials } from '@/lib/format';
+import type { Me, Problem, PublicUserSearchItem } from '@/lib/types';
 import { Icon, Logo, Wordmark, buttonStyles } from './ui';
 import { ADMIN_CONSOLE_MIN_ROLE } from './admin/AdminNavigation';
 import { roleAtLeast } from './admin/roles';
@@ -20,6 +20,10 @@ const NAV_ITEMS = [
   { label: 'Leaderboard', href: '/leaderboard' },
   { label: 'Discussions', href: '/discuss' },
 ];
+
+type GlobalSearchResult =
+  | { key: string; kind: 'problem'; problem: Problem }
+  | { key: string; kind: 'user'; user: PublicUserSearchItem };
 
 export function Header() {
   const router = useRouter();
@@ -42,7 +46,7 @@ export function Header() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState(false);
-  const [searchResults, setSearchResults] = useState<PublicUserSearchItem[]>([]);
+  const [searchResults, setSearchResults] = useState<GlobalSearchResult[]>([]);
   const [activeSearchIndex, setActiveSearchIndex] = useState(-1);
   const debouncedQuery = useDebounced(query, 250);
   const latestSearchQuery = useRef('');
@@ -98,15 +102,32 @@ export function Header() {
     setSearchResults([]);
     setActiveSearchIndex(-1);
 
-    void userApi
-      .searchUsers({ q: trimmed, page: 1, limit: 10 }, controller.signal)
-      .then((response) => {
+    void Promise.allSettled([
+      problemApi.list({ search: trimmed, page: 1, limit: 5 }, controller.signal),
+      userApi.searchUsers({ q: trimmed, page: 1, limit: 5 }, controller.signal),
+    ])
+      .then(([problems, users]) => {
         if (controller.signal.aborted || latestSearchQuery.current !== trimmed) return;
-        setSearchResults(response.items);
-      })
-      .catch(() => {
-        if (controller.signal.aborted || latestSearchQuery.current !== trimmed) return;
-        setSearchError(true);
+        if (problems.status === 'rejected' && users.status === 'rejected') {
+          setSearchError(true);
+          return;
+        }
+        const next: GlobalSearchResult[] = [];
+        if (problems.status === 'fulfilled') {
+          next.push(...problems.value.items.map((problem) => ({
+            key: `problem-${problem.id}`,
+            kind: 'problem' as const,
+            problem,
+          })));
+        }
+        if (users.status === 'fulfilled') {
+          next.push(...users.value.items.map((user) => ({
+            key: `user-${user.username}`,
+            kind: 'user' as const,
+            user,
+          })));
+        }
+        setSearchResults(next);
       })
       .finally(() => {
         if (!controller.signal.aborted && latestSearchQuery.current === trimmed) setSearchLoading(false);
@@ -131,18 +152,22 @@ export function Header() {
     }
   };
 
-  const navigateToUser = (result: PublicUserSearchItem) => {
+  const navigateToSearchResult = (result: GlobalSearchResult) => {
     closeSearch();
     latestSearchQuery.current = '';
     setQuery('');
     setSearchResults([]);
-    router.push(`/u/${encodeURIComponent(result.username)}`);
+    router.push(
+      result.kind === 'problem'
+        ? `/problems/${encodeURIComponent(result.problem.slug)}`
+        : `/u/${encodeURIComponent(result.user.username)}`,
+    );
   };
 
   const submitSearch = (event: React.FormEvent) => {
     event.preventDefault();
     if (activeSearchIndex >= 0 && activeSearchIndex < searchResults.length) {
-      navigateToUser(searchResults[activeSearchIndex]);
+      navigateToSearchResult(searchResults[activeSearchIndex]);
     }
   };
 
@@ -173,24 +198,10 @@ export function Header() {
   const isCurrent = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
 
   return (
-    <header
-      style={{
-        position: 'sticky',
-        top: 0,
-        zIndex: 40,
-        background: 'var(--surface)',
-        borderBottom: '1px solid var(--border)',
-        transition: 'background-color .25s ease, border-color .25s ease',
-      }}
-    >
+    <header className="ac-site-header">
       <div
+        className="ac-site-header-inner"
         style={{
-          maxWidth: 1440,
-          margin: '0 auto',
-          padding: '0 20px',
-          height: 56,
-          display: 'flex',
-          alignItems: 'center',
           gap: 8,
         }}
       >
@@ -267,7 +278,7 @@ export function Header() {
                 onKeyDown={onSearchKeyDown}
                 onSubmit={submitSearch}
                 onActivate={setActiveSearchIndex}
-                onSelect={navigateToUser}
+                onSelect={navigateToSearchResult}
               />
             </div>
           )}
@@ -278,7 +289,7 @@ export function Header() {
             aria-label={resolved === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
             title={resolved === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
             className="ac-hover-surface2-text"
-            style={buttonStyles.iconButton()}
+            style={buttonStyles.iconButton(isMobile ? 44 : 36)}
           >
             {resolved === 'dark' ? <Icon.Sun /> : <Icon.Moon />}
           </button>
@@ -290,7 +301,7 @@ export function Header() {
               aria-label="Notifications"
               aria-expanded={menu === 'notif'}
               className="ac-hover-surface2-text"
-              style={buttonStyles.iconButton()}
+              style={buttonStyles.iconButton(isMobile ? 44 : 36)}
             >
               <Icon.Bell />
             </button>
@@ -334,7 +345,7 @@ export function Header() {
                   display: 'flex',
                   alignItems: 'center',
                   gap: 8,
-                  height: 36,
+                  height: isMobile ? 44 : 36,
                   padding: '0 8px 0 4px',
                   borderRadius: 8,
                   border: '1px solid var(--border)',
@@ -422,7 +433,7 @@ export function Header() {
               href="/login"
               className="ac-hover-accent"
               style={{
-                ...buttonStyles.primary(36),
+                ...buttonStyles.primary(isMobile ? 44 : 36),
                 display: 'inline-flex',
                 alignItems: 'center',
                 textDecoration: 'none',
@@ -506,7 +517,7 @@ export function Header() {
               onKeyDown={onSearchKeyDown}
               onSubmit={submitSearch}
               onActivate={setActiveSearchIndex}
-              onSelect={navigateToUser}
+              onSelect={navigateToSearchResult}
             />
           </div>
         </nav>
@@ -572,14 +583,14 @@ function UserSearch({
   open: boolean;
   loading: boolean;
   failed: boolean;
-  results: PublicUserSearchItem[];
+  results: GlobalSearchResult[];
   activeIndex: number;
   onChange: (value: string) => void;
   onFocus: () => void;
   onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
   onSubmit: (event: React.FormEvent) => void;
   onActivate: (index: number) => void;
-  onSelect: (result: PublicUserSearchItem) => void;
+  onSelect: (result: GlobalSearchResult) => void;
 }) {
   const listboxID = mobile ? 'ac-global-search-results-mobile' : 'ac-global-search-results';
   const activeID = activeIndex >= 0 ? `${listboxID}-${activeIndex}` : undefined;
@@ -604,7 +615,7 @@ function UserSearch({
         onFocus={onFocus}
         onKeyDown={onKeyDown}
         placeholder="Search AstraCode…"
-        aria-label="Search AstraCode users"
+        aria-label="Search AstraCode problems and users"
         className={!mobile ? 'ac-input' : undefined}
         style={
           mobile
@@ -656,7 +667,7 @@ function UserSearch({
         <div
           id={listboxID}
           role="listbox"
-          aria-label="User search results"
+          aria-label="Problem and user search results"
           style={
             mobile
               ? {
@@ -686,102 +697,72 @@ function UserSearch({
         >
           {loading ? (
             <p aria-live="polite" style={{ margin: 0, padding: '10px 12px', fontSize: 12.5, color: 'var(--text3)' }}>
-              Searching users…
+              Searching AstraCode…
             </p>
           ) : failed ? (
             <p role="alert" style={{ margin: 0, padding: '10px 12px', fontSize: 12.5, color: 'var(--error)' }}>
-              Could not search users. Try again.
+              Search is unavailable. Try again.
             </p>
           ) : results.length === 0 ? (
             <p style={{ margin: 0, padding: '10px 12px', fontSize: 12.5, color: 'var(--text3)' }}>
-              No users found.
+              No problems or users found.
             </p>
           ) : (
             results.map((result, index) => {
-              const avatar = avatarUrl(result.avatar_url, API_BASE_URL);
+              const user = result.kind === 'user' ? result.user : null;
+              const avatar = user ? avatarUrl(user.avatar_url, API_BASE_URL) : null;
               const selected = index === activeIndex;
+              const startsGroup = index === 0 || results[index - 1].kind !== result.kind;
               return (
-                <button
-                  id={`${listboxID}-${index}`}
-                  key={result.username}
-                  type="button"
-                  role="option"
-                  aria-selected={selected}
-                  onMouseEnter={() => onActivate(index)}
-                  onClick={() => onSelect(result)}
-                  className="ac-hover-surface2"
-                  style={{
-                    display: 'flex',
-                    width: '100%',
-                    alignItems: 'center',
-                    gap: 9,
-                    padding: '8px 9px',
-                    border: 'none',
-                    borderRadius: 7,
-                    background: selected ? 'var(--accent-soft)' : 'transparent',
-                    color: 'var(--text)',
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                  }}
-                >
-                  {avatar ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={avatar} alt="" width={30} height={30} style={{ width: 30, height: 30, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
-                  ) : (
-                    <span
-                      aria-hidden="true"
-                      style={{
-                        width: 30,
-                        height: 30,
-                        borderRadius: '50%',
-                        background: 'var(--accent-soft2)',
-                        color: 'var(--accent-fg)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: 11,
-                        fontWeight: 650,
-                        flexShrink: 0,
-                      }}
-                    >
-                      {initials(result.full_name || result.username)}
-                    </span>
+                <Fragment key={result.key}>
+                  {startsGroup && (
+                    <div className="ac-search-group-label" role="presentation">
+                      {result.kind === 'problem' ? 'Problems' : 'Users'}
+                    </div>
                   )}
-                  <span style={{ minWidth: 0 }}>
-                    <span style={{ display: 'block', fontFamily: 'var(--font-mono)', fontSize: 12.5, fontWeight: 650 }}>
-                      @{result.username}
-                    </span>
-                    {result.full_name && (
-                      <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11.5, color: 'var(--text3)' }}>
-                        {result.full_name}
-                      </span>
+                  <button
+                    id={`${listboxID}-${index}`}
+                    type="button"
+                    role="option"
+                    aria-selected={selected}
+                    onMouseEnter={() => onActivate(index)}
+                    onClick={() => onSelect(result)}
+                    className="ac-search-option"
+                    style={{ background: selected ? 'var(--accent-soft)' : 'transparent' }}
+                  >
+                    {result.kind === 'problem' ? (
+                      <>
+                        <span className="ac-search-problem-icon" aria-hidden="true">{'</>'}</span>
+                        <span style={{ minWidth: 0, flex: 1 }}>
+                          <span className="ac-search-result-title">{result.problem.title}</span>
+                          <span className="ac-search-result-meta">
+                            #{result.problem.id} · {difficultyMeta(result.problem.difficulty).label}
+                          </span>
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        {avatar ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={avatar} alt="" width={30} height={30} className="ac-search-avatar" />
+                        ) : (
+                          <span aria-hidden="true" className="ac-search-avatar ac-search-avatar-fallback">
+                            {initials(user?.full_name || user?.username)}
+                          </span>
+                        )}
+                        <span style={{ minWidth: 0 }}>
+                          <span className="ac-search-result-title ac-search-result-handle">@{user?.username}</span>
+                          {user?.full_name && <span className="ac-search-result-meta">{user.full_name}</span>}
+                        </span>
+                      </>
                     )}
-                  </span>
-                </button>
+                  </button>
+                </Fragment>
               );
             })
           )}
         </div>
       )}
     </form>
-  );
-}
-
-/** Small badge shown next to a username. */
-export function TierBadge({ rating }: { rating: number }) {
-  return (
-    <span
-      style={{
-        fontSize: 11,
-        fontWeight: 650,
-        color: 'var(--accent-fg)',
-        background: 'var(--accent-soft)',
-        borderRadius: 6,
-        padding: '2px 9px',
-        whiteSpace: 'nowrap',
-      }}
-    >
-      {ratingTier(rating)}
-    </span>
   );
 }

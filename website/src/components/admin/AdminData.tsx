@@ -7,15 +7,7 @@ import type { AdminUser, AdminUserStatus, Difficulty, Role, SubmissionStatus } f
 
 export function AdminTableShell({ children }: { children: ReactNode }) {
   return (
-    <div
-      style={{
-        border: '1px solid var(--border)',
-        borderRadius: 8,
-        background: 'var(--surface)',
-        overflowX: 'auto',
-        boxShadow: 'var(--shadow)',
-      }}
-    >
+    <div className="ac-data-frame" style={{ overflowX: 'auto' }}>
       {children}
     </div>
   );
@@ -183,7 +175,7 @@ export function AdminPagination({
 }
 
 export const adminTh: CSSProperties = {
-  padding: '10px 12px',
+  padding: '9px 12px',
   color: 'var(--text3)',
   fontSize: 11,
   fontWeight: 750,
@@ -195,7 +187,7 @@ export const adminTh: CSSProperties = {
 };
 
 export const adminTd: CSSProperties = {
-  padding: '11px 12px',
+  padding: '10px 12px',
   borderBottom: '1px solid var(--border)',
   verticalAlign: 'middle',
   fontSize: 13,

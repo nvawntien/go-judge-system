@@ -28,17 +28,6 @@ const COPY: Record<Mode, { title: string; sub: string; cta: string }> = {
   },
 };
 
-function labelStyle(): React.CSSProperties {
-  return {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 5,
-    fontSize: 12,
-    fontWeight: 600,
-    color: 'var(--text2)',
-  };
-}
-
 function fieldStyle(invalid: boolean): React.CSSProperties {
   return {
     height: 40,
@@ -179,68 +168,27 @@ function AuthCard() {
   });
 
   return (
-    <main
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 24,
-        animation: 'acFadeUp .3s ease',
-        position: 'relative',
-      }}
-    >
+    <main className="ac-auth-page">
       <button
         type="button"
         onClick={toggle}
         aria-label={resolved === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-        className="ac-hover-surface2"
-        style={{
-          position: 'absolute',
-          top: 18,
-          right: 18,
-          width: 36,
-          height: 36,
-          borderRadius: 8,
-          border: '1px solid var(--border)',
-          background: 'var(--surface)',
-          color: 'var(--text2)',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
+        className="ac-icon-button ac-auth-theme-toggle"
       >
         {resolved === 'dark' ? <Icon.Sun /> : <Icon.Moon />}
       </button>
 
-      <div style={{ width: '100%', maxWidth: 400 }}>
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 9,
-            marginBottom: 22,
-          }}
-        >
+      <div className="ac-auth-layout">
+        <div className="ac-auth-brand">
           <Logo size={30} />
           <Wordmark fontSize={20} />
         </div>
 
-        <section
-          style={{
-            background: 'var(--surface)',
-            border: '1px solid var(--border)',
-            borderRadius: 16,
-            boxShadow: 'var(--shadow)',
-            overflow: 'hidden',
-          }}
-        >
+        <section className="ac-auth-card">
           <div
             role="tablist"
             aria-label="Sign in or register"
-            style={{ display: 'flex', borderBottom: '1px solid var(--border)' }}
+            className="ac-auth-tabs"
           >
             <button
               type="button"
@@ -271,7 +219,7 @@ function AuthCard() {
 
           <form
             onSubmit={onSubmit}
-            style={{ padding: 22, display: 'flex', flexDirection: 'column', gap: 14 }}
+            className="ac-auth-form"
           >
             <div>
               <h1 style={{ margin: '0 0 2px', fontSize: 17, fontWeight: 650, letterSpacing: '-0.01em' }}>
@@ -321,7 +269,7 @@ function AuthCard() {
             )}
 
             {mode === 'login' && (
-              <label style={labelStyle()}>
+              <label className="ac-form-label">
                 Email or username
                 <input
                   value={identifier}
@@ -343,7 +291,7 @@ function AuthCard() {
 
             {mode === 'register' && (
               <>
-                <label style={labelStyle()}>
+                <label className="ac-form-label">
                   Full name
                   <input
                     value={fullName}
@@ -360,7 +308,7 @@ function AuthCard() {
                     </span>
                   )}
                 </label>
-                <label style={labelStyle()}>
+                <label className="ac-form-label">
                   Username
                   <input
                     value={username}
@@ -381,7 +329,7 @@ function AuthCard() {
             )}
 
             {(mode === 'register' || mode === 'forgot') && (
-              <label style={labelStyle()}>
+              <label className="ac-form-label">
                 Email
                 <input
                   value={email}
@@ -402,7 +350,7 @@ function AuthCard() {
             )}
 
             {mode !== 'forgot' && (
-              <label style={labelStyle()}>
+              <label className="ac-form-label">
                 Password
                 <span style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                   <input
