@@ -128,6 +128,8 @@ export interface Problem {
   slug: string;
   title: string;
   description: string;
+  input_format: string;
+  output_format: string;
   difficulty: Difficulty;
   tags?: Tag[];
   examples?: ProblemExample[];
@@ -169,6 +171,8 @@ export interface ProblemWriteExample {
 export interface CreateAdminProblemRequest {
   title: string;
   description: string;
+  input_format: string;
+  output_format: string;
   difficulty: Difficulty;
   tag_ids?: number[];
   examples: ProblemWriteExample[];
@@ -182,6 +186,8 @@ export interface UpdateAdminProblemRequest {
   title?: string;
   slug?: string;
   description?: string;
+  input_format?: string;
+  output_format?: string;
   difficulty?: Difficulty;
   tag_ids?: number[];
   examples?: ProblemWriteExample[];

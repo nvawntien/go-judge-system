@@ -6,7 +6,7 @@
 
 ## Problem catalogue
 
-**Problem** has title/slug, markdown-like description content, difficulty (`easy`, `medium`, `hard`), tags, examples, constraints, hints, limits, author, hidden flag and soft-delete timestamp (`services/problem/internal/domain/entity/problem.go`). It is created hidden; `Publish` exposes it and `Hidden` withdraws it. A hidden/deleted problem is not generally public. **Tag** has name/unique slug, description and active state. **TestCase** is one versioned ZIP bundle metadata record per problem: object key, test count and version. The test bundle contents are not domain-persisted in PostgreSQL.
+**Problem** has title/slug; separate markdown-like `description`, `input_format`, and `output_format` prose; difficulty (`easy`, `medium`, `hard`), tags, examples, constraints, hints, limits, author, hidden flag and soft-delete timestamp (`services/problem/internal/domain/entity/problem.go`). Examples are public sample input/output pairs, not the private testcase bundle. It is created hidden; `Publish` exposes it and `Hidden` withdraws it. A hidden/deleted problem is not generally public. **Tag** has name/unique slug, description and active state. **TestCase** is one versioned ZIP bundle metadata record per problem: object key, test count and version. The test bundle contents are not domain-persisted in PostgreSQL.
 
 ## Submission and attempts
 

@@ -626,6 +626,7 @@ p {
   line-height: 1.3;
 }
 .ac-statement-paragraph { max-width: 70ch; margin: 0 0 13px; font-size: 13.5px; line-height: 1.65; }
+.ac-rich-text-heading { max-width: 70ch; margin: 18px 0 8px; color: var(--text); font-size: 13px; font-weight: 650; line-height: 1.4; }
 .ac-problem-constraints { max-width: 70ch; margin: 0 0 20px; padding-left: 20px; font-size: 12px; line-height: 1.85; color: var(--text2); }
 .ac-problem-constraints li { margin-bottom: 2px; }
 .ac-problem-examples { margin: 0 0 18px; }

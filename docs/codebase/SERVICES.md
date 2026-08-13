@@ -17,7 +17,7 @@
 * **Internal layout:** `domain/entity` contains Problem/TestCase/Tag; application ports and user/admin/worker use cases; Gin and gRPC inbound adapters; GORM and MinIO outbound adapters.
 * **HTTP:** public `GET /api/v1/problems`, `GET /api/v1/problems/:slug`, `GET /api/v1/tags`; contributor/moderator protected `/api/v1/my` and `/api/v1/admin` routes; exact service routes in its router.
 * **gRPC:** `ProblemService.GetTestCase` and `GetProblem` (`proto/problem/v1/problem.proto`) on configured port 9092. `GetTestCase` is worker-facing and returns a presigned ZIP URL with count/version.
-* **Data/dependencies:** owns `problem_db` tables and MinIO bucket `testcases`. Redis is constructed by the container configuration but no Problem cache usage was found in the application/adapters.
+* **Data/dependencies:** owns `problem_db` tables and MinIO bucket `testcases`. Problem create requests require separate description/input/output prose; legacy statement splitting is an explicit dry-run-first `cmd/backfill-problem-formats` command, not service startup. Redis is constructed by the container configuration but no Problem cache usage was found in the application/adapters.
 
 ## Submission Service
 

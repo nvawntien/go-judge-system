@@ -19,6 +19,8 @@ type ProblemFormValues = {
   title: string;
   slug: string;
   description: string;
+  inputFormat: string;
+  outputFormat: string;
   difficulty: Difficulty;
   tagIds: number[];
   examples: ProblemWriteExample[];
@@ -43,6 +45,8 @@ function fromProblem(problem?: AdminProblemDetail): ProblemFormValues {
     title: problem?.title ?? '',
     slug: problem?.slug ?? '',
     description: problem?.description ?? '',
+    inputFormat: problem?.input_format ?? '',
+    outputFormat: problem?.output_format ?? '',
     difficulty: problem?.difficulty ?? 'easy',
     tagIds: problem?.tags?.map((tag) => tag.id) ?? [],
     examples: problem?.examples?.length
@@ -70,6 +74,8 @@ function buildCreate(values: ProblemFormValues): CreateAdminProblemRequest {
   return {
     title: values.title.trim(),
     description: values.description.trim(),
+    input_format: values.inputFormat.trim(),
+    output_format: values.outputFormat.trim(),
     difficulty: values.difficulty,
     tag_ids: values.tagIds,
     examples: values.examples.map((example) => ({
@@ -94,6 +100,8 @@ function buildUpdate(values: ProblemFormValues): UpdateAdminProblemRequest {
 function validate(values: ProblemFormValues) {
   if (values.title.trim().length < 3) return 'Title must be at least 3 characters.';
   if (values.description.trim().length < 3) return 'Description must be at least 3 characters.';
+  if (!values.inputFormat.trim()) return 'Input format is required.';
+  if (!values.outputFormat.trim()) return 'Output format is required.';
   if (Number(values.timeLimit) <= 0 || Number(values.timeLimit) > 30) return 'Time limit must be between 1 and 30 seconds.';
   if (Number(values.memoryLimit) < 16 || Number(values.memoryLimit) > 1024) return 'Memory limit must be between 16 and 1024 MB.';
   if (!values.examples.length) return 'At least one example is required.';
@@ -239,19 +247,43 @@ export function AdminProblemForm({
           </label>
         </div>
         <label style={{ display: 'grid', gap: 6, marginTop: 12, fontSize: 12, fontWeight: 650 }}>
-          Statement / description
-          <span style={{ fontSize: 11.5, fontWeight: 400, color: 'var(--text3)' }}>
-            Write the public statement. Use a standalone “Input” or “Output” line to create a section heading.
-          </span>
+          Description
+          <span style={{ fontSize: 11.5, fontWeight: 400, color: 'var(--text3)' }}>Problem story and requirements for the reader.</span>
           <textarea
             required
             value={values.description}
             onChange={(event) => setValue('description', event.target.value)}
             className="ac-input"
-            rows={9}
-            style={{ ...adminField, height: 'auto', minHeight: 190, padding: 10, lineHeight: 1.55, resize: 'vertical' }}
+            rows={7}
+            style={{ ...adminField, height: 'auto', minHeight: 150, padding: 10, lineHeight: 1.55, resize: 'vertical' }}
           />
         </label>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12, marginTop: 12 }}>
+          <label style={{ display: 'grid', gap: 6, fontSize: 12, fontWeight: 650 }}>
+            Input format
+            <span style={{ fontSize: 11.5, fontWeight: 400, color: 'var(--text3)' }}>Explain the input structure in normal prose.</span>
+            <textarea
+              required
+              value={values.inputFormat}
+              onChange={(event) => setValue('inputFormat', event.target.value)}
+              className="ac-input"
+              rows={5}
+              style={{ ...adminField, height: 'auto', minHeight: 110, padding: 10, lineHeight: 1.55, resize: 'vertical' }}
+            />
+          </label>
+          <label style={{ display: 'grid', gap: 6, fontSize: 12, fontWeight: 650 }}>
+            Output format
+            <span style={{ fontSize: 11.5, fontWeight: 400, color: 'var(--text3)' }}>Explain exactly what the program must print.</span>
+            <textarea
+              required
+              value={values.outputFormat}
+              onChange={(event) => setValue('outputFormat', event.target.value)}
+              className="ac-input"
+              rows={5}
+              style={{ ...adminField, height: 'auto', minHeight: 110, padding: 10, lineHeight: 1.55, resize: 'vertical' }}
+            />
+          </label>
+        </div>
       </section>
 
       <section style={{ ...adminCard, padding: 16 }}>

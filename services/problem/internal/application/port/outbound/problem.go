@@ -16,4 +16,6 @@ type ProblemRepository interface {
 	Count(ctx context.Context, difficulty, search, tagSlug string, includeHidden bool) (int64, error)
 	ListByAuthor(ctx context.Context, authorID string, offset, limit int, difficulty, search, tagSlug string) ([]*entity.Problem, error)
 	CountByAuthor(ctx context.Context, authorID string, difficulty, search, tagSlug string) (int64, error)
+	ListForFormatBackfill(ctx context.Context) ([]*entity.Problem, error)
+	UpdateFormatsForBackfill(ctx context.Context, id int64, description, inputFormat, outputFormat string) (bool, error)
 }

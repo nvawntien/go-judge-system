@@ -124,21 +124,23 @@ func (c *ConstraintsJSON) Scan(src interface{}) error {
 }
 
 type ProblemDAO struct {
-	ID          int64           `gorm:"primaryKey;autoIncrement"`
-	TitleSlug   string          `gorm:"column:title_slug;uniqueIndex;not null;size:500"`
-	Title       string          `gorm:"not null;size:500"`
-	Description string          `gorm:"type:text;not null"`
-	Difficulty  string          `gorm:"not null;size:20"`
-	Examples    ExamplesJSON    `gorm:"type:jsonb;not null;default:'[]'"`
-	Constraints ConstraintsJSON `gorm:"type:jsonb;not null;default:'[]'"`
-	Hints       HintsJSON       `gorm:"type:jsonb;not null;default:'[]'"`
-	TimeLimit   float64         `gorm:"not null"`
-	MemoryLimit int             `gorm:"not null"`
-	AuthorID    string          `gorm:"not null;size:100;index"`
-	IsHidden    bool            `gorm:"default:true"`
-	CreatedAt   time.Time       `gorm:"autoCreateTime"`
-	UpdatedAt   time.Time       `gorm:"autoUpdateTime"`
-	DeletedAt   gorm.DeletedAt  `gorm:"index"`
+	ID           int64           `gorm:"primaryKey;autoIncrement"`
+	TitleSlug    string          `gorm:"column:title_slug;uniqueIndex;not null;size:500"`
+	Title        string          `gorm:"not null;size:500"`
+	Description  string          `gorm:"type:text;not null"`
+	InputFormat  string          `gorm:"type:text;not null;default:''"`
+	OutputFormat string          `gorm:"type:text;not null;default:''"`
+	Difficulty   string          `gorm:"not null;size:20"`
+	Examples     ExamplesJSON    `gorm:"type:jsonb;not null;default:'[]'"`
+	Constraints  ConstraintsJSON `gorm:"type:jsonb;not null;default:'[]'"`
+	Hints        HintsJSON       `gorm:"type:jsonb;not null;default:'[]'"`
+	TimeLimit    float64         `gorm:"not null"`
+	MemoryLimit  int             `gorm:"not null"`
+	AuthorID     string          `gorm:"not null;size:100;index"`
+	IsHidden     bool            `gorm:"default:true"`
+	CreatedAt    time.Time       `gorm:"autoCreateTime"`
+	UpdatedAt    time.Time       `gorm:"autoUpdateTime"`
+	DeletedAt    gorm.DeletedAt  `gorm:"index"`
 }
 
 func (ProblemDAO) TableName() string { return "problems" }
@@ -218,17 +220,19 @@ func (r *problemRepository) Update(ctx context.Context, problem *entity.Problem)
 
 	if err := tx.Model(&ProblemDAO{}).Where("id = ?", problem.ID).
 		Updates(map[string]interface{}{
-			"title_slug":   problem.TitleSlug,
-			"title":        problem.Title,
-			"description":  problem.Description,
-			"difficulty":   normalizeDifficultyValue(problem.Difficulty),
-			"examples":     ExamplesJSON(problem.Examples),
-			"constraints":  ConstraintsJSON(problem.Constraints),
-			"hints":        HintsJSON(problem.Hints),
-			"time_limit":   problem.TimeLimit,
-			"memory_limit": problem.MemoryLimit,
-			"is_hidden":    problem.IsHidden,
-			"updated_at":   time.Now(),
+			"title_slug":    problem.TitleSlug,
+			"title":         problem.Title,
+			"description":   problem.Description,
+			"input_format":  problem.InputFormat,
+			"output_format": problem.OutputFormat,
+			"difficulty":    normalizeDifficultyValue(problem.Difficulty),
+			"examples":      ExamplesJSON(problem.Examples),
+			"constraints":   ConstraintsJSON(problem.Constraints),
+			"hints":         HintsJSON(problem.Hints),
+			"time_limit":    problem.TimeLimit,
+			"memory_limit":  problem.MemoryLimit,
+			"is_hidden":     problem.IsHidden,
+			"updated_at":    time.Now(),
 		}).Error; err != nil {
 		tx.Rollback()
 		if isUniqueViolation(err) {
@@ -316,6 +320,47 @@ func (r *problemRepository) CountByAuthor(ctx context.Context, authorID string, 
 	return count, query.Count(&count).Error
 }
 
+func (r *problemRepository) ListForFormatBackfill(ctx context.Context) ([]*entity.Problem, error) {
+	var daos []ProblemDAO
+	if err := r.db.WithContext(ctx).Order("id ASC").Find(&daos).Error; err != nil {
+		return nil, err
+	}
+
+	tagsByProblemID, err := loadTagsByProblemIDs(ctx, r.db, collectProblemIDs(daos))
+	if err != nil {
+		return nil, err
+	}
+	return toProblemEntities(daos, tagsByProblemID), nil
+}
+
+func (r *problemRepository) UpdateFormatsForBackfill(ctx context.Context, id int64, description, inputFormat, outputFormat string) (bool, error) {
+	tx := r.db.WithContext(ctx).Begin()
+	if tx.Error != nil {
+		return false, tx.Error
+	}
+
+	result := tx.Model(&ProblemDAO{}).
+		Where("id = ? AND input_format = '' AND output_format = ''", id).
+		Updates(map[string]interface{}{
+			"description":   description,
+			"input_format":  inputFormat,
+			"output_format": outputFormat,
+			"updated_at":    time.Now(),
+		})
+	if result.Error != nil {
+		tx.Rollback()
+		return false, result.Error
+	}
+	if result.RowsAffected == 0 {
+		tx.Rollback()
+		return false, nil
+	}
+	if err := tx.Commit().Error; err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func applyFilters(db *gorm.DB, query *gorm.DB, difficulty, search, tagSlug string, requireActiveTag bool) *gorm.DB {
 	difficulty = strings.ToLower(strings.TrimSpace(difficulty))
 	search = strings.TrimSpace(search)
@@ -351,40 +396,44 @@ func filterProblemIDsByTagSlug(db *gorm.DB, tagSlug string, requireActiveTag boo
 
 func toProblemDAO(p *entity.Problem) *ProblemDAO {
 	return &ProblemDAO{
-		ID:          p.ID,
-		TitleSlug:   p.TitleSlug,
-		Title:       p.Title,
-		Description: p.Description,
-		Difficulty:  normalizeDifficultyValue(p.Difficulty),
-		Examples:    ExamplesJSON(p.Examples),
-		Constraints: ConstraintsJSON(p.Constraints),
-		Hints:       HintsJSON(p.Hints),
-		TimeLimit:   p.TimeLimit,
-		MemoryLimit: p.MemoryLimit,
-		AuthorID:    p.AuthorID,
-		IsHidden:    p.IsHidden,
-		CreatedAt:   p.CreatedAt,
-		UpdatedAt:   p.UpdatedAt,
+		ID:           p.ID,
+		TitleSlug:    p.TitleSlug,
+		Title:        p.Title,
+		Description:  p.Description,
+		InputFormat:  p.InputFormat,
+		OutputFormat: p.OutputFormat,
+		Difficulty:   normalizeDifficultyValue(p.Difficulty),
+		Examples:     ExamplesJSON(p.Examples),
+		Constraints:  ConstraintsJSON(p.Constraints),
+		Hints:        HintsJSON(p.Hints),
+		TimeLimit:    p.TimeLimit,
+		MemoryLimit:  p.MemoryLimit,
+		AuthorID:     p.AuthorID,
+		IsHidden:     p.IsHidden,
+		CreatedAt:    p.CreatedAt,
+		UpdatedAt:    p.UpdatedAt,
 	}
 }
 
 func toProblemEntity(dao *ProblemDAO, tags []entity.Tag) *entity.Problem {
 	p := &entity.Problem{
-		ID:          dao.ID,
-		TitleSlug:   dao.TitleSlug,
-		Title:       dao.Title,
-		Description: dao.Description,
-		Difficulty:  entity.Difficulty(dao.Difficulty),
-		Tags:        tags,
-		Examples:    []entity.ProblemExample(dao.Examples),
-		Constraints: []string(dao.Constraints),
-		Hints:       []string(dao.Hints),
-		TimeLimit:   dao.TimeLimit,
-		MemoryLimit: dao.MemoryLimit,
-		AuthorID:    dao.AuthorID,
-		IsHidden:    dao.IsHidden,
-		CreatedAt:   dao.CreatedAt,
-		UpdatedAt:   dao.UpdatedAt,
+		ID:           dao.ID,
+		TitleSlug:    dao.TitleSlug,
+		Title:        dao.Title,
+		Description:  dao.Description,
+		InputFormat:  dao.InputFormat,
+		OutputFormat: dao.OutputFormat,
+		Difficulty:   entity.Difficulty(dao.Difficulty),
+		Tags:         tags,
+		Examples:     []entity.ProblemExample(dao.Examples),
+		Constraints:  []string(dao.Constraints),
+		Hints:        []string(dao.Hints),
+		TimeLimit:    dao.TimeLimit,
+		MemoryLimit:  dao.MemoryLimit,
+		AuthorID:     dao.AuthorID,
+		IsHidden:     dao.IsHidden,
+		CreatedAt:    dao.CreatedAt,
+		UpdatedAt:    dao.UpdatedAt,
 	}
 	if dao.DeletedAt.Valid {
 		t := dao.DeletedAt.Time

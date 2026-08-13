@@ -17,8 +17,6 @@ const CODE_STYLE: React.CSSProperties = {
   padding: '1px 5px',
 };
 
-const SECTION_TITLES = new Set(['input', 'output', 'constraints', 'examples', 'explanation', 'notes']);
-
 function renderInline(text: string, keyPrefix: string) {
   const parts = text.split(/(`[^`]*`|\*\*[^*]+\*\*)/g);
   return parts.map((part, index) => {
@@ -47,15 +45,9 @@ export function RichText({ text, muted = false }: { text: string; muted?: boolea
         if (!trimmed) return null;
 
         const heading = /^(#{1,4})\s+(.*)$/.exec(trimmed);
-        const sectionTitle = heading?.[2] ?? (SECTION_TITLES.has(trimmed.toLowerCase()) ? trimmed : null);
-        if (sectionTitle) {
+        if (heading) {
           return (
-            <h2
-              key={blockIndex}
-              className="ac-statement-section-heading"
-            >
-              {sectionTitle}
-            </h2>
+            <h3 key={blockIndex} className="ac-rich-text-heading">{heading[2]}</h3>
           );
         }
 

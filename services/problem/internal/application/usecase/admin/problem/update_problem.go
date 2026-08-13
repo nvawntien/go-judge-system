@@ -71,6 +71,20 @@ func (uc *updateProblemUseCase) Execute(ctx context.Context, claims auth.Claims,
 		}
 		problem.Description = description
 	}
+	if req.InputFormat != nil {
+		inputFormat := strings.TrimSpace(*req.InputFormat)
+		if inputFormat == "" {
+			return dto.ProblemDetailResponse{}, response.NewAppError(response.CodeBadRequest, "input_format is required", nil)
+		}
+		problem.InputFormat = inputFormat
+	}
+	if req.OutputFormat != nil {
+		outputFormat := strings.TrimSpace(*req.OutputFormat)
+		if outputFormat == "" {
+			return dto.ProblemDetailResponse{}, response.NewAppError(response.CodeBadRequest, "output_format is required", nil)
+		}
+		problem.OutputFormat = outputFormat
+	}
 
 	if req.Difficulty != nil {
 		difficulty, err := normalizeDifficulty(*req.Difficulty)

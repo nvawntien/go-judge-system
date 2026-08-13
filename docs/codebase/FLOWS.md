@@ -58,6 +58,8 @@ Auth handlers call use cases in `services/auth/internal/application/usecase/auth
 
 Admin testcase upload goes from Problem HTTP handler -> admin testcase use case -> MinIO storage + `test_cases` upsert. Worker `GetTestCase` gRPC receives only a problem ID and returns presigned access metadata. The Worker loader validates ZIP metadata, limits compressed/extracted bytes, rejects symlinks/path escape, pairs numeric files and keeps a content checksum for provenance.
 
+Problem authoring keeps public statement prose, input format, output format, public examples, and private testcase bundles separate. Legacy statement normalization is run manually through `services/problem/cmd/backfill-problem-formats`: it first reports eligible/skipped rows, and only `--apply` writes all three text fields for one row atomically. It never reads or changes private testcase bundles.
+
 ## Rejudge
 
 An admin rejudge route creates a new attempt ID and resets the mutable Submission state, then enqueues a new job via the same outbox path (`application/usecase/admin/rejudge_submission.go`). A result is applied only to the current matching attempt, preventing stale worker results from overwriting a subsequent rejudge.

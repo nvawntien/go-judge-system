@@ -254,6 +254,20 @@ export function ProblemPanel({
 
             <RichText text={problem.description} />
 
+            {problem.input_format && (
+              <section aria-labelledby="problem-input-format">
+                <h2 id="problem-input-format" className="ac-statement-section-heading">Input</h2>
+                <RichText text={problem.input_format} />
+              </section>
+            )}
+
+            {problem.output_format && (
+              <section aria-labelledby="problem-output-format">
+                <h2 id="problem-output-format" className="ac-statement-section-heading">Output</h2>
+                <RichText text={problem.output_format} />
+              </section>
+            )}
+
             {problem.constraints && problem.constraints.length > 0 && (
               <>
                 <h2 className="ac-statement-section-heading">Constraints</h2>
