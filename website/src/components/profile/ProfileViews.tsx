@@ -125,27 +125,49 @@ export function ProfileActivity({
   emptyCopy?: string;
 }) {
   const calendar = buildCalendar(stats.activity);
+  const monthLabels = buildMonthLabels(calendar);
   const hasActivity = stats.activity.some((item) => item.count > 0);
   return (
     <ProfilePanel title="Activity" description="Last 52 weeks, grouped by UTC day.">
       {hasActivity ? (
         <>
-          <div className="ac-profile-heatmap-scroll" aria-label="Submission activity heatmap">
-            <div className="ac-profile-heatmap">
-              {calendar.map((cell) => (
-                <span
-                  key={cell.key}
-                  role="img"
-                  aria-label={activityLabel(cell.key, cell.count)}
-                  title={activityLabel(cell.key, cell.count)}
-                  style={{ background: LEVEL_COLORS[cell.level] }}
-                />
-              ))}
+          <div
+            className="ac-profile-heatmap-scroll"
+            role="group"
+            tabIndex={0}
+            aria-label="Submission activity calendar. Scroll horizontally to explore all 52 weeks."
+            aria-describedby="profile-activity-legend"
+          >
+            <div className="ac-profile-timeline">
+              <div className="ac-profile-months" aria-label="Calendar months in the activity timeline">
+                {monthLabels.map((month) => (
+                  <time
+                    key={month.key}
+                    dateTime={`${month.key}-01`}
+                    aria-label={month.accessibleLabel}
+                    title={month.accessibleLabel}
+                    style={{ gridColumn: `${month.column} / span ${month.span}` }}
+                  >
+                    {month.label}
+                  </time>
+                ))}
+              </div>
+              <div className="ac-profile-heatmap">
+                {calendar.map((cell) => (
+                  <span
+                    key={cell.key}
+                    role="img"
+                    aria-label={activityLabel(cell.key, cell.count)}
+                    title={activityLabel(cell.key, cell.count)}
+                    style={{ background: LEVEL_COLORS[cell.level] }}
+                  />
+                ))}
+              </div>
             </div>
           </div>
-          <div className="ac-profile-legend" aria-label="Activity intensity: less to more">
+          <div id="profile-activity-legend" className="ac-profile-legend" aria-label="Activity intensity: less to more">
             <span>Less</span>
-            {LEVEL_COLORS.map((color) => <i key={color} style={{ background: color }} />)}
+            {LEVEL_COLORS.map((color) => <i key={color} aria-hidden="true" style={{ background: color }} />)}
             <span>More</span>
           </div>
         </>
@@ -231,13 +253,19 @@ function buildLanguageUsage(stats: MyProfileStats): LanguageUsageItem[] {
 }
 
 const LEVEL_COLORS = ['var(--surface3)', 'var(--accent-soft2)', '#B4A0F0', 'var(--accent)', 'var(--accent-strong)'];
+const ACTIVITY_WEEKS = 52;
+const DAYS_PER_WEEK = 7;
+const SHORT_MONTH_FORMATTER = new Intl.DateTimeFormat('en-US', { month: 'short', timeZone: 'UTC' });
+const ACCESSIBLE_MONTH_FORMATTER = new Intl.DateTimeFormat(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' });
 
-function buildCalendar(activity: ProfileStatsActivity[]) {
+type CalendarCell = { key: string; count: number; level: number };
+
+function buildCalendar(activity: ProfileStatsActivity[]): CalendarCell[] {
   const counts = new Map(activity.map(({ date, count }) => [date, count]));
   const today = new Date();
   const start = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
-  start.setUTCDate(start.getUTCDate() - (52 * 7 - 1) - start.getUTCDay());
-  return Array.from({ length: 52 * 7 }, (_, index) => {
+  start.setUTCDate(start.getUTCDate() - (ACTIVITY_WEEKS * DAYS_PER_WEEK - 1) - start.getUTCDay());
+  return Array.from({ length: ACTIVITY_WEEKS * DAYS_PER_WEEK }, (_, index) => {
     const date = new Date(start);
     date.setUTCDate(start.getUTCDate() + index);
     const key = date.toISOString().slice(0, 10);
@@ -245,6 +273,40 @@ function buildCalendar(activity: ProfileStatsActivity[]) {
     const level = count === 0 ? 0 : count < 2 ? 1 : count < 4 ? 2 : count < 7 ? 3 : 4;
     return { key, count, level };
   });
+}
+
+function buildMonthLabels(calendar: CalendarCell[]) {
+  const boundaries: Array<{
+    key: string;
+    label: string;
+    accessibleLabel: string;
+    weekIndex: number;
+  }> = [];
+  let previousMonth = '';
+
+  for (let weekIndex = 0; weekIndex < ACTIVITY_WEEKS; weekIndex += 1) {
+    const firstDay = calendar[weekIndex * DAYS_PER_WEEK];
+    if (!firstDay) continue;
+    const monthKey = firstDay.key.slice(0, 7);
+    if (monthKey === previousMonth) continue;
+
+    const date = new Date(`${firstDay.key}T00:00:00Z`);
+    boundaries.push({
+      key: monthKey,
+      label: SHORT_MONTH_FORMATTER.format(date),
+      accessibleLabel: ACCESSIBLE_MONTH_FORMATTER.format(date),
+      weekIndex,
+    });
+    previousMonth = monthKey;
+  }
+
+  return boundaries
+    .map((month, index) => ({
+      ...month,
+      column: month.weekIndex + 1,
+      span: (boundaries[index + 1]?.weekIndex ?? ACTIVITY_WEEKS) - month.weekIndex,
+    }))
+    .filter((month, index, labels) => month.span >= 2 || index === labels.length - 1);
 }
 
 function activityLabel(date: string, count: number) {

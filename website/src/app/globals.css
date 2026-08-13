@@ -449,9 +449,13 @@ button:disabled {
 .ac-profile-panel-heading { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; margin-bottom: 14px; }
 .ac-profile-panel-heading h2 { margin: 0; }
 .ac-profile-panel-heading p { margin: 0; color: var(--text3); font-size: 11.5px; }
-.ac-profile-heatmap-scroll { max-width: 100%; overflow-x: auto; padding-bottom: 3px; scrollbar-color: var(--border2) transparent; }
-.ac-profile-heatmap { display: grid; grid-template-rows: repeat(7, 11px); grid-auto-flow: column; grid-auto-columns: 10px; gap: 3px; width: max-content; min-width: 620px; }
+.ac-profile-heatmap-scroll { max-width: 100%; overflow-x: auto; padding: 2px 0 4px; scrollbar-color: var(--border2) transparent; }
+.ac-profile-timeline { --activity-cell-width: 10px; --activity-cell-height: 11px; --activity-gap: 3px; width: max-content; min-width: 620px; }
+.ac-profile-months { display: grid; grid-template-columns: repeat(52, var(--activity-cell-width)); column-gap: var(--activity-gap); align-items: end; min-height: 18px; margin-bottom: 7px; }
+.ac-profile-months time { grid-row: 1; width: max-content; color: var(--text2); font-family: var(--font-mono); font-size: 10px; font-weight: 550; line-height: 1; white-space: nowrap; }
+.ac-profile-heatmap { display: grid; grid-template-columns: repeat(52, var(--activity-cell-width)); grid-template-rows: repeat(7, var(--activity-cell-height)); grid-auto-flow: column; gap: var(--activity-gap); width: max-content; }
 .ac-profile-heatmap span { width: 10px; height: 11px; border-radius: 2.5px; }
+.ac-profile-heatmap span:hover { outline: 1px solid var(--text2); outline-offset: 1px; }
 .ac-profile-legend { display: flex; align-items: center; gap: 5px; margin-top: 10px; color: var(--text3); font-size: 10.5px; }
 .ac-profile-legend i { width: 10px; height: 10px; border-radius: 2.5px; }
 .ac-profile-language-list { display: grid; gap: 10px; }
@@ -511,7 +515,7 @@ button:disabled {
   .ac-profile-stat strong { font-size: 21px; }
   .ac-profile-panel { padding: 16px 0 0; }
   .ac-profile-panel-heading { padding: 0; }
-  .ac-profile-heatmap { min-width: 620px; }
+  .ac-profile-timeline { min-width: 620px; }
   .ac-profile-dashboard-grid { gap: 16px; }
   .ac-profile-own .ac-profile-panel { padding: 16px; }
   .ac-profile-own .ac-profile-about { padding: 16px; }
