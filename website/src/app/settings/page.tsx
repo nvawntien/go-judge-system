@@ -35,7 +35,7 @@ const EMPTY: Fields = {
 
 export default function SettingsPage() {
   const router = useRouter();
-  const { user, loading: authLoading, setUser } = useAuth();
+  const { user, loading: authLoading, logout, setUser } = useAuth();
   const { preference, setPreference } = useTheme();
   const { showToast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -139,9 +139,15 @@ export default function SettingsPage() {
         new_password: pwFields.next,
         confirm_password: pwFields.confirm,
       });
-      showToast('Password changed', 'success');
       setPwFields({ current: '', next: '', confirm: '' });
       setPwOpen(false);
+      try {
+        await logout();
+      } catch {
+        // The password change has already invalidated this session server-side.
+      }
+      showToast('Password changed. Please sign in again.', 'success');
+      router.replace('/login?password_changed=1');
     } catch (err) {
       if (err instanceof ApiError) showToast(err.message || 'Could not change password', 'error');
       else showToast('Could not change password', 'error');
@@ -154,13 +160,16 @@ export default function SettingsPage() {
   const avatar = avatarUrl(user.avatar_url, API_BASE_URL);
 
   return (
-    <AppShell maxWidth={760}>
-      <h1 style={{ margin: 0, fontSize: 22, fontWeight: 650, letterSpacing: '-0.02em' }}>
-        Profile settings
-      </h1>
-      <p style={{ margin: '4px 0 20px', color: 'var(--text2)', fontSize: 13.5 }}>
-        This information appears on your public profile.
-      </p>
+    <AppShell maxWidth={900}>
+      <header style={{ marginBottom: 22 }}>
+        <span className="ac-profile-eyebrow">Account</span>
+        <h1 style={{ margin: '4px 0 0', fontSize: 26, fontWeight: 680, letterSpacing: '-0.03em' }}>
+          Settings
+        </h1>
+        <p style={{ margin: '6px 0 0', color: 'var(--text2)', fontSize: 13.5 }}>
+          Manage the information shown on your public profile and secure your account.
+        </p>
+      </header>
 
       {dirty && (
         <div
@@ -185,12 +194,17 @@ export default function SettingsPage() {
       )}
 
       <Card padding={22} style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+        <div>
+          <span className="ac-profile-eyebrow">Public profile</span>
+          <h2 style={{ margin: '4px 0 0', fontSize: 16, fontWeight: 650 }}>Identity and details</h2>
+          <p style={{ margin: '4px 0 0', color: 'var(--text3)', fontSize: 12.5 }}>Optional fields are hidden when left blank.</p>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
           {avatar ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={avatar}
-              alt=""
+              alt="Current avatar"
               width={64}
               height={64}
               style={{
@@ -253,18 +267,18 @@ export default function SettingsPage() {
               Upload new avatar
             </button>
             <p style={{ margin: '6px 0 0', fontSize: 11.5, color: 'var(--text3)' }}>
-              PNG, JPG or WebP, at least 240×240px.
+              PNG, JPG or WebP. Choose a clear square image for the best result.
             </p>
           </div>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(240px,1fr))', gap: 14 }}>
-          <Field label="Full name" value={fields.full_name} onChange={set('full_name')} />
-          <Field label="Country" value={fields.country} onChange={set('country')} />
+          <Field label="Full name" value={fields.full_name} onChange={set('full_name')} placeholder="Optional" />
+          <Field label="Country" value={fields.country} onChange={set('country')} placeholder="Optional" />
         </div>
 
         <label style={labelStyle}>
-          Biography
+          Biography <span style={{ color: 'var(--text3)', fontWeight: 500 }}>(optional)</span>
           <textarea
             value={fields.bio}
             onChange={set('bio')}
@@ -285,20 +299,21 @@ export default function SettingsPage() {
         </label>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(240px,1fr))', gap: 14 }}>
-          <Field label="School" value={fields.school} onChange={set('school')} />
+          <Field label="School" value={fields.school} onChange={set('school')} placeholder="Optional" />
           <Field
             label="Company"
             value={fields.company}
             onChange={set('company')}
             placeholder="Where you work"
           />
-          <Field label="GitHub URL" value={fields.github_url} onChange={set('github_url')} mono />
+          <Field label="GitHub URL" value={fields.github_url} onChange={set('github_url')} mono type="url" placeholder="https://github.com/…" />
           <Field
             label="Website"
             value={fields.website_url}
             onChange={set('website_url')}
             placeholder="https://"
             mono
+            type="url"
           />
           <Field
             label="LinkedIn URL"
@@ -306,10 +321,11 @@ export default function SettingsPage() {
             onChange={set('linkedin_url')}
             placeholder="https://linkedin.com/in/…"
             mono
+            type="url"
           />
         </div>
 
-        <div>
+        <div style={{ paddingTop: 2, borderTop: '1px solid var(--border)', paddingBottom: 2 }}>
           <span style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text2)', marginBottom: 6 }}>
             Theme preference
           </span>
@@ -403,12 +419,13 @@ export default function SettingsPage() {
         </div>
       </Card>
 
-      <Card padding={22} style={{ marginTop: 16 }}>
+      <Card padding={22} style={{ marginTop: 18, borderColor: 'var(--border2)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: 220 }}>
-            <h2 style={{ margin: '0 0 3px', fontSize: 14, fontWeight: 650 }}>Password</h2>
+            <span className="ac-profile-eyebrow">Security</span>
+            <h2 style={{ margin: '4px 0 3px', fontSize: 16, fontWeight: 650 }}>Password</h2>
             <p style={{ margin: 0, fontSize: 12.5, color: 'var(--text3)' }}>
-              Signed in as <span style={{ fontFamily: 'var(--font-mono)' }}>{user.email}</span>
+              Changing it signs out every active session. You will need to sign in again.
             </p>
           </div>
           <button
@@ -437,8 +454,8 @@ export default function SettingsPage() {
             onSubmit={onChangePassword}
             style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 12 }}
           >
-            <label style={labelStyle}>
-              Current password
+              <label style={labelStyle}>
+                Current password
               <input
                 type="password"
                 autoComplete="current-password"
@@ -472,6 +489,9 @@ export default function SettingsPage() {
                 />
               </label>
             </div>
+            <p role="status" style={{ margin: 0, color: 'var(--warn)', fontSize: 12 }}>
+              Updating your password immediately revokes all active sessions.
+            </p>
             <button
               type="submit"
               disabled={pwSaving}
@@ -508,17 +528,20 @@ function Field({
   onChange,
   placeholder,
   mono = false,
+  type = 'text',
 }: {
   label: string;
   value: string;
   onChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
   placeholder?: string;
   mono?: boolean;
+  type?: string;
 }) {
   return (
     <label style={labelStyle}>
       {label}
       <input
+        type={type}
         value={value}
         onChange={onChange}
         placeholder={placeholder}

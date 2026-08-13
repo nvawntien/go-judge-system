@@ -29,7 +29,10 @@ export function Header() {
   const { resolved, toggle } = useTheme();
   const { showToast } = useToast();
   const width = useViewportWidth();
-  const isMobile = width < 760;
+  // The desktop navigation, search, and account controls no longer fit reliably
+  // at tablet widths. Switch to the compact navigation before it can create a
+  // page-level horizontal scroll.
+  const isMobile = width < 960;
   const canAccessAdminConsole = roleAtLeast(user?.role, ADMIN_CONSOLE_MIN_ROLE);
 
   const [menu, setMenu] = useState<'notif' | 'user' | 'mobile' | null>(null);
@@ -378,13 +381,13 @@ export function Header() {
                     <span
                       style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text3)' }}
                     >
-                      @{user.username} · {user.rating}
+                      @{user.username}{user.rating > 0 ? ` · ${user.rating.toLocaleString()}` : ''}
                     </span>
                   </div>
                   {[
+                    { label: 'Profile', href: '/profile' },
                     { label: 'Public profile', href: `/u/${encodeURIComponent(user.username)}` },
-                    { label: 'Profile settings', href: '/settings' },
-                    { label: 'Design system notes', href: '/design-system' },
+                    { label: 'Settings', href: '/settings' },
                   ].map((item) => (
                     <Link
                       key={item.href}
