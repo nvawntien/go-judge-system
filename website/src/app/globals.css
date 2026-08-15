@@ -64,6 +64,9 @@ body {
   --code-line: #f2effa;
   --code-fg: #2a2740;
   --gutter: #9a96b4;
+  --editor-selection: color-mix(in srgb, var(--accent) 20%, transparent);
+  --editor-active-line: color-mix(in srgb, var(--accent-soft) 58%, var(--code-bg));
+  --editor-chrome: color-mix(in srgb, var(--code-bg) 86%, var(--surface));
   --syn-kw: #6b4ee6;
   --syn-str: #177a53;
   --syn-num: #95610c;
@@ -103,8 +106,11 @@ body[data-theme='dark'] {
   --hard: #ef7a7a;
   --code-bg: #181526;
   --code-line: #221e36;
-  --code-fg: #ddd9ee;
-  --gutter: #6b6590;
+    --code-fg: #ddd9ee;
+    --gutter: #6b6590;
+    --editor-selection: color-mix(in srgb, var(--accent) 22%, transparent);
+    --editor-active-line: color-mix(in srgb, var(--accent-soft) 54%, var(--code-bg));
+    --editor-chrome: color-mix(in srgb, var(--code-bg) 84%, var(--surface));
   --syn-kw: #b4a2ff;
   --syn-str: #7fd8a4;
   --syn-num: #f2b155;
@@ -144,8 +150,11 @@ body[data-theme='dark'] {
     --hard: #ef7a7a;
     --code-bg: #181526;
     --code-line: #221e36;
-    --code-fg: #ddd9ee;
-    --gutter: #6b6590;
+  --code-fg: #ddd9ee;
+  --gutter: #6b6590;
+  --editor-selection: color-mix(in srgb, var(--accent) 22%, transparent);
+  --editor-active-line: color-mix(in srgb, var(--accent-soft) 54%, var(--code-bg));
+  --editor-chrome: color-mix(in srgb, var(--code-bg) 84%, var(--surface));
     --syn-kw: #b4a2ff;
     --syn-str: #7fd8a4;
     --syn-num: #f2b155;
@@ -192,6 +201,19 @@ select {
 }
 ::selection {
   background: var(--accent-soft2);
+}
+
+.ac-code-editor-input::selection {
+  background: var(--editor-selection);
+  color: transparent;
+}
+
+.ac-code-editor-scroll {
+  scrollbar-color: var(--gutter) transparent;
+}
+
+.ac-code-editor-status {
+  letter-spacing: .01em;
 }
 * {
   box-sizing: border-box;

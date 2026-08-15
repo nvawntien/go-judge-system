@@ -51,6 +51,7 @@ export function CodeEditor({
     }
     return byLine;
   }, [diagnostics]);
+  const lineHeight = 1.55;
 
   const syncCaret = useCallback(() => {
     const el = textareaRef.current;
@@ -69,9 +70,9 @@ export function CodeEditor({
     const offset = lines.slice(0, highlightLine - 1).reduce((sum, line) => sum + line.length + 1, 0);
     el.focus();
     el.setSelectionRange(offset, offset + (lines[highlightLine - 1]?.length ?? 0));
-    scroller.scrollTop = Math.max(0, (highlightLine - 4) * fontSize * 1.65);
+    scroller.scrollTop = Math.max(0, (highlightLine - 4) * fontSize * lineHeight);
     syncCaret();
-  }, [highlightLine, lines, fontSize, syncCaret]);
+  }, [highlightLine, lines, fontSize, lineHeight, syncCaret]);
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (readOnly) return;
@@ -84,7 +85,6 @@ export function CodeEditor({
     });
   };
 
-  const lineHeight = 1.65;
   const lineHeightPx = fontSize * lineHeight;
   const gutterFontSize = Math.max(11, fontSize - 1);
   const gutterDigits = Math.max(2, String(lines.length).length);
@@ -96,7 +96,7 @@ export function CodeEditor({
 
   const textLayer: React.CSSProperties = {
     margin: 0,
-    padding: '10px 16px 10px 12px',
+    padding: '8px 14px 8px 12px',
     fontFamily: 'var(--font-mono)',
     fontSize,
     lineHeight: `${lineHeightPx}px`,
@@ -111,6 +111,7 @@ export function CodeEditor({
       <div
         ref={scrollRef}
         data-code-editor-scroll
+        className="ac-code-editor-scroll"
         style={{
           flex: 1,
           minHeight: 120,
@@ -130,7 +131,7 @@ export function CodeEditor({
               background: 'var(--code-bg)',
               borderRight: '1px solid var(--code-line)',
               width: gutterWidth,
-              padding: '10px 7px',
+              padding: '8px 7px',
               textAlign: 'right',
               minWidth: gutterWidth,
               boxSizing: 'border-box',
@@ -210,7 +211,7 @@ export function CodeEditor({
                       (diagnosticsByLine.get(index + 1)?.length ?? 0) > 0
                         ? 'color-mix(in srgb, var(--error-bg) 45%, transparent)'
                         : index + 1 === caret.line
-                          ? 'var(--code-line)'
+                          ? 'var(--editor-active-line)'
                           : 'transparent',
                     boxShadow:
                       (diagnosticsByLine.get(index + 1)?.length ?? 0) > 0
@@ -239,6 +240,7 @@ export function CodeEditor({
 
             <textarea
               ref={textareaRef}
+              className="ac-code-editor-input"
               value={value}
               readOnly={readOnly}
               spellCheck={false}
@@ -275,13 +277,14 @@ export function CodeEditor({
 
       <div
         aria-label="Editor status"
+        className="ac-code-editor-status"
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: 14,
-          padding: '5px 14px',
-          borderTop: '1px solid var(--border)',
-          background: 'var(--surface)',
+          gap: 12,
+          padding: '4px 12px',
+          borderTop: '1px solid var(--code-line)',
+          background: 'var(--editor-chrome)',
           flexShrink: 0,
           fontFamily: 'var(--font-mono)',
           fontSize: 11,
