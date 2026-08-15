@@ -12,7 +12,7 @@ import { avatarUrl, difficultyMeta, initials } from '@/lib/format';
 import type { Me, Problem, PublicUserSearchItem } from '@/lib/types';
 import { Icon, Logo, Wordmark, buttonStyles } from './ui';
 import { ADMIN_CONSOLE_MIN_ROLE } from './admin/AdminNavigation';
-import { roleAtLeast } from './admin/roles';
+import { isContributorWorkspaceUser, roleAtLeast } from './admin/roles';
 
 const NAV_ITEMS = [
   { label: 'Problems', href: '/problems' },
@@ -32,17 +32,17 @@ export function Header() {
   const { resolved, toggle } = useTheme();
   const { showToast } = useToast();
   const width = useViewportWidth();
-  const canContribute = roleAtLeast(user?.role, 'contributor');
+  const isContributorWorkspace = isContributorWorkspaceUser(user?.role);
   const canAccessAdminConsole = roleAtLeast(user?.role, ADMIN_CONSOLE_MIN_ROLE);
   const navItems = [
     ...NAV_ITEMS,
-    ...(canContribute ? [{ label: 'Contributions', href: '/contributions' }] : []),
+    ...(isContributorWorkspace ? [{ label: 'Contributions', href: '/contributions' }] : []),
     ...(canAccessAdminConsole ? [{ label: 'Admin Console', href: '/admin' }] : []),
   ];
   // The desktop navigation, search, and account controls no longer fit reliably
   // at tablet widths. Privileged navigation needs one extra item, so it moves
   // to the compact menu slightly earlier to prevent page-level overflow.
-  const isMobile = width < (canAccessAdminConsole ? 1240 : canContribute ? 1060 : 960);
+  const isMobile = width < (canAccessAdminConsole ? 1240 : isContributorWorkspace ? 1060 : 960);
 
   const [menu, setMenu] = useState<'notif' | 'user' | 'mobile' | null>(null);
   const [query, setQuery] = useState('');
