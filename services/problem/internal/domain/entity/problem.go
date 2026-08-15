@@ -18,12 +18,14 @@ type ProblemExample struct {
 }
 
 type Problem struct {
-	ID          int64
-	Title       string
-	TitleSlug   string
-	Description string
-	Difficulty  Difficulty
-	Tags        []Tag
+	ID           int64
+	Title        string
+	TitleSlug    string
+	Description  string
+	InputFormat  string
+	OutputFormat string
+	Difficulty   Difficulty
+	Tags         []Tag
 
 	Examples    []ProblemExample
 	Constraints []string
@@ -41,7 +43,7 @@ type Problem struct {
 }
 
 func NewProblem(
-	title, slug, desc string,
+	title, slug, desc, inputFormat, outputFormat string,
 	diff Difficulty,
 	tags []Tag,
 	examples []ProblemExample,
@@ -52,20 +54,22 @@ func NewProblem(
 	authorID string,
 ) *Problem {
 	return &Problem{
-		Title:       title,
-		TitleSlug:   slug,
-		Description: desc,
-		Difficulty:  diff,
-		Tags:        tags,
-		Examples:    examples,
-		Constraints: constraints,
-		Hints:       hints,
-		TimeLimit:   timeLimit,
-		MemoryLimit: memLimit,
-		AuthorID:    authorID,
-		IsHidden:    true,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		Title:        title,
+		TitleSlug:    slug,
+		Description:  desc,
+		InputFormat:  inputFormat,
+		OutputFormat: outputFormat,
+		Difficulty:   diff,
+		Tags:         tags,
+		Examples:     examples,
+		Constraints:  constraints,
+		Hints:        hints,
+		TimeLimit:    timeLimit,
+		MemoryLimit:  memLimit,
+		AuthorID:     authorID,
+		IsHidden:     true,
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
 	}
 }
 

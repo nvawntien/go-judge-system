@@ -12,7 +12,7 @@ There are no checked-in SQL schema migrations or migration command. Repositories
 | Problem | `problems`, `tags`, `problem_tags`, `test_cases` | unique problem slug; author/deleted indexes; unique tag slug; join uniqueness; one testcase row per `problem_id` | `services/problem/.../postgres/{problem,tag,testcase}.go` |
 | Submission | `submissions`, `submission_attempts`, `submission_results`, `outbox_messages` | submission filters; unique attempt ID; attempt compound lookup/order indexes; outbox aggregate/status indexes | `services/submission/.../postgres/` |
 
-Problem persistence stores examples, constraints and hints as PostgreSQL JSONB. Problem/Tag deletion is soft deletion by GORM model fields; testcase storage uses a physical row keyed by problem. Submission source code and optional testcase outputs are text columns; this has storage and sensitive-data implications described in [TECH_DEBT.md](TECH_DEBT.md).
+Problem persistence stores statement prose in `description`, `input_format`, and `output_format` text columns; examples, constraints and hints are PostgreSQL JSONB. Problem/Tag deletion is soft deletion by GORM model fields; testcase storage uses a physical row keyed by problem. Submission source code and optional testcase outputs are text columns; this has storage and sensitive-data implications described in [TECH_DEBT.md](TECH_DEBT.md).
 
 ### Transaction boundaries
 

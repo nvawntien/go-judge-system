@@ -72,7 +72,7 @@ Kafka messages are keyed by submission ID. `AttemptID` is carried as the attempt
 
 ### Problem authoring and testcase delivery
 
-Admin Gin handlers enforce gateway-derived claims plus role middleware. Use cases persist Problem/Tag records to `problem_db`; testcase upload stores a ZIP in MinIO and upserts one testcase metadata row per problem. The worker-facing gRPC handler turns the object key into a presigned download URL.
+Problem authoring handlers enforce gateway-derived claims plus role middleware. A Contributor creates hidden Problems whose authoritative `author_id` comes from the authenticated claims, lists and reads only their own records, and may update/delete only an owned hidden draft. Moderator/Admin roles retain arbitrary catalogue moderation and the publish/hide transitions. Testcase upload remains a separate owned-hidden-draft permission for Contributors rather than an automatic grant to administrative testcase data. Use cases persist Problem/Tag records to `problem_db`; testcase upload stores a ZIP in MinIO and upserts one testcase metadata row per problem. The worker-facing gRPC handler turns the object key into a presigned download URL.
 
 ## Lifecycle
 

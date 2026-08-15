@@ -13,6 +13,7 @@
 | User-suspension audit trail | Administrative suspension is a current boolean state with session invalidation, but there is no persisted reason, actor, expiry, or state-change history. | `auth_db.users`, Auth admin user use case. Operational moderation review and reversibility need a dedicated audit model if required. |
 | Session cutoff resolution | Logout-all, suspension, authenticated password-change, and password-reset invalidation use Unix-second JWT `iat`; a fresh login in the same second waits cancelably for the next second. | `session_invalidation.go`; correct but can add nearly one second of authentication latency. |
 | Local developer ergonomics | Auth/Problem/Submission main programs hard-code `/app/config`; no root task runner exists. | their `cmd/server/main.go`, absence of Makefile. |
+| Legacy Problem statement normalization | The explicit backfill only recognizes unambiguous standalone Input/Output headings. Rows using a different authoring pattern are safely skipped and need editorial review. | `services/problem/cmd/backfill-problem-formats`, `internal/application/backfill/problem_formats.go` |
 | Sandbox privilege | Compose runs the go-judge container with `privileged: true`. | `docker-compose.yml`; this is a high-value host isolation boundary requiring deployment-specific review. |
 
 ## Potential concerns — require verification before remediation

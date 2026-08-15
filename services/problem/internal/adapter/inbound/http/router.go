@@ -62,7 +62,7 @@ func (r *Router) SetupRoutes() {
 	admin.Use(r.authMiddleware)
 	{
 		// Problem management
-		admin.GET("/problems", isContributor, r.adminHandler.ListProblems.Handle)
+		admin.GET("/problems", isModerator, r.adminHandler.ListProblems.Handle)
 		admin.GET("/problems/:problem_id", isContributor, r.adminHandler.GetProblem.Handle)
 		admin.POST("/problems", isContributor, r.adminHandler.CreateProblem.Handle)
 		admin.PUT("/problems/:problem_id", isContributor, r.adminHandler.UpdateProblem.Handle)
@@ -70,7 +70,7 @@ func (r *Router) SetupRoutes() {
 		admin.PATCH("/problems/:problem_id/publish", isModerator, r.adminHandler.PublishProblem.Handle)
 		admin.PATCH("/problems/:problem_id/hidden", isModerator, r.adminHandler.HiddenProblem.Handle)
 		// tag management
-		admin.GET("/tags", isContributor, r.adminHandler.ListTags.Handle)
+		admin.GET("/tags", isModerator, r.adminHandler.ListTags.Handle)
 		admin.POST("/tags", isModerator, r.adminHandler.CreateTag.Handle)
 		admin.PUT("/tags/:tag_id", isModerator, r.adminHandler.UpdateTag.Handle)
 		admin.DELETE("/tags/:tag_id", isModerator, r.adminHandler.DeleteTag.Handle)

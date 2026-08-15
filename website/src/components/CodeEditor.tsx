@@ -35,6 +35,7 @@ export function CodeEditor({
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [caret, setCaret] = useState({ line: 1, column: 1 });
+  const prefersReducedMotion = usePrefersReducedMotion();
 
   const lines = useMemo(() => value.split('\n'), [value]);
   const highlighted = useMemo(
@@ -51,6 +52,7 @@ export function CodeEditor({
     }
     return byLine;
   }, [diagnostics]);
+  const lineHeight = 1.55;
 
   const syncCaret = useCallback(() => {
     const el = textareaRef.current;
@@ -69,9 +71,12 @@ export function CodeEditor({
     const offset = lines.slice(0, highlightLine - 1).reduce((sum, line) => sum + line.length + 1, 0);
     el.focus();
     el.setSelectionRange(offset, offset + (lines[highlightLine - 1]?.length ?? 0));
-    scroller.scrollTop = Math.max(0, (highlightLine - 4) * fontSize * 1.65);
+    scroller.scrollTo({
+      top: Math.max(0, (highlightLine - 4) * fontSize * lineHeight),
+      behavior: prefersReducedMotion ? 'auto' : 'smooth',
+    });
     syncCaret();
-  }, [highlightLine, lines, fontSize, syncCaret]);
+  }, [highlightLine, lines, fontSize, lineHeight, prefersReducedMotion, syncCaret]);
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (readOnly) return;
@@ -79,20 +84,27 @@ export function CodeEditor({
       event,
       value,
       onChange,
+      language,
       tabSize,
       syncCaret,
     });
   };
 
-  const lineHeight = 1.65;
-  const gutterWidth = `${Math.max(2, String(lines.length).length) * 0.62 + 1.6}em`;
+  const lineHeightPx = fontSize * lineHeight;
+  const gutterFontSize = Math.max(11, fontSize - 1);
+  const gutterDigits = Math.max(2, String(lines.length).length);
+  const diagnosticAllowance = diagnosticsByLine.size > 0 ? 13 : 0;
+  const gutterWidth = Math.max(
+    38,
+    Math.ceil(gutterDigits * gutterFontSize * 0.62 + 16 + diagnosticAllowance),
+  );
 
   const textLayer: React.CSSProperties = {
     margin: 0,
-    padding: '10px 16px 10px 12px',
+    padding: '8px 14px 8px 12px',
     fontFamily: 'var(--font-mono)',
     fontSize,
-    lineHeight,
+    lineHeight: `${lineHeightPx}px`,
     whiteSpace: 'pre',
     wordBreak: 'normal',
     overflowWrap: 'normal',
@@ -103,6 +115,8 @@ export function CodeEditor({
     <>
       <div
         ref={scrollRef}
+        data-code-editor-scroll
+        className="ac-code-editor-scroll"
         style={{
           flex: 1,
           minHeight: 120,
@@ -114,19 +128,21 @@ export function CodeEditor({
         <div style={{ display: 'flex', width: 'max-content', minWidth: '100%', minHeight: '100%' }}>
           <div
             aria-hidden="true"
+            data-code-editor-gutter
             style={{
               position: 'sticky',
               left: 0,
               zIndex: 2,
               background: 'var(--code-bg)',
               borderRight: '1px solid var(--code-line)',
-              padding: '10px 8px 10px 10px',
+              width: gutterWidth,
+              padding: '8px 7px',
               textAlign: 'right',
               minWidth: gutterWidth,
-              boxSizing: 'content-box',
+              boxSizing: 'border-box',
               fontFamily: 'var(--font-mono)',
-              fontSize,
-              lineHeight,
+              fontSize: gutterFontSize,
+              lineHeight: `${lineHeightPx}px`,
               color: 'var(--gutter)',
               userSelect: 'none',
               flexShrink: 0,
@@ -140,12 +156,14 @@ export function CodeEditor({
                 return (
                   <div
                     key={index}
+                    data-code-editor-line-number={lineNo}
                     title={lineDiagnostics.map((item) => item.message).join('\n')}
                     style={{
                       display: 'flex',
+                      position: 'relative',
+                      minHeight: lineHeightPx,
                       alignItems: 'center',
                       justifyContent: 'flex-end',
-                      gap: 5,
                       color: hasDiagnostic
                         ? 'var(--error)'
                         : lineNo === caret.line
@@ -159,15 +177,17 @@ export function CodeEditor({
                         role="img"
                         aria-label="Error"
                         style={{
-                          width: 12,
-                          height: 12,
+                          position: 'absolute',
+                          left: 0,
+                          width: 10,
+                          height: 10,
                           borderRadius: '50%',
                           background: 'var(--error-bg)',
                           color: 'var(--error)',
                           display: 'inline-flex',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          fontSize: 9,
+                          fontSize: 8,
                           lineHeight: 1,
                         }}
                       >
@@ -182,17 +202,22 @@ export function CodeEditor({
           </div>
 
           <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
-            <pre aria-hidden="true" style={{ ...textLayer, color: 'var(--code-fg)' }}>
+            <pre
+              aria-hidden="true"
+              data-code-editor-highlight
+              style={{ ...textLayer, color: 'var(--code-fg)' }}
+            >
               {highlighted.map((tokens, index) => (
                 <div
                   key={index}
+                  className="ac-code-editor-line"
                   title={(diagnosticsByLine.get(index + 1) ?? []).map((item) => item.message).join('\n')}
                   style={{
                     background:
                       (diagnosticsByLine.get(index + 1)?.length ?? 0) > 0
                         ? 'color-mix(in srgb, var(--error-bg) 45%, transparent)'
                         : index + 1 === caret.line
-                          ? 'var(--code-line)'
+                          ? 'var(--editor-active-line)'
                           : 'transparent',
                     boxShadow:
                       (diagnosticsByLine.get(index + 1)?.length ?? 0) > 0
@@ -221,6 +246,7 @@ export function CodeEditor({
 
             <textarea
               ref={textareaRef}
+              className="ac-code-editor-input"
               value={value}
               readOnly={readOnly}
               spellCheck={false}
@@ -257,13 +283,14 @@ export function CodeEditor({
 
       <div
         aria-label="Editor status"
+        className="ac-code-editor-status"
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: 14,
-          padding: '5px 14px',
-          borderTop: '1px solid var(--border)',
-          background: 'var(--surface)',
+          gap: 12,
+          padding: '4px 12px',
+          borderTop: '1px solid var(--code-line)',
+          background: 'var(--editor-chrome)',
           flexShrink: 0,
           fontFamily: 'var(--font-mono)',
           fontSize: 11,
@@ -276,9 +303,23 @@ export function CodeEditor({
           Ln {caret.line}, Col {caret.column}
         </span>
         <span>Tab: {tabSize}</span>
-        <span>{lines.length} lines</span>
+        <span data-code-editor-line-count>{lines.length} lines</span>
         <span>{new Blob([value]).size} B</span>
       </div>
     </>
   );
+}
+
+function usePrefersReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(false);
+
+  useEffect(() => {
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const update = () => setReduced(media.matches);
+    update();
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
+
+  return reduced;
 }

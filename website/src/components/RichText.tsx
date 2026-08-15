@@ -47,19 +47,7 @@ export function RichText({ text, muted = false }: { text: string; muted?: boolea
         const heading = /^(#{1,4})\s+(.*)$/.exec(trimmed);
         if (heading) {
           return (
-            <h3
-              key={blockIndex}
-              style={{
-                margin: '18px 0 8px',
-                fontSize: 12,
-                fontWeight: 650,
-                letterSpacing: '.07em',
-                textTransform: 'uppercase',
-                color: 'var(--text3)',
-              }}
-            >
-              {heading[2]}
-            </h3>
+            <h3 key={blockIndex} className="ac-rich-text-heading">{heading[2]}</h3>
           );
         }
 
@@ -90,12 +78,9 @@ export function RichText({ text, muted = false }: { text: string; muted?: boolea
         return (
           <p
             key={blockIndex}
+            className="ac-statement-paragraph"
             style={{
-              margin: '0 0 14px',
-              fontSize: 13.5,
-              lineHeight: 1.65,
               color: muted ? 'var(--text2)' : 'var(--text)',
-              maxWidth: '70ch',
               whiteSpace: 'pre-wrap',
             }}
           >

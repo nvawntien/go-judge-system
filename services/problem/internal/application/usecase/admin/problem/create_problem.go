@@ -51,6 +51,14 @@ func (uc *createProblemUseCase) Execute(ctx context.Context, claims auth.Claims,
 	if description == "" {
 		return dto.ProblemDetailResponse{}, response.NewAppError(response.CodeBadRequest, "description is required", nil)
 	}
+	inputFormat := strings.TrimSpace(req.InputFormat)
+	if inputFormat == "" {
+		return dto.ProblemDetailResponse{}, response.NewAppError(response.CodeBadRequest, "input_format is required", nil)
+	}
+	outputFormat := strings.TrimSpace(req.OutputFormat)
+	if outputFormat == "" {
+		return dto.ProblemDetailResponse{}, response.NewAppError(response.CodeBadRequest, "output_format is required", nil)
+	}
 
 	difficulty, err := normalizeDifficulty(req.Difficulty)
 	if err != nil {
@@ -83,6 +91,8 @@ func (uc *createProblemUseCase) Execute(ctx context.Context, claims auth.Claims,
 		title,
 		slug,
 		description,
+		inputFormat,
+		outputFormat,
 		difficulty,
 		tags,
 		examples, req.Constraints, req.Hints,

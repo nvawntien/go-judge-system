@@ -40,8 +40,10 @@ func (uc *updateProblemUseCase) Execute(ctx context.Context, claims auth.Claims,
 		return dto.ProblemDetailResponse{}, domain.ErrInternalServer.Wrap(err)
 	}
 
-	if !claims.Role.AtLeast(rbac.RoleModerator) && problem.AuthorID != claims.UserID {
-		return dto.ProblemDetailResponse{}, domain.ErrForbidden
+	if !claims.Role.AtLeast(rbac.RoleModerator) {
+		if problem.AuthorID != claims.UserID || !problem.IsHidden {
+			return dto.ProblemDetailResponse{}, domain.ErrForbidden
+		}
 	}
 
 	if req.Title != nil {
@@ -70,6 +72,20 @@ func (uc *updateProblemUseCase) Execute(ctx context.Context, claims auth.Claims,
 			return dto.ProblemDetailResponse{}, response.NewAppError(response.CodeBadRequest, "description is required", nil)
 		}
 		problem.Description = description
+	}
+	if req.InputFormat != nil {
+		inputFormat := strings.TrimSpace(*req.InputFormat)
+		if inputFormat == "" {
+			return dto.ProblemDetailResponse{}, response.NewAppError(response.CodeBadRequest, "input_format is required", nil)
+		}
+		problem.InputFormat = inputFormat
+	}
+	if req.OutputFormat != nil {
+		outputFormat := strings.TrimSpace(*req.OutputFormat)
+		if outputFormat == "" {
+			return dto.ProblemDetailResponse{}, response.NewAppError(response.CodeBadRequest, "output_format is required", nil)
+		}
+		problem.OutputFormat = outputFormat
 	}
 
 	if req.Difficulty != nil {

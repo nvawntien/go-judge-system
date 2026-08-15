@@ -1,4 +1,5 @@
 import type { KeyboardEvent } from 'react';
+import type { LanguageCode } from './types';
 
 const pairs: Record<string, string> = {
   '(': ')',
@@ -12,11 +13,13 @@ const pairs: Record<string, string> = {
 const openingChars = new Set(Object.keys(pairs));
 const closingChars = new Set(Object.values(pairs));
 const indentOpeners = new Set(['{', '(', '[']);
+const angleBracketLanguages = new Set<LanguageCode>(['CPP', 'JAVA']);
 
 interface CodeEditorKeyOptions {
   event: KeyboardEvent<HTMLTextAreaElement>;
   value: string;
   onChange: (value: string) => void;
+  language: LanguageCode;
   tabSize: number;
   syncCaret: () => void;
 }
@@ -31,6 +34,7 @@ export function handleCodeEditorKeyDown({
   event,
   value,
   onChange,
+  language,
   tabSize,
   syncCaret,
 }: CodeEditorKeyOptions): boolean {
@@ -48,17 +52,25 @@ export function handleCodeEditorKeyDown({
       ? outdentSelection(value, selectionStart, selectionEnd, tabSize)
       : indentSelection(value, selectionStart, selectionEnd, tabSize);
   } else if (key === 'Backspace') {
-    edit = deletePairedCharacter(value, selectionStart, selectionEnd);
+    edit =
+      deleteIndentationToPreviousTabStop(value, selectionStart, selectionEnd, tabSize) ??
+      deletePairedCharacter(value, selectionStart, selectionEnd, language);
   } else if (key === 'Enter') {
     edit = insertIndentedNewline(value, selectionStart, selectionEnd, tabSize);
-  } else if (closingChars.has(key) && shouldSkipClosingCharacter(value, selectionStart, selectionEnd, key)) {
+  } else if (
+    (closingChars.has(key) || key === '>') &&
+    shouldSkipClosingCharacter(value, selectionStart, selectionEnd, key, language)
+  ) {
     edit = {
       value,
       selectionStart: selectionStart + 1,
       selectionEnd: selectionStart + 1,
     };
-  } else if (openingChars.has(key)) {
-    edit = insertPair(value, selectionStart, selectionEnd, key, pairs[key]);
+  } else {
+    const close = getOpeningPair(value, selectionStart, selectionEnd, key, language);
+    if (close) {
+      edit = insertPair(value, selectionStart, selectionEnd, key, close);
+    }
   }
 
   if (!edit) {
@@ -95,29 +107,66 @@ function insertPair(value: string, selectionStart: number, selectionEnd: number,
   };
 }
 
+function getOpeningPair(
+  value: string,
+  selectionStart: number,
+  selectionEnd: number,
+  key: string,
+  language: LanguageCode,
+): string | null {
+  if (openingChars.has(key)) return pairs[key];
+  if (key !== '<' || !angleBracketLanguages.has(language)) return null;
+  if (selectionStart !== selectionEnd) return '>';
+
+  return isLikelyTemplateStart(value, selectionStart) ? '>' : null;
+}
+
+function isLikelyTemplateStart(value: string, selectionStart: number): boolean {
+  const previous = value[selectionStart - 1];
+  if (!previous || /\s/.test(previous)) return false;
+
+  // `vector<` and `map<string,` are useful template/generic starts. Requiring an
+  // adjacent identifier-like token keeps ordinary spaced comparisons (`a < b`)
+  // native and unsurprising without parsing the document on every keypress.
+  return /[A-Za-z0-9_>]/.test(previous);
+}
+
 function shouldSkipClosingCharacter(
   value: string,
   selectionStart: number,
   selectionEnd: number,
   key: string,
+  language: LanguageCode,
 ): boolean {
   if (selectionStart !== selectionEnd || value[selectionStart] !== key) {
     return false;
   }
+  if (key === '>' && !angleBracketLanguages.has(language)) return false;
   if ((key === '"' || key === "'" || key === '`') && isEscapedAt(value, selectionStart)) {
     return false;
   }
   return true;
 }
 
-function deletePairedCharacter(value: string, selectionStart: number, selectionEnd: number): EditResult | null {
+function deletePairedCharacter(
+  value: string,
+  selectionStart: number,
+  selectionEnd: number,
+  language: LanguageCode,
+): EditResult | null {
   if (selectionStart !== selectionEnd || selectionStart === 0) {
     return null;
   }
 
   const previous = value[selectionStart - 1];
   const next = value[selectionStart];
-  if (pairs[previous] !== next) {
+  const expectedClose =
+    previous === '<' &&
+    angleBracketLanguages.has(language) &&
+    isLikelyTemplateStart(value, selectionStart - 1)
+      ? '>'
+      : pairs[previous];
+  if (expectedClose !== next) {
     return null;
   }
 
@@ -126,6 +175,46 @@ function deletePairedCharacter(value: string, selectionStart: number, selectionE
     selectionStart: selectionStart - 1,
     selectionEnd: selectionStart - 1,
   };
+}
+
+function deleteIndentationToPreviousTabStop(
+  value: string,
+  selectionStart: number,
+  selectionEnd: number,
+  tabSize: number,
+): EditResult | null {
+  if (selectionStart !== selectionEnd || selectionStart === 0) return null;
+
+  const lineStart = value.lastIndexOf('\n', selectionStart - 1) + 1;
+  const lineEnd = value.indexOf('\n', selectionStart);
+  const line = value.slice(lineStart, lineEnd === -1 ? value.length : lineEnd);
+  if (!/^[\t ]*$/.test(line) || selectionStart === lineStart) return null;
+
+  const prefix = value.slice(lineStart, selectionStart);
+  const columns = visualColumns(prefix, tabSize);
+  const column = columns[columns.length - 1];
+  const targetColumn = Math.floor((column - 1) / tabSize) * tabSize;
+  let deleteOffset = prefix.length;
+
+  while (deleteOffset > 0 && columns[deleteOffset] > targetColumn) {
+    deleteOffset -= 1;
+  }
+  const deleteStart = lineStart + deleteOffset;
+
+  return {
+    value: `${value.slice(0, deleteStart)}${value.slice(selectionStart)}`,
+    selectionStart: deleteStart,
+    selectionEnd: deleteStart,
+  };
+}
+
+function visualColumns(value: string, tabSize: number): number[] {
+  const columns = [0];
+  for (const character of value) {
+    const column = columns[columns.length - 1];
+    columns.push(character === '\t' ? column + tabSize - (column % tabSize) : column + 1);
+  }
+  return columns;
 }
 
 function insertIndentedNewline(

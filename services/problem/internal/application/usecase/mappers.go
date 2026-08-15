@@ -21,18 +21,20 @@ func MapProblemToResponse(p *entity.Problem, includePrivate bool) dto.ProblemRes
 	}
 
 	resp := dto.ProblemResponse{
-		ID:          p.ID,
-		Slug:        p.TitleSlug,
-		Title:       p.Title,
-		Description: p.Description,
-		Difficulty:  string(p.Difficulty),
-		Tags:        tags,
-		Examples:    examples,
-		Constraints: p.Constraints,
-		Hints:       p.Hints,
-		TimeLimit:   p.TimeLimit,
-		MemoryLimit: p.MemoryLimit,
-		CreatedAt:   p.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		ID:           p.ID,
+		Slug:         p.TitleSlug,
+		Title:        p.Title,
+		Description:  p.Description,
+		InputFormat:  p.InputFormat,
+		OutputFormat: p.OutputFormat,
+		Difficulty:   string(p.Difficulty),
+		Tags:         tags,
+		Examples:     examples,
+		Constraints:  p.Constraints,
+		Hints:        p.Hints,
+		TimeLimit:    p.TimeLimit,
+		MemoryLimit:  p.MemoryLimit,
+		CreatedAt:    p.CreatedAt.Format("2006-01-02T15:04:05Z"),
 	}
 	if includePrivate {
 		resp.AuthorID = p.AuthorID
@@ -63,22 +65,24 @@ func MapProblemToAdminDetailResponse(p *entity.Problem, tc *entity.TestCase) dto
 	}
 
 	resp := dto.AdminProblemDetailResponse{
-		ID:          p.ID,
-		Slug:        p.TitleSlug,
-		Title:       p.Title,
-		Description: p.Description,
-		Difficulty:  string(p.Difficulty),
-		Tags:        tags,
-		Examples:    examples,
-		Constraints: p.Constraints,
-		Hints:       p.Hints,
-		TimeLimit:   p.TimeLimit,
-		MemoryLimit: p.MemoryLimit,
-		AuthorID:    p.AuthorID,
-		IsHidden:    p.IsHidden,
-		CreatedAt:   p.CreatedAt.Format("2006-01-02T15:04:05Z"),
-		UpdatedAt:   p.UpdatedAt.Format("2006-01-02T15:04:05Z"),
-		DeletedAt:   deletedAt,
+		ID:           p.ID,
+		Slug:         p.TitleSlug,
+		Title:        p.Title,
+		Description:  p.Description,
+		InputFormat:  p.InputFormat,
+		OutputFormat: p.OutputFormat,
+		Difficulty:   string(p.Difficulty),
+		Tags:         tags,
+		Examples:     examples,
+		Constraints:  p.Constraints,
+		Hints:        p.Hints,
+		TimeLimit:    p.TimeLimit,
+		MemoryLimit:  p.MemoryLimit,
+		AuthorID:     p.AuthorID,
+		IsHidden:     p.IsHidden,
+		CreatedAt:    p.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		UpdatedAt:    p.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+		DeletedAt:    deletedAt,
 		TestCase: dto.AdminTestCaseMetadataResponse{
 			HasTestCase: false,
 		},
@@ -89,14 +93,13 @@ func MapProblemToAdminDetailResponse(p *entity.Problem, tc *entity.TestCase) dto
 		testCaseUpdatedAt := tc.UpdatedAt.Format("2006-01-02T15:04:05Z")
 
 		resp.TestCase = dto.AdminTestCaseMetadataResponse{
-			HasTestCase:  true,
-			ID:           int64Ptr(tc.ID),
-			ProblemID:    int64Ptr(tc.ProblemID),
-			ZipObjectKey: stringPtr(tc.ZipObjectKey),
-			TestCount:    intPtr(tc.TestCount),
-			Version:      intPtr(tc.Version),
-			CreatedAt:    stringPtr(testCaseCreatedAt),
-			UpdatedAt:    stringPtr(testCaseUpdatedAt),
+			HasTestCase: true,
+			ID:          int64Ptr(tc.ID),
+			ProblemID:   int64Ptr(tc.ProblemID),
+			TestCount:   intPtr(tc.TestCount),
+			Version:     intPtr(tc.Version),
+			CreatedAt:   stringPtr(testCaseCreatedAt),
+			UpdatedAt:   stringPtr(testCaseUpdatedAt),
 		}
 	}
 
@@ -135,13 +138,12 @@ func MapExampleDTOsToEntity(dtos []dto.ProblemExampleDTO) []entity.ProblemExampl
 
 func MapTestCaseToMetadataResponse(tc *entity.TestCase) dto.TestCaseMetadataResponse {
 	return dto.TestCaseMetadataResponse{
-		ID:           tc.ID,
-		ProblemID:    tc.ProblemID,
-		ZipObjectKey: tc.ZipObjectKey,
-		TestCount:    tc.TestCount,
-		Version:      tc.Version,
-		CreatedAt:    tc.CreatedAt.Format("2006-01-02T15:04:05Z"),
-		UpdatedAt:    tc.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+		ID:        tc.ID,
+		ProblemID: tc.ProblemID,
+		TestCount: tc.TestCount,
+		Version:   tc.Version,
+		CreatedAt: tc.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		UpdatedAt: tc.UpdatedAt.Format("2006-01-02T15:04:05Z"),
 	}
 }
 

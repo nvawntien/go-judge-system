@@ -159,10 +159,11 @@ export function ProblemPanel({
         })}
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '20px 22px 32px' }}>
+      <div className="ac-problem-panel-content" style={{ flex: 1, overflowY: 'auto' }}>
         {tab === 'description' && (
           <>
             <div
+              className="ac-problem-statement-header"
               style={{
                 position: 'sticky',
                 top: 0,
@@ -171,8 +172,6 @@ export function ProblemPanel({
                 flexWrap: 'wrap',
                 alignItems: 'center',
                 gap: 9,
-                margin: '-20px -22px 18px',
-                padding: '11px 22px',
                 background: 'var(--surface)',
                 borderBottom: '1px solid var(--border)',
               }}
@@ -255,17 +254,27 @@ export function ProblemPanel({
 
             <RichText text={problem.description} />
 
+            {problem.input_format && (
+              <section aria-labelledby="problem-input-format">
+                <h2 id="problem-input-format" className="ac-statement-section-heading">Input</h2>
+                <RichText text={problem.input_format} />
+              </section>
+            )}
+
+            {problem.output_format && (
+              <section aria-labelledby="problem-output-format">
+                <h2 id="problem-output-format" className="ac-statement-section-heading">Output</h2>
+                <RichText text={problem.output_format} />
+              </section>
+            )}
+
             {problem.constraints && problem.constraints.length > 0 && (
               <>
-                <h2 style={sectionHeading}>Constraints</h2>
+                <h2 className="ac-statement-section-heading">Constraints</h2>
                 <ul
+                  className="ac-problem-constraints"
                   style={{
-                    margin: '0 0 20px',
-                    paddingLeft: 20,
                     fontFamily: 'var(--font-mono)',
-                    fontSize: 12,
-                    lineHeight: 1.9,
-                    color: 'var(--text2)',
                   }}
                 >
                   {problem.constraints.map((constraint, index) => (
@@ -276,89 +285,77 @@ export function ProblemPanel({
             )}
 
             {problem.examples && problem.examples.length > 0 && (
-              <>
-                <h2 style={sectionHeading}>Examples</h2>
+              <section className="ac-problem-examples" aria-labelledby="problem-examples">
+                <h2 id="problem-examples" className="ac-statement-section-heading">Examples</h2>
                 {problem.examples.map((example, index) => (
-                  <div
+                  <article
                     key={index}
-                    style={{
-                      border: '1px solid var(--border)',
-                      borderRadius: 10,
-                      marginBottom: 12,
-                      overflow: 'hidden',
-                    }}
+                    className="ac-problem-example"
                   >
                     <div
+                      className="ac-problem-example-header"
                       style={{
                         display: 'flex',
                         alignItems: 'center',
                         gap: 8,
-                        padding: '6px 8px 6px 12px',
-                        background: 'var(--surface2)',
-                        borderBottom: '1px solid var(--border)',
                       }}
                     >
-                      <svg width="30" height="10" viewBox="0 0 30 10" aria-hidden="true">
-                        <path d="M4 5 H26" stroke="var(--accent-soft2)" strokeWidth="1.4" />
-                        <circle cx="4" cy="5" r="2.6" fill="var(--accent)" />
-                        <circle cx="15" cy="5" r="2.6" fill="var(--accent-soft2)" />
-                        <circle cx="26" cy="5" r="2.6" fill="var(--accent-soft2)" />
-                      </svg>
-                      <span style={{ fontSize: 11, fontWeight: 650, color: 'var(--text2)' }}>
-                        Example {index + 1}
-                      </span>
-                      <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-                        <button
-                          type="button"
-                          onClick={() => copy(example.input, 'Input copied')}
-                          className="ac-hover-surface2-text"
-                          style={smallButton}
-                        >
-                          Copy input
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onUseExample(example.input, example.expected_output)}
-                          className="ac-hover-surface2-text"
-                          style={smallButton}
-                        >
-                          Use as test
-                        </button>
-                      </span>
+                      <h3>Example {index + 1}</h3>
                     </div>
-                    <div
-                      style={{
-                        padding: '10px 12px',
-                        fontFamily: 'var(--font-mono)',
-                        fontSize: 12,
-                        lineHeight: 1.7,
-                        background: 'var(--code-bg)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: 6,
-                      }}
-                    >
-                      <div style={{ display: 'flex', gap: 10 }}>
-                        <span style={{ color: 'var(--text3)', flexShrink: 0, width: 52 }}>Input</span>
-                        <span style={{ color: 'var(--code-fg)', whiteSpace: 'pre-wrap' }}>
-                          {example.input}
-                        </span>
-                      </div>
-                      <div style={{ display: 'flex', gap: 10 }}>
-                        <span style={{ color: 'var(--text3)', flexShrink: 0, width: 52 }}>Output</span>
-                        <span style={{ color: 'var(--syn-str)', whiteSpace: 'pre-wrap' }}>
-                          {example.expected_output}
-                        </span>
-                      </div>
-                      {example.explanation && (
-                        <div style={{ color: 'var(--syn-com)', whiteSpace: 'pre-wrap' }}>
-                          // {example.explanation}
+                    <div className="ac-problem-example-data">
+                      <section className="ac-problem-example-code" aria-label={`Example ${index + 1} input`}>
+                        <div className="ac-problem-example-code-header">
+                          <h4>Input</h4>
+                          <span className="ac-problem-example-actions">
+                            <button
+                              type="button"
+                              onClick={() => copy(example.input, 'Input copied')}
+                              aria-label={`Copy input for example ${index + 1}`}
+                              title="Copy input"
+                              className="ac-problem-example-icon-button ac-hover-surface2"
+                            >
+                              <Icon.Copy />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onUseExample(example.input, example.expected_output)}
+                              aria-label={`Use input from example ${index + 1} as a test`}
+                              title="Use as test"
+                              className="ac-problem-example-icon-button ac-hover-surface2"
+                            >
+                              <Icon.Play />
+                            </button>
+                          </span>
                         </div>
-                      )}
+                        <pre><code>{example.input}</code></pre>
+                      </section>
+                      <section className="ac-problem-example-code" aria-label={`Example ${index + 1} output`}>
+                        <div className="ac-problem-example-code-header">
+                          <h4>Output</h4>
+                          <span className="ac-problem-example-actions">
+                            <button
+                              type="button"
+                              onClick={() => copy(example.expected_output, 'Output copied')}
+                              aria-label={`Copy output for example ${index + 1}`}
+                              title="Copy output"
+                              className="ac-problem-example-icon-button ac-hover-surface2"
+                            >
+                              <Icon.Copy />
+                            </button>
+                          </span>
+                        </div>
+                        <pre><code>{example.expected_output}</code></pre>
+                      </section>
                     </div>
-                  </div>
+                    {example.explanation?.trim() && (
+                      <section className="ac-problem-example-explanation" aria-label={`Example ${index + 1} explanation`}>
+                        <h4>Explanation</h4>
+                        <p>{example.explanation}</p>
+                      </section>
+                    )}
+                  </article>
                 ))}
-              </>
+              </section>
             )}
 
             {problem.hints && problem.hints.length > 0 && <HintList hints={problem.hints} />}
@@ -385,28 +382,6 @@ export function ProblemPanel({
               </div>
             )}
 
-            <div
-              style={{
-                display: 'flex',
-                gap: 16,
-                flexWrap: 'wrap',
-                paddingTop: 14,
-                borderTop: '1px solid var(--border)',
-                fontSize: 12,
-                color: 'var(--text3)',
-              }}
-            >
-              <span>
-                Time limit <strong style={{ color: 'var(--text2)' }}>{formatTimeLimit(problem.time_limit)}</strong>
-              </span>
-              <span>
-                Memory limit{' '}
-                <strong style={{ color: 'var(--text2)' }}>{formatMemoryLimit(problem.memory_limit)}</strong>
-              </span>
-              <span>
-                Slug <strong style={{ color: 'var(--text2)', fontFamily: 'var(--font-mono)' }}>{problem.slug}</strong>
-              </span>
-            </div>
           </>
         )}
 
@@ -445,7 +420,7 @@ function HintList({ hints }: { hints: string[] }) {
   const [open, setOpen] = useState<number | null>(null);
   return (
     <>
-      <h2 style={sectionHeading}>Hints</h2>
+      <h2 className="ac-statement-section-heading">Hints</h2>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 18 }}>
         {hints.map((hint, index) => (
           <div
@@ -1070,15 +1045,6 @@ const sourceCodeBlock: React.CSSProperties = {
   fontSize: 11.5,
   lineHeight: 1.65,
   whiteSpace: 'pre',
-};
-
-const sectionHeading: React.CSSProperties = {
-  margin: '18px 0 8px',
-  fontSize: 12,
-  fontWeight: 650,
-  letterSpacing: '.07em',
-  textTransform: 'uppercase',
-  color: 'var(--text3)',
 };
 
 const smallButton: React.CSSProperties = {

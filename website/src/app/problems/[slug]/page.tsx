@@ -133,7 +133,6 @@ export default function WorkspacePage() {
   const [tabSize, setTabSize] = useState(4);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [resetDialog, setResetDialog] = useState(false);
-  const [draftRestored, setDraftRestored] = useState(false);
   const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null);
   const [jumpLine, setJumpLine] = useState<number | null>(null);
   const [codeDiagnostics, setCodeDiagnostics] = useState<CodeDiagnostic[]>([]);
@@ -164,18 +163,16 @@ export default function WorkspacePage() {
     if (!problem) return;
     setCodeDiagnostics([]);
     setJumpLine(null);
-    let restored = false;
     try {
       const draft = localStorage.getItem(draftKey(problem.id, language));
       if (draft) {
         setCode(draft);
-        restored = true;
+      } else {
+        setCode(CODE_TEMPLATES[language]);
       }
     } catch {
-      /* ignore */
+      setCode(CODE_TEMPLATES[language]);
     }
-    if (!restored) setCode(CODE_TEMPLATES[language]);
-    setDraftRestored(restored);
     setDraftSavedAt(null);
   }, [problem, language]);
 
@@ -223,7 +220,6 @@ export default function WorkspacePage() {
       setLanguage(nextLanguage);
       setCode(detail.source_code);
       setCodeDiagnostics([]);
-      setDraftRestored(false);
       setDraftSavedAt(Date.now());
       setJumpLine(null);
       setRestoreSubmission(null);
@@ -891,53 +887,15 @@ export default function WorkspacePage() {
                 </div>
               )}
 
-              {draftRestored && (
-                <div
-                  role="status"
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 9,
-                    padding: '8px 14px',
-                    background: 'var(--accent-soft)',
-                    borderBottom: '1px solid var(--accent-soft2)',
-                    flexShrink: 0,
-                  }}
-                >
-                  <span
-                    aria-hidden="true"
-                    style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--accent)' }}
-                  />
-                  <span style={{ fontSize: 12, fontWeight: 550, flex: 1 }}>
-                    Draft restored from this device.
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setDraftRestored(false)}
-                    aria-label="Dismiss"
-                    className="ac-hover-text"
-                    style={{
-                      border: 'none',
-                      background: 'none',
-                      color: 'var(--text3)',
-                      fontSize: 14,
-                      cursor: 'pointer',
-                      padding: '2px 6px',
-                    }}
-                  >
-                    ✕
-                  </button>
-                </div>
-              )}
-
               <div
+                className="ac-workspace-editor-toolbar"
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 8,
-                  padding: '8px 12px',
-                  borderBottom: '1px solid var(--border)',
-                  background: 'var(--surface)',
+                  gap: 7,
+                  padding: '6px 10px',
+                  borderBottom: '1px solid var(--code-line)',
+                  background: 'var(--editor-chrome)',
                   flexShrink: 0,
                 }}
               >
@@ -946,10 +904,10 @@ export default function WorkspacePage() {
                   onChange={(event) => changeLanguage(event.target.value as LanguageCode)}
                   aria-label="Programming language"
                   style={{
-                    height: 32,
-                    borderRadius: 8,
-                    border: '1px solid var(--border)',
-                    background: 'var(--surface2)',
+                    height: 30,
+                    borderRadius: 6,
+                    border: '1px solid var(--code-line)',
+                    background: 'var(--code-bg)',
                     padding: '0 8px',
                     fontSize: 12.5,
                     fontWeight: 600,
@@ -964,14 +922,15 @@ export default function WorkspacePage() {
                     </option>
                   ))}
                 </select>
-                <span style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>
+                <span className="ac-workspace-editor-file" style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>
                   main.{langMeta.ext}
                 </span>
                 {draftSavedAt !== null && (
                   <span
+                    aria-label="Draft saved locally"
                     style={{ fontSize: 10.5, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}
                   >
-                    draft saved
+                    · saved locally
                   </span>
                 )}
 
@@ -1158,8 +1117,8 @@ export default function WorkspacePage() {
                         }}
                         className="ac-hover-text"
                         style={{
-                          height: 38,
-                          padding: '0 12px',
+                          height: 36,
+                          padding: '0 11px',
                           border: 'none',
                           borderBottom: `2px solid ${active ? 'var(--accent)' : 'transparent'}`,
                           background: 'none',
@@ -1176,7 +1135,7 @@ export default function WorkspacePage() {
                   })}
 
                   {!isMobile && (
-                    <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, padding: '5px 0' }}>
+                    <div style={{ marginLeft: 'auto', display: 'flex', gap: 7, padding: '4px 0' }}>
                       <button
                         type="button"
                         onClick={run}
@@ -1184,11 +1143,11 @@ export default function WorkspacePage() {
                         title="Run all visible test cases (Ctrl+Enter)"
                         className="ac-hover-surface2"
                         style={{
-                          height: 32,
-                          padding: '0 14px',
+                          height: 30,
+                          padding: '0 13px',
                           border: '1px solid var(--border2)',
-                          borderRadius: 8,
-                          background: 'var(--surface)',
+                          borderRadius: 7,
+                          background: 'var(--editor-chrome)',
                           color: 'var(--text)',
                           fontSize: 12.5,
                           fontWeight: 600,
@@ -1209,10 +1168,10 @@ export default function WorkspacePage() {
                         title="Submit to the judge (Ctrl+Shift+Enter)"
                         className="ac-hover-accent ac-active-press"
                         style={{
-                          height: 32,
-                          padding: '0 16px',
+                          height: 30,
+                          padding: '0 14px',
                           border: 'none',
-                          borderRadius: 8,
+                          borderRadius: 7,
                           background: 'var(--accent)',
                           color: 'var(--accent-ink)',
                           fontSize: 12.5,
@@ -1250,7 +1209,7 @@ export default function WorkspacePage() {
                 </div>
 
                 {bottomOpen && (
-                  <div style={{ overflowY: 'auto', padding: '12px 16px', flex: 1, minHeight: 0 }}>
+                  <div style={{ overflowY: 'auto', padding: '10px 14px', flex: 1, minHeight: 0 }}>
                     {bottomTab === 'tests' && (
                       <TestsPanel
                         tests={tests}
@@ -2254,11 +2213,11 @@ function buildRunConsoleLines(result: RunResponse): { text: string; color: strin
 }
 
 const iconButton: React.CSSProperties = {
-  width: 32,
-  height: 32,
-  borderRadius: 8,
-  border: '1px solid var(--border)',
-  background: 'var(--surface)',
+  width: 30,
+  height: 30,
+  borderRadius: 7,
+  border: '1px solid var(--code-line)',
+  background: 'var(--editor-chrome)',
   color: 'var(--text2)',
   cursor: 'pointer',
   display: 'flex',

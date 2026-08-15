@@ -23,7 +23,9 @@ type SortOption = 'default' | 'title-asc' | 'difficulty-asc' | 'difficulty-desc'
 const PAGE_SIZE = 20;
 const DIFFICULTY_RANK: Record<string, number> = { easy: 0, medium: 1, hard: 2 };
 
-const GRID = '44px 78px minmax(220px,1fr) 220px 92px 100px 90px';
+const CATALOG_GRID = '40px 54px minmax(190px, .9fr) minmax(240px, 1.1fr) 104px 74px 88px';
+const DESKTOP_TAG_LIMIT = 2;
+const COMPACT_TAG_LIMIT = 1;
 
 function selectStyle(extra?: React.CSSProperties): React.CSSProperties {
   return {
@@ -72,12 +74,46 @@ function StatusChip({ status }: { status: StatusFilter }) {
   );
 }
 
+function ProblemTags({ tags = [], limit }: { tags?: Tag[]; limit: number }) {
+  const shownTags = tags.slice(0, limit);
+  const hiddenTags = tags.slice(limit);
+
+  if (shownTags.length === 0) return <span className="ac-problem-tags-empty">—</span>;
+
+  return (
+    <span className="ac-problem-tags" aria-label={`Tags: ${tags.map((tag) => tag.name).join(', ')}`}>
+      {shownTags.map((tag) => (
+        <span key={tag.id} className="ac-problem-tag" title={tag.name}>
+          {tag.name}
+        </span>
+      ))}
+      {hiddenTags.length > 0 && (
+        <span className="ac-problem-tag-more" title={hiddenTags.map((tag) => tag.name).join(', ')}>
+          +{hiddenTags.length}
+        </span>
+      )}
+    </span>
+  );
+}
+
+function LimitValue({ value }: { value: string }) {
+  const [amount, unit] = value.split(/\s+/, 2);
+  if (!unit) return <span className="ac-problem-limit">{value}</span>;
+
+  return (
+    <span className="ac-problem-limit">
+      <span>{amount}</span>
+      <span>{unit}</span>
+    </span>
+  );
+}
+
 function ProblemsScreen() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user } = useAuth();
   const width = useViewportWidth();
-  const isMobile = width < 760;
+  const isCompact = width < 900;
 
   const [search, setSearch] = useState(searchParams.get('search') ?? '');
   const [difficulty, setDifficulty] = useState<Difficulty | ''>(
@@ -483,15 +519,15 @@ function ProblemsScreen() {
           />
         )}
 
-        {!loading && !error && rows.length > 0 && !isMobile && (
+        {!loading && !error && rows.length > 0 && !isCompact && (
           <div style={{ overflowX: 'auto' }}>
-            <div aria-label="Problems" style={{ minWidth: 800, animation: 'acFadeUp .25s ease' }}>
+            <div aria-label="Problems" style={{ minWidth: 900, animation: 'acFadeUp .25s ease' }}>
               <div
                 aria-hidden="true"
                 className="ac-table-head"
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: GRID,
+                  gridTemplateColumns: CATALOG_GRID,
                   gap: 10,
                   alignItems: 'center',
                   padding: '9px 18px',
@@ -502,10 +538,10 @@ function ProblemsScreen() {
                 <span>Title</span>
                 <span>Tags</span>
                 <span>Difficulty</span>
-                <span style={{ textAlign: 'right' }}>
+                <span style={{ textAlign: 'center' }}>
                   Time limit
                 </span>
-                <span style={{ textAlign: 'right' }}>
+                <span style={{ textAlign: 'center' }}>
                   Memory
                 </span>
               </div>
@@ -513,9 +549,6 @@ function ProblemsScreen() {
               {rows.map((problem) => {
                 const status = statusOf(problem);
                 const diff = difficultyMeta(problem.difficulty);
-                const shownTags = (problem.tags ?? []).slice(0, 2);
-                const extra = (problem.tags?.length ?? 0) - shownTags.length;
-
                 return (
                   <Link
                     key={problem.id}
@@ -525,7 +558,7 @@ function ProblemsScreen() {
                     className="ac-table-row"
                     style={{
                       display: 'grid',
-                      gridTemplateColumns: GRID,
+                      gridTemplateColumns: CATALOG_GRID,
                       gap: 10,
                       alignItems: 'center',
                       width: '100%',
@@ -546,7 +579,9 @@ function ProblemsScreen() {
                     </span>
                     <span
                       data-ptitle="1"
+                      title={problem.title}
                       style={{
+                        minWidth: 0,
                         fontSize: 13.5,
                         fontWeight: 550,
                         whiteSpace: 'nowrap',
@@ -557,44 +592,10 @@ function ProblemsScreen() {
                     >
                       {problem.title}
                     </span>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                      {shownTags.map((tag) => (
-                        <span
-                          key={tag.id}
-                          style={{
-                            fontSize: 12,
-                            fontWeight: 500,
-                            color: 'var(--text)',
-                            background: 'var(--surface2)',
-                            border: '1px solid var(--border2)',
-                            borderRadius: 5,
-                            padding: '1px 8px',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {tag.name}
-                        </span>
-                      ))}
-                      {extra > 0 && (
-                        <span
-                          title={problem.tags?.slice(2).map((t) => t.name).join(', ')}
-                          style={{
-                            fontSize: 12,
-                            fontWeight: 600,
-                            color: 'var(--text2)',
-                            background: 'var(--surface3)',
-                            border: '1px solid var(--border2)',
-                            borderRadius: 5,
-                            padding: '1px 7px',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          +{extra}
-                        </span>
-                      )}
-                    </span>
+                    <ProblemTags tags={problem.tags} limit={DESKTOP_TAG_LIMIT} />
                     <span
                       style={{
+                        minWidth: 0,
                         fontSize: 11.5,
                         fontWeight: 600,
                         color: diff.color,
@@ -602,29 +603,26 @@ function ProblemsScreen() {
                         borderRadius: 6,
                         padding: '2px 8px',
                         justifySelf: 'start',
+                        whiteSpace: 'nowrap',
                       }}
                     >
                       {diff.label}
                     </span>
                     <span
                       style={{
-                        fontFamily: 'var(--font-mono)',
-                        fontSize: 12,
                         color: 'var(--text2)',
-                        textAlign: 'right',
+                        justifySelf: 'center',
                       }}
                     >
-                      {formatTimeLimit(problem.time_limit)}
+                      <LimitValue value={formatTimeLimit(problem.time_limit)} />
                     </span>
                     <span
                       style={{
-                        fontFamily: 'var(--font-mono)',
-                        fontSize: 12,
                         color: 'var(--text3)',
-                        textAlign: 'right',
+                        justifySelf: 'center',
                       }}
                     >
-                      {formatMemoryLimit(problem.memory_limit)}
+                      <LimitValue value={formatMemoryLimit(problem.memory_limit)} />
                     </span>
                   </Link>
                 );
@@ -633,7 +631,7 @@ function ProblemsScreen() {
           </div>
         )}
 
-        {!loading && !error && rows.length > 0 && isMobile && (
+        {!loading && !error && rows.length > 0 && isCompact && (
           <div aria-label="Problems" style={{ display: 'flex', flexDirection: 'column' }}>
             {rows.map((problem) => {
               const diff = difficultyMeta(problem.difficulty);
@@ -660,14 +658,14 @@ function ProblemsScreen() {
                   <span style={{ flex: 1, minWidth: 0 }}>
                     <span
                       data-ptitle="1"
-                      style={{ display: 'block', fontSize: 13.5, fontWeight: 550 }}
+                      title={problem.title}
+                      style={{ display: 'block', fontSize: 13.5, fontWeight: 550, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                     >
                       {problem.title}
                     </span>
                     <span
                       style={{
                         display: 'flex',
-                        flexWrap: 'wrap',
                         alignItems: 'center',
                         gap: 6,
                         marginTop: 5,
@@ -688,8 +686,11 @@ function ProblemsScreen() {
                       <span
                         style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text3)' }}
                       >
-                        #{problem.id} · {formatTimeLimit(problem.time_limit)}
+                        #{problem.id} · <LimitValue value={formatTimeLimit(problem.time_limit)} /> · <LimitValue value={formatMemoryLimit(problem.memory_limit)} />
                       </span>
+                    </span>
+                    <span style={{ display: 'block', marginTop: 5 }}>
+                      <ProblemTags tags={problem.tags} limit={COMPACT_TAG_LIMIT} />
                     </span>
                   </span>
                 </Link>

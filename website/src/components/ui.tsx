@@ -370,6 +370,12 @@ export const Icon = {
       <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
     </svg>
   ),
+  Copy: ({ size = 13 }: { size?: number }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...strokeProps}>
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3" />
+    </svg>
+  ),
   Bookmark: ({ size = 13, filled = false }: { size?: number; filled?: boolean }) => (
     <svg
       width={size}
