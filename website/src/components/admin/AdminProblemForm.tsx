@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useToast } from '@/components/ToastProvider';
 import { buttonStyles } from '@/components/ui';
+import { AdminIcon } from './AdminIcons';
 import { ApiError, NetworkError, problemApi } from '@/lib/api';
 import type {
   AdminProblemDetail,
@@ -24,8 +25,8 @@ type ProblemFormValues = {
   difficulty: Difficulty;
   tagIds: number[];
   examples: ProblemWriteExample[];
-  constraintsText: string;
-  hintsText: string;
+  constraints: string[];
+  hints: string[];
   timeLimit: string;
   memoryLimit: string;
 };
@@ -56,18 +57,15 @@ function fromProblem(problem?: AdminProblemDetail): ProblemFormValues {
           explanation: example.explanation ?? '',
         }))
       : [emptyExample()],
-    constraintsText: problem?.constraints?.join('\n') ?? '',
-    hintsText: problem?.hints?.join('\n') ?? '',
+    constraints: problem?.constraints ?? [],
+    hints: problem?.hints ?? [],
     timeLimit: String(problem?.time_limit ?? 1),
     memoryLimit: String(problem?.memory_limit ?? 256),
   };
 }
 
-function splitLines(value: string) {
-  return value
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean);
+function normalizeItems(items: string[]) {
+  return items.map((item) => item.trim());
 }
 
 function buildCreate(values: ProblemFormValues): CreateAdminProblemRequest {
@@ -83,8 +81,8 @@ function buildCreate(values: ProblemFormValues): CreateAdminProblemRequest {
       expected_output: example.expected_output,
       explanation: example.explanation?.trim() || undefined,
     })),
-    constraints: splitLines(values.constraintsText),
-    hints: splitLines(values.hintsText),
+    constraints: normalizeItems(values.constraints),
+    hints: normalizeItems(values.hints),
     time_limit: Number(values.timeLimit),
     memory_limit: Number(values.memoryLimit),
   };
@@ -108,7 +106,96 @@ function validate(values: ProblemFormValues) {
   if (values.examples.some((example) => !example.input.trim() || !example.expected_output.trim())) {
     return 'Every example needs input and expected output.';
   }
+  if (values.constraints.some((constraint) => !constraint.trim())) {
+    return 'Complete or remove empty constraints before saving.';
+  }
+  if (values.hints.some((hint) => !hint.trim())) {
+    return 'Complete or remove empty hints before saving.';
+  }
   return '';
+}
+
+function StringListField({
+  label,
+  description,
+  items,
+  onChange,
+  multiline = false,
+}: {
+  label: 'Constraints' | 'Hints';
+  description: string;
+  items: string[];
+  onChange: (items: string[]) => void;
+  multiline?: boolean;
+}) {
+  const itemName = label === 'Constraints' ? 'constraint' : 'hint';
+
+  const updateItem = (index: number, value: string) => {
+    onChange(items.map((item, currentIndex) => (currentIndex === index ? value : item)));
+  };
+
+  return (
+    <section style={{ ...adminCard, padding: 16 }}>
+      <div style={{ display: 'grid', gap: 3, marginBottom: items.length ? 12 : 10 }}>
+        <h2 style={{ margin: 0, fontSize: 15 }}>{label}</h2>
+        <p style={{ margin: 0, color: 'var(--text3)', fontSize: 12.5, lineHeight: 1.5 }}>{description}</p>
+      </div>
+      {items.length > 0 && (
+        <div style={{ display: 'grid', gap: 8 }}>
+          {items.map((item, index) => {
+            const inputId = `${itemName}-${index + 1}`;
+            const field = multiline ? (
+              <textarea
+                id={inputId}
+                value={item}
+                onChange={(event) => updateItem(index, event.target.value)}
+                className="ac-input"
+                rows={3}
+                style={{ ...adminField, height: 'auto', minHeight: 76, padding: 10, lineHeight: 1.5, resize: 'vertical' }}
+              />
+            ) : (
+              <input
+                id={inputId}
+                value={item}
+                onChange={(event) => updateItem(index, event.target.value)}
+                className="ac-input"
+                spellCheck={false}
+                style={{ ...adminField, fontFamily: 'var(--font-mono)' }}
+              />
+            );
+
+            return (
+              <div key={index} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 8, alignItems: 'end' }}>
+                <label htmlFor={inputId} style={{ display: 'grid', gap: 6, minWidth: 0, fontSize: 12, fontWeight: 650 }}>
+                  {label.slice(0, -1)} {index + 1}
+                  {field}
+                </label>
+                <button
+                  type="button"
+                  aria-label={`Remove ${itemName} ${index + 1}`}
+                  title={`Remove ${itemName} ${index + 1}`}
+                  onClick={() => onChange(items.filter((_, currentIndex) => currentIndex !== index))}
+                  className="ac-hover-surface2"
+                  style={{ ...buttonStyles.iconButton(36), color: 'var(--text2)' }}
+                >
+                  <AdminIcon.X size={16} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={() => onChange([...items, ''])}
+        className="ac-hover-surface2"
+        style={{ ...buttonStyles.secondary(36), marginTop: items.length ? 10 : 0 }}
+      >
+        <AdminIcon.Plus size={15} />
+        Add {itemName}
+      </button>
+    </section>
+  );
 }
 
 export function AdminProblemForm({
@@ -335,6 +422,13 @@ export function AdminProblemForm({
         )}
       </section>
 
+      <StringListField
+        label="Constraints"
+        description="Add one short technical condition per row."
+        items={values.constraints}
+        onChange={(constraints) => setValue('constraints', constraints)}
+      />
+
       <section style={{ ...adminCard, padding: 16 }}>
         <h2 style={{ margin: '0 0 10px', fontSize: 15 }}>Examples</h2>
         <div style={{ display: 'grid', gap: 12 }}>
@@ -402,30 +496,13 @@ export function AdminProblemForm({
         </button>
       </section>
 
-      <section style={{ ...adminCard, padding: 16 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
-          <label style={{ display: 'grid', gap: 6, fontSize: 12, fontWeight: 650 }}>
-            Constraints
-            <textarea
-              value={values.constraintsText}
-              onChange={(event) => setValue('constraintsText', event.target.value)}
-              className="ac-input"
-              rows={7}
-              style={{ ...adminField, height: 'auto', padding: 10, resize: 'vertical' }}
-            />
-          </label>
-          <label style={{ display: 'grid', gap: 6, fontSize: 12, fontWeight: 650 }}>
-            Hints
-            <textarea
-              value={values.hintsText}
-              onChange={(event) => setValue('hintsText', event.target.value)}
-              className="ac-input"
-              rows={7}
-              style={{ ...adminField, height: 'auto', padding: 10, resize: 'vertical' }}
-            />
-          </label>
-        </div>
-      </section>
+      <StringListField
+        label="Hints"
+        description="Optional guidance for solvers. Each hint is kept as its own item."
+        items={values.hints}
+        onChange={(hints) => setValue('hints', hints)}
+        multiline
+      />
 
       <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 8 }}>
         <Link href={cancelHref} className="ac-hover-surface2" style={buttonStyles.secondary(38)}>

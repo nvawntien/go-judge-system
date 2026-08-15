@@ -115,14 +115,13 @@ type AdminProblemDetailResponse struct {
 }
 
 type AdminTestCaseMetadataResponse struct {
-	HasTestCase  bool    `json:"has_testcase"`
-	ID           *int64  `json:"id,omitempty"`
-	ProblemID    *int64  `json:"problem_id,omitempty"`
-	ZipObjectKey *string `json:"zip_object_key,omitempty"`
-	TestCount    *int    `json:"test_count,omitempty"`
-	Version      *int    `json:"version,omitempty"`
-	CreatedAt    *string `json:"created_at,omitempty"`
-	UpdatedAt    *string `json:"updated_at,omitempty"`
+	HasTestCase bool    `json:"has_testcase"`
+	ID          *int64  `json:"id,omitempty"`
+	ProblemID   *int64  `json:"problem_id,omitempty"`
+	TestCount   *int    `json:"test_count,omitempty"`
+	Version     *int    `json:"version,omitempty"`
+	CreatedAt   *string `json:"created_at,omitempty"`
+	UpdatedAt   *string `json:"updated_at,omitempty"`
 }
 
 type ListProblemsRequest struct {

@@ -270,6 +270,27 @@ export const problemApi = {
   tags: (signal?: AbortSignal) => apiRequest<ListTagsResponse>('/api/v1/tags', { signal }),
 };
 
+/* ------------------------------------------------------------ testcases */
+
+const testcaseApi = {
+  get: (problemId: number, signal?: AbortSignal) =>
+    apiRequest<AdminProblemDetail['testcase']>(`/api/v1/admin/problems/${problemId}/testcases`, {
+      signal,
+    }),
+
+  upload: (problemId: number, file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return apiRequest<AdminProblemDetail['testcase']>(`/api/v1/admin/problems/${problemId}/testcases`, {
+      method: 'POST',
+      formData,
+    });
+  },
+
+  delete: (problemId: number) =>
+    apiRequest<void>(`/api/v1/admin/problems/${problemId}/testcases`, { method: 'DELETE' }),
+};
+
 /* --------------------------------------------------------------- admin */
 
 export const adminProblemApi = {
@@ -303,22 +324,9 @@ export const adminProblemApi = {
   delete: (id: number) =>
     apiRequest<void>(`/api/v1/admin/problems/${id}`, { method: 'DELETE' }),
 
-  getTestCase: (problemId: number, signal?: AbortSignal) =>
-    apiRequest<AdminProblemDetail['testcase']>(`/api/v1/admin/problems/${problemId}/testcases`, {
-      signal,
-    }),
-
-  uploadTestCase: (problemId: number, file: File) => {
-    const formData = new FormData();
-    formData.append('file', file);
-    return apiRequest<AdminProblemDetail['testcase']>(`/api/v1/admin/problems/${problemId}/testcases`, {
-      method: 'POST',
-      formData,
-    });
-  },
-
-  deleteTestCase: (problemId: number) =>
-    apiRequest<void>(`/api/v1/admin/problems/${problemId}/testcases`, { method: 'DELETE' }),
+  getTestCase: testcaseApi.get,
+  uploadTestCase: testcaseApi.upload,
+  deleteTestCase: testcaseApi.delete,
 };
 
 /** Contributor-facing problem authoring API.
@@ -349,6 +357,10 @@ export const contributionProblemApi = {
 
   updateOwn: (id: number, body: UpdateAdminProblemRequest) =>
     apiRequest<Problem>(`/api/v1/admin/problems/${id}`, { method: 'PUT', body }),
+
+  getTestCase: testcaseApi.get,
+  uploadTestCase: testcaseApi.upload,
+  deleteTestCase: testcaseApi.delete,
 };
 
 export const adminTagApi = {

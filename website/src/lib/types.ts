@@ -201,7 +201,6 @@ export interface AdminTestCaseMetadata {
   has_testcase: boolean;
   id?: number;
   problem_id?: number;
-  zip_object_key?: string;
   test_count?: number;
   version?: number;
   created_at?: string;

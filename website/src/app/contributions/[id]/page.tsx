@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { PageHeading } from '@/components/AppShell';
 import { AdminProblemForm } from '@/components/admin/AdminProblemForm';
 import { adminCard } from '@/components/admin/AdminStates';
+import { TestcaseManager } from '@/components/admin/TestcaseManager';
 import { useToast } from '@/components/ToastProvider';
 import { ErrorState, SkeletonBar, buttonStyles } from '@/components/ui';
 import { ApiError, NetworkError, contributionProblemApi } from '@/lib/api';
@@ -97,6 +98,18 @@ export default function ContributionDetailPage() {
         problem={problem}
         cancelHref="/contributions"
         onSubmit={updateProblem}
+      />
+      <TestcaseManager
+        problemId={problemId}
+        testcase={problem.testcase}
+        onUpload={async (file) => {
+          await contributionProblemApi.uploadTestCase(problemId, file);
+          setProblem(await contributionProblemApi.getOwn(problemId));
+        }}
+        onDelete={async () => {
+          await contributionProblemApi.deleteTestCase(problemId);
+          setProblem(await contributionProblemApi.getOwn(problemId));
+        }}
       />
     </>
   );
