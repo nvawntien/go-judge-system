@@ -315,5 +315,6 @@ export function greeting(date = new Date()): string {
 export function avatarUrl(raw: string | null | undefined, base: string): string | null {
   if (!raw) return null;
   if (/^https?:\/\//i.test(raw)) return raw;
-  return `${base}${raw.startsWith('/') ? '' : '/'}${raw}`;
+  const path = `${raw.startsWith('/') ? '' : '/'}${raw}`;
+  return `${base}${path}`;
 }

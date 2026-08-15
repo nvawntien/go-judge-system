@@ -45,11 +45,20 @@ func main() {
 		os.Exit(1)
 	}
 
-	err = os.WriteFile("symmetric.json", data, 0644)
+	outputPath := os.Getenv("JWK_OUTPUT_PATH")
+	if outputPath == "" {
+		outputPath = "symmetric.json"
+	}
+
+	err = os.WriteFile(outputPath, data, 0600)
 	if err != nil {
 		fmt.Println("Error writing file:", err)
 		os.Exit(1)
 	}
+	if err := os.Chmod(outputPath, 0600); err != nil {
+		fmt.Println("Error securing output file:", err)
+		os.Exit(1)
+	}
 
-	fmt.Println("Generated symmetric.json successfully.")
+	fmt.Printf("Generated %s successfully.\n", outputPath)
 }

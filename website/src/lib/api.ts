@@ -40,9 +40,12 @@ import type {
   VerifyEmailRequest,
 } from './types';
 
-export const API_BASE_URL = (
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8080'
-).replace(/\/$/, '');
+/**
+ * Production uses the browser's current origin and lets Envoy route both UI
+ * and API traffic. Local development keeps using the explicit value from
+ * `.env.local`.
+ */
+export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? '').replace(/\/$/, '');
 
 export const RUN_ENDPOINT = process.env.NEXT_PUBLIC_RUN_ENDPOINT ?? '/api/v1/submissions/run';
 
@@ -79,15 +82,18 @@ export class NetworkError extends Error {
 
 type Query = Record<string, string | number | boolean | undefined | null>;
 
-function buildUrl(path: string, query?: Query): string {
-  const url = new URL(API_BASE_URL + path);
+export function buildApiUrl(path: string, query?: Query): string {
+  const sameOrigin = API_BASE_URL === '';
+  const url = sameOrigin
+    ? new URL(path, 'http://same-origin.invalid')
+    : new URL(`${API_BASE_URL}${path}`);
   if (query) {
     for (const [key, value] of Object.entries(query)) {
       if (value === undefined || value === null || value === '') continue;
       url.searchParams.set(key, String(value));
     }
   }
-  return url.toString();
+  return sameOrigin ? `${url.pathname}${url.search}${url.hash}` : url.toString();
 }
 
 interface RequestOptions {
@@ -113,7 +119,7 @@ async function refreshSession(): Promise<boolean> {
   if (!refreshInFlight) {
     refreshInFlight = (async () => {
       try {
-        const res = await fetch(buildUrl('/api/v1/auth/refresh-token'), {
+        const res = await fetch(buildApiUrl('/api/v1/auth/refresh-token'), {
           method: 'POST',
           credentials: 'include',
           headers: { Accept: 'application/json' },
@@ -144,7 +150,7 @@ async function rawRequest(path: string, options: RequestOptions): Promise<Respon
   }
 
   try {
-    return await fetch(buildUrl(path, options.query), {
+    return await fetch(buildApiUrl(path, options.query), {
       method: options.method ?? 'GET',
       credentials: 'include',
       headers,

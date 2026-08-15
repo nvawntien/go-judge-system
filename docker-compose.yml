@@ -42,7 +42,7 @@ services:
       - ./gateway/krakend.tmpl:/etc/krakend/krakend.tmpl:ro
       - ./gateway/settings:/etc/krakend/settings:ro
       - ./gateway/templates:/etc/krakend/templates:ro
-      - ./gateway/symmetric.json:/etc/krakend/symmetric.json:ro
+      - ${GATEWAY_JWK_FILE:-./gateway/symmetric.json}:/etc/krakend/symmetric.json:ro
     networks:
       - judge_internal
     depends_on:
@@ -70,7 +70,7 @@ services:
     image: postgres:15.6-alpine
     restart: unless-stopped
     env_file:
-      - ./environment/postgres.env
+      - ${POSTGRES_ENV_FILE:-./environment/postgres.env}
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
@@ -81,7 +81,7 @@ services:
     logging: *default-logging
     healthcheck:
       <<: *healthcheck-defaults
-      test: [ "CMD-SHELL", "pg_isready -U admin -d auth_db" ]
+      test: [ "CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d auth_db" ]
       interval: 5s
     deploy:
       resources:
@@ -94,7 +94,7 @@ services:
     image: redis:7.2-alpine
     restart: unless-stopped
     env_file:
-      - ./environment/redis.env
+      - ${REDIS_ENV_FILE:-./environment/redis.env}
     ports:
       - "127.0.0.1:6379:6379"
     command: >
@@ -124,7 +124,7 @@ services:
     restart: unless-stopped
     command: server /data --console-address ":9001"
     env_file:
-      - ./environment/service.env
+      - ${SERVICE_ENV_FILE:-./environment/service.env}
     ports:
       - "127.0.0.1:9000:9000"
       - "127.0.0.1:9001:9001"
@@ -257,7 +257,7 @@ services:
       context: .
       dockerfile: services/auth/Dockerfile
     env_file:
-      - ./environment/service.env
+      - ${SERVICE_ENV_FILE:-./environment/service.env}
     restart: unless-stopped
     volumes:
       - ./services/auth/config:/app/config:ro
@@ -278,7 +278,7 @@ services:
       context: .
       dockerfile: services/problem/Dockerfile
     env_file:
-      - ./environment/service.env
+      - ${SERVICE_ENV_FILE:-./environment/service.env}
     restart: unless-stopped
     volumes:
       - ./services/problem/config:/app/config:ro
@@ -299,7 +299,7 @@ services:
       context: .
       dockerfile: services/submission/Dockerfile
     env_file:
-      - ./environment/service.env
+      - ${SERVICE_ENV_FILE:-./environment/service.env}
     restart: unless-stopped
     volumes:
       - ./services/submission/config:/app/config:ro
@@ -323,7 +323,7 @@ services:
       context: .
       dockerfile: workers/judge/Dockerfile
     env_file:
-      - ./environment/service.env
+      - ${SERVICE_ENV_FILE:-./environment/service.env}
     environment:
       WORKER_POOL_SIZE: "1"
     restart: unless-stopped

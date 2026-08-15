@@ -1,0 +1,92 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+    tag: "{{.Name}}"
+
+x-healthcheck-defaults: &healthcheck-defaults
+  interval: 10s
+  timeout: 5s
+  retries: 5
+  start_period: 15s
+
+services:
+  website:
+    container_name: astracode_website
+    image: ${ASTRACODE_IMAGE_ROOT:?Set ASTRACODE_IMAGE_ROOT}/website:${ASTRACODE_IMAGE_TAG:?Set ASTRACODE_IMAGE_TAG}
+    pull_policy: always
+    restart: unless-stopped
+    expose:
+      - "3000"
+    networks:
+      - judge_internal
+    logging: *default-logging
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: [ "CMD", "wget", "-qO-", "http://127.0.0.1:3000/" ]
+    deploy:
+      resources:
+        limits:
+          cpus: "0.75"
+          memory: 512M
+
+  envoy:
+    ports: !override
+      - "${ASTRACODE_EDGE_BIND:-127.0.0.1}:${ASTRACODE_EDGE_PORT:-8080}:8080"
+    volumes: !override
+      - ./envoy/envoy.prod.yaml:/etc/envoy/envoy.yaml:ro
+    depends_on:
+      website:
+        condition: service_healthy
+      gateway:
+        condition: service_started
+      submission-service:
+        condition: service_healthy
+
+  gateway:
+    volumes:
+      - ${GATEWAY_JWK_FILE:?Set GATEWAY_JWK_FILE}:/etc/krakend/symmetric.json:ro
+
+  postgres:
+    ports: !reset []
+
+  redis:
+    ports: !reset []
+
+  minio:
+    image: minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    pull_policy: always
+    ports: !reset []
+
+  kafka:
+    ports: !reset []
+
+  go-judge:
+    image: ${ASTRACODE_IMAGE_ROOT:?Set ASTRACODE_IMAGE_ROOT}/sandbox:${ASTRACODE_IMAGE_TAG:?Set ASTRACODE_IMAGE_TAG}
+    pull_policy: always
+    build: !reset null
+    ports: !reset []
+
+  auth-service:
+    image: ${ASTRACODE_IMAGE_ROOT:?Set ASTRACODE_IMAGE_ROOT}/auth-service:${ASTRACODE_IMAGE_TAG:?Set ASTRACODE_IMAGE_TAG}
+    pull_policy: always
+    build: !reset null
+
+  problem-service:
+    image: ${ASTRACODE_IMAGE_ROOT:?Set ASTRACODE_IMAGE_ROOT}/problem-service:${ASTRACODE_IMAGE_TAG:?Set ASTRACODE_IMAGE_TAG}
+    pull_policy: always
+    build: !reset null
+
+  submission-service:
+    image: ${ASTRACODE_IMAGE_ROOT:?Set ASTRACODE_IMAGE_ROOT}/submission-service:${ASTRACODE_IMAGE_TAG:?Set ASTRACODE_IMAGE_TAG}
+    pull_policy: always
+    build: !reset null
+
+  judge-worker:
+    image: ${ASTRACODE_IMAGE_ROOT:?Set ASTRACODE_IMAGE_ROOT}/judge-worker:${ASTRACODE_IMAGE_TAG:?Set ASTRACODE_IMAGE_TAG}
+    pull_policy: always
+    profiles: !reset []
+    build: !reset null
+    environment:
+      WORKER_POOL_SIZE: ${WORKER_POOL_SIZE:-1}

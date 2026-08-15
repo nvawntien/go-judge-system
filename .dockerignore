@@ -1,0 +1,13 @@
+.git
+.github
+.idea
+.codex
+.agents
+environment
+gateway/symmetric.json
+website/.next
+website/node_modules
+website/.env*
+**/logs
+*.log
+*.log.*

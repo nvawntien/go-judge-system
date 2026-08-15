@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { API_BASE_URL, submissionApi } from './api';
+import { buildApiUrl, submissionApi } from './api';
 import { isTerminalSubmissionStatus } from './format';
 import type { SubmissionStreamEvent, SubmissionStatus } from './types';
 
@@ -45,9 +45,7 @@ const SUBMISSION_STREAM_EVENTS = [
 ] as const;
 
 function buildSubmissionStreamURL(submissionId: number, ticket: string): string {
-  const url = new URL(`/events/submissions/${submissionId}`, API_BASE_URL);
-  url.searchParams.set('ticket', ticket);
-  return url.toString();
+  return buildApiUrl(`/events/submissions/${submissionId}`, { ticket });
 }
 
 function isSubmissionStreamEvent(value: unknown): value is SubmissionStreamEvent {

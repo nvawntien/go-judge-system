@@ -2,7 +2,7 @@
 
 [![Release](https://img.shields.io/badge/release-v0.1.0-6b46c1)](https://github.com/nvawntien/go-judge-system)
 [![Go](https://img.shields.io/badge/Go-1.25.8-00ADD8?logo=go&logoColor=white)](https://go.dev/)
-[![Next.js](https://img.shields.io/badge/Next.js-15.5-000000?logo=nextdotjs&logoColor=white)](https://nextjs.org/)
+[![Next.js](https://img.shields.io/badge/Next.js-15.5.21-000000?logo=nextdotjs&logoColor=white)](https://nextjs.org/)
 [![Docker Compose](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-2ea44f)](LICENSE)
 
@@ -39,7 +39,8 @@ statistics, and Judge Worker owns asynchronous execution orchestration.
 
 ```mermaid
 flowchart TB
-  browser[Browser / Next.js workspace] --> edge[Envoy edge :8080]
+  browser[Browser] --> edge[Envoy edge]
+  edge --> website[Next.js workspace]
   edge --> gateway[KrakenD gateway]
 
   gateway --> auth[Auth Service]
@@ -120,7 +121,7 @@ result application. See [architecture](docs/codebase/ARCHITECTURE.md) and
 | `submission-service` | Submission/attempt/result state, transactional outbox, profile statistics, and SSE. |
 | `judge-worker` | Kafka consumption, testcase retrieval, executor orchestration, and result publication. |
 | `gateway` | KrakenD API composition, JWT validation, and trusted identity propagation. |
-| `envoy` | Public edge routing for API and submission-event traffic. |
+| `envoy` | Public edge routing for the website, API, avatars, and submission-event traffic. |
 | `go-judge` | Executorserver-based isolated program execution runtime. |
 
 ## Technology stack
@@ -128,7 +129,7 @@ result application. See [architecture](docs/codebase/ARCHITECTURE.md) and
 | Area | Technology |
 | --- | --- |
 | Services | Go **1.25.8**, Gin, gRPC, GORM, Google Wire, Zap |
-| Frontend | Next.js **15.5.4**, React **19.1.1**, TypeScript |
+| Frontend | Next.js **15.5.21**, React **19.1.1**, TypeScript |
 | Messaging | Apache Kafka **4.0.0** in KRaft mode, Sarama |
 | Data | PostgreSQL **15.6**, Redis **7.2**, MinIO |
 | Execution | `criyle/executorserver`-based go-judge image with C/C++, Python, and Go tooling |
@@ -162,6 +163,13 @@ the Contributor navigation workflow.
 ```bash
 git clone https://github.com/nvawntien/go-judge-system.git
 cd go-judge-system
+
+test -f environment/postgres.env || \
+  cp environment/postgres.env.example environment/postgres.env
+test -f environment/redis.env || \
+  cp environment/redis.env.example environment/redis.env
+test -f environment/service.env || \
+  cp environment/service.env.example environment/service.env
 
 docker compose --profile dev --profile worker up -d --build
 docker compose ps
@@ -213,9 +221,10 @@ docker compose config --quiet
 ```
 
 Service configuration is under `services/*/config/` and `workers/judge/config/`.
-Compose reads local runtime values from `environment/`; the frontend template is
-[`website/.env.example`](website/.env.example). Do not reuse local credentials
-or JWT secrets for any shared or public deployment.
+Compose reads local runtime values from ignored files under `environment/`; safe
+templates are checked in beside them. The frontend template is
+[`website/.env.example`](website/.env.example). Do not reuse local credentials,
+the development JWK, or JWT secrets for any shared or public deployment.
 
 Further technical documentation:
 
@@ -246,27 +255,38 @@ Further technical documentation:
 ├── build/sandbox/           # executor image definition
 ├── infra/                   # PostgreSQL and Kafka bootstrap assets
 ├── environment/             # local Compose runtime configuration
+├── .github/workflows/       # CI, immutable image release, manual production CD
+├── scripts/                 # production activation and rollback helper
 ├── docs/codebase/           # source-grounded architecture and operations notes
 ├── docker-compose.yml       # self-hosted local/reference topology
+├── docker-compose.prod.yml  # image-based production overlay
 └── go.work                  # Go workspace definition
 ```
 
-## Deployment notes
+## Production deployment
 
-The included Compose stack is a local/self-hosted reference topology, not a
-complete public-internet deployment recipe. Before exposing AstraCode, provide:
+Production uses immutable GHCR images and includes the standalone Next.js
+website in the Compose topology. Envoy provides same-origin routes for the UI,
+API, SSE, and avatars; only its configurable loopback port is bound by default.
+Normal deployment and rollback use:
 
-- TLS termination and a controlled reverse-proxy/edge configuration.
-- Unique, securely managed JWT, database, Redis, MinIO, SMTP, and internal-service secrets.
-- Persistent volumes, database backups, restore testing, and log retention.
-- Network rules that keep service and internal gRPC ports unreachable from
-  untrusted clients; services rely on gateway-propagated identity headers.
-- Resource limits and operational monitoring appropriate to the deployment.
-- A host-level review of the privileged executor container and sandbox boundary.
+```bash
+/opt/astracode/scripts/deploy-production.sh v0.1.0
+/opt/astracode/scripts/deploy-production.sh --rollback
+```
+
+The dedicated release workflow publishes version and full-commit SHA image tags;
+the separate manual deployment workflow uses the protected GitHub `production`
+Environment. Application secrets stay outside the checkout on the VPS.
+
+Read [Production deployment](docs/DEPLOYMENT.md) before operating the stack. It
+covers first bootstrap, TLS, strict SSH host verification, GHCR, external secret
+files, firewall rules, backups, smoke checks, and schema-aware rollback limits.
+The reference Compose deployment is intentionally not described as zero downtime.
 
 Known limits include in-process SSE fan-out, no checked-in DLT replay consumer,
-and runtime `AutoMigrate` schema changes. Review
-[technical debt](docs/codebase/TECH_DEBT.md) before a multi-replica or public deployment.
+and runtime `AutoMigrate` schema changes. Review [technical debt](docs/codebase/TECH_DEBT.md)
+before a multi-replica or public deployment.
 
 ## Security model
 

@@ -1,0 +1,97 @@
+name: Deploy production
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Immutable release tag (vX.Y.Z or full sha-<commit>)
+        required: true
+        type: string
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy ${{ inputs.image_tag }}
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Validate immutable image tag
+        id: release
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          if [[ ! "$IMAGE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ && ! "$IMAGE_TAG" =~ ^sha-[0-9a-f]{40}$ ]]; then
+            echo "image_tag must be vX.Y.Z or sha- followed by a full 40-character commit" >&2
+            exit 1
+          fi
+          if [[ "$IMAGE_TAG" == sha-* ]]; then
+            printf 'git_ref=%s\n' "${IMAGE_TAG#sha-}" >> "$GITHUB_OUTPUT"
+          else
+            printf 'git_ref=%s\n' "$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check out matching release configuration
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.release.outputs.git_ref }}
+
+      - name: Assemble non-secret deployment bundle
+        run: |
+          tar -czf /tmp/astracode-deployment.tgz \
+            docker-compose.yml \
+            docker-compose.prod.yml \
+            envoy/envoy.prod.yaml \
+            gateway/krakend.tmpl \
+            gateway/settings \
+            gateway/templates \
+            infra/kafka/kafka-init.sh \
+            infra/postgres/init.sql \
+            services/auth/config \
+            services/problem/config \
+            services/submission/config \
+            workers/judge/config \
+            scripts/deploy-production.sh
+
+      - name: Configure strict SSH host verification
+        env:
+          PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+          PROD_KNOWN_HOSTS: ${{ secrets.PROD_KNOWN_HOSTS }}
+        run: |
+          install -m 0700 -d "$HOME/.ssh"
+          printf '%s\n' "$PROD_SSH_KEY" > "$HOME/.ssh/astracode_deploy"
+          chmod 0600 "$HOME/.ssh/astracode_deploy"
+          printf '%s\n' "$PROD_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 0600 "$HOME/.ssh/known_hosts"
+
+      - name: Upload deployment bundle
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_PORT: ${{ secrets.PROD_PORT }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+        run: |
+          scp -P "$PROD_PORT" \
+            -i "$HOME/.ssh/astracode_deploy" \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            /tmp/astracode-deployment.tgz \
+            "$PROD_USER@$PROD_HOST:/tmp/astracode-deployment-${GITHUB_RUN_ID}.tgz"
+
+      - name: Activate release on VPS
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_PORT: ${{ secrets.PROD_PORT }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          ssh -p "$PROD_PORT" \
+            -i "$HOME/.ssh/astracode_deploy" \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            "$PROD_USER@$PROD_HOST" \
+            "mkdir -p /opt/astracode && tar -xzf /tmp/astracode-deployment-${GITHUB_RUN_ID}.tgz -C /opt/astracode && rm -f /tmp/astracode-deployment-${GITHUB_RUN_ID}.tgz && /opt/astracode/scripts/deploy-production.sh '$IMAGE_TAG'"

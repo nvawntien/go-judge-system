@@ -1,4 +1,6 @@
-environment
+# Runtime secrets stay local; only redacted templates are tracked.
+environment/*.env
+!environment/*.env.example
 services/auth/logs/
 
 # Logs
