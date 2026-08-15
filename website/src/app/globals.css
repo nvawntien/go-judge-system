@@ -215,6 +215,16 @@ select {
 .ac-code-editor-status {
   letter-spacing: .01em;
 }
+
+.ac-code-editor-line {
+  transition: background-color 100ms linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ac-code-editor-line {
+    transition: none;
+  }
+}
 * {
   box-sizing: border-box;
   scrollbar-width: thin;

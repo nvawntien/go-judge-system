@@ -35,6 +35,7 @@ export function CodeEditor({
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [caret, setCaret] = useState({ line: 1, column: 1 });
+  const prefersReducedMotion = usePrefersReducedMotion();
 
   const lines = useMemo(() => value.split('\n'), [value]);
   const highlighted = useMemo(
@@ -70,9 +71,12 @@ export function CodeEditor({
     const offset = lines.slice(0, highlightLine - 1).reduce((sum, line) => sum + line.length + 1, 0);
     el.focus();
     el.setSelectionRange(offset, offset + (lines[highlightLine - 1]?.length ?? 0));
-    scroller.scrollTop = Math.max(0, (highlightLine - 4) * fontSize * lineHeight);
+    scroller.scrollTo({
+      top: Math.max(0, (highlightLine - 4) * fontSize * lineHeight),
+      behavior: prefersReducedMotion ? 'auto' : 'smooth',
+    });
     syncCaret();
-  }, [highlightLine, lines, fontSize, lineHeight, syncCaret]);
+  }, [highlightLine, lines, fontSize, lineHeight, prefersReducedMotion, syncCaret]);
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (readOnly) return;
@@ -80,6 +84,7 @@ export function CodeEditor({
       event,
       value,
       onChange,
+      language,
       tabSize,
       syncCaret,
     });
@@ -205,6 +210,7 @@ export function CodeEditor({
               {highlighted.map((tokens, index) => (
                 <div
                   key={index}
+                  className="ac-code-editor-line"
                   title={(diagnosticsByLine.get(index + 1) ?? []).map((item) => item.message).join('\n')}
                   style={{
                     background:
@@ -302,4 +308,18 @@ export function CodeEditor({
       </div>
     </>
   );
+}
+
+function usePrefersReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(false);
+
+  useEffect(() => {
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const update = () => setReduced(media.matches);
+    update();
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
+
+  return reduced;
 }
