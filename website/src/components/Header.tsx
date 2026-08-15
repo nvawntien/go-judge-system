@@ -32,14 +32,17 @@ export function Header() {
   const { resolved, toggle } = useTheme();
   const { showToast } = useToast();
   const width = useViewportWidth();
+  const canContribute = roleAtLeast(user?.role, 'contributor');
   const canAccessAdminConsole = roleAtLeast(user?.role, ADMIN_CONSOLE_MIN_ROLE);
-  const navItems = canAccessAdminConsole
-    ? [...NAV_ITEMS, { label: 'Admin Console', href: '/admin' }]
-    : NAV_ITEMS;
+  const navItems = [
+    ...NAV_ITEMS,
+    ...(canContribute ? [{ label: 'Contributions', href: '/contributions' }] : []),
+    ...(canAccessAdminConsole ? [{ label: 'Admin Console', href: '/admin' }] : []),
+  ];
   // The desktop navigation, search, and account controls no longer fit reliably
   // at tablet widths. Privileged navigation needs one extra item, so it moves
   // to the compact menu slightly earlier to prevent page-level overflow.
-  const isMobile = width < (canAccessAdminConsole ? 1120 : 960);
+  const isMobile = width < (canAccessAdminConsole ? 1240 : canContribute ? 1060 : 960);
 
   const [menu, setMenu] = useState<'notif' | 'user' | 'mobile' | null>(null);
   const [query, setQuery] = useState('');

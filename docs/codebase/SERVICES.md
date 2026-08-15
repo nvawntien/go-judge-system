@@ -13,9 +13,9 @@
 ## Problem Service
 
 * **Entrypoint:** `services/problem/cmd/server/main.go`; Wire in `cmd/server/wire.go`.
-* **Responsibility:** problem catalogue, tags, hidden/published state, admin authoring, and testcase ZIP metadata/storage.
+* **Responsibility:** problem catalogue, tags, Contributor authoring, Moderator/Admin publication and moderation, and testcase ZIP metadata/storage.
 * **Internal layout:** `domain/entity` contains Problem/TestCase/Tag; application ports and user/admin/worker use cases; Gin and gRPC inbound adapters; GORM and MinIO outbound adapters.
-* **HTTP:** public `GET /api/v1/problems`, `GET /api/v1/problems/:slug`, `GET /api/v1/tags`; contributor/moderator protected `/api/v1/my` and `/api/v1/admin` routes; exact service routes in its router.
+* **HTTP:** public `GET /api/v1/problems`, `GET /api/v1/problems/:slug`, `GET /api/v1/tags`; Contributor own-list at `GET /api/v1/my/problems`; shared authoring handlers under `/api/v1/admin/problems` create hidden drafts and enforce Contributor ownership in their use cases; publish/hide, arbitrary catalogue listing and tag mutation remain Moderator/Admin operations. Exact service routes and role middleware are in its router.
 * **gRPC:** `ProblemService.GetTestCase` and `GetProblem` (`proto/problem/v1/problem.proto`) on configured port 9092. `GetTestCase` is worker-facing and returns a presigned ZIP URL with count/version.
 * **Data/dependencies:** owns `problem_db` tables and MinIO bucket `testcases`. Problem create requests require separate description/input/output prose; legacy statement splitting is an explicit dry-run-first `cmd/backfill-problem-formats` command, not service startup. Redis is constructed by the container configuration but no Problem cache usage was found in the application/adapters.
 

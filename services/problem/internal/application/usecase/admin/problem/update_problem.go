@@ -40,8 +40,10 @@ func (uc *updateProblemUseCase) Execute(ctx context.Context, claims auth.Claims,
 		return dto.ProblemDetailResponse{}, domain.ErrInternalServer.Wrap(err)
 	}
 
-	if !claims.Role.AtLeast(rbac.RoleModerator) && problem.AuthorID != claims.UserID {
-		return dto.ProblemDetailResponse{}, domain.ErrForbidden
+	if !claims.Role.AtLeast(rbac.RoleModerator) {
+		if problem.AuthorID != claims.UserID || !problem.IsHidden {
+			return dto.ProblemDetailResponse{}, domain.ErrForbidden
+		}
 	}
 
 	if req.Title != nil {

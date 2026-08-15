@@ -321,6 +321,36 @@ export const adminProblemApi = {
     apiRequest<void>(`/api/v1/admin/problems/${problemId}/testcases`, { method: 'DELETE' }),
 };
 
+/** Contributor-facing problem authoring API.
+ *
+ * The write/detail endpoints are shared with the existing Problem Service
+ * authoring handlers. Server-side role and ownership checks remain the
+ * authority; this wrapper keeps contributor pages from depending on the
+ * moderation-oriented admin client surface.
+ */
+export const contributionProblemApi = {
+  listOwn: (params: AdminListProblemsParams = {}, signal?: AbortSignal) =>
+    apiRequest<AdminListProblemsResponse>('/api/v1/my/problems', {
+      query: {
+        page: params.page,
+        limit: params.limit,
+        difficulty: params.difficulty,
+        search: params.search,
+        tag_slug: params.tag_slug,
+      },
+      signal,
+    }),
+
+  getOwn: (id: number, signal?: AbortSignal) =>
+    apiRequest<AdminProblemDetail>(`/api/v1/admin/problems/${id}`, { signal }),
+
+  create: (body: CreateAdminProblemRequest) =>
+    apiRequest<Problem>('/api/v1/admin/problems', { method: 'POST', body }),
+
+  updateOwn: (id: number, body: UpdateAdminProblemRequest) =>
+    apiRequest<Problem>(`/api/v1/admin/problems/${id}`, { method: 'PUT', body }),
+};
+
 export const adminTagApi = {
   list: (signal?: AbortSignal) => apiRequest<AdminListTagsResponse>('/api/v1/admin/tags', { signal }),
 

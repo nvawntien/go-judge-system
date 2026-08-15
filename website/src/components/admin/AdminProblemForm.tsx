@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useToast } from '@/components/ToastProvider';
 import { buttonStyles } from '@/components/ui';
-import { ApiError, NetworkError, adminProblemApi, adminTagApi } from '@/lib/api';
+import { ApiError, NetworkError, adminTagApi } from '@/lib/api';
 import type {
   AdminProblemDetail,
   AdminTag,
@@ -115,10 +115,12 @@ export function AdminProblemForm({
   mode,
   problem,
   onSubmit,
+  cancelHref = '/admin/problems',
 }: {
   mode: 'create' | 'edit';
   problem?: AdminProblemDetail;
   onSubmit: (body: CreateAdminProblemRequest | UpdateAdminProblemRequest) => Promise<void>;
+  cancelHref?: string;
 }) {
   const { showToast } = useToast();
   const [values, setValues] = useState<ProblemFormValues>(() => fromProblem(problem));
@@ -293,7 +295,7 @@ export function AdminProblemForm({
         ) : tagsError ? (
           <AdminApiError title="Could not load tags" error={tagsError} onRetry={() => loadTags()} />
         ) : tags.length === 0 ? (
-          <p style={{ margin: 0, color: 'var(--text2)', fontSize: 13 }}>No admin tags are available.</p>
+          <p style={{ margin: 0, color: 'var(--text2)', fontSize: 13 }}>No tags are available.</p>
         ) : (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {tags.map((tag) => {
@@ -427,7 +429,7 @@ export function AdminProblemForm({
       </section>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 8 }}>
-        <Link href="/admin/problems" className="ac-hover-surface2" style={buttonStyles.secondary(38)}>
+        <Link href={cancelHref} className="ac-hover-surface2" style={buttonStyles.secondary(38)}>
           Cancel
         </Link>
         <button type="submit" disabled={saving} aria-busy={saving} className="ac-hover-accent" style={buttonStyles.primary(38)}>
