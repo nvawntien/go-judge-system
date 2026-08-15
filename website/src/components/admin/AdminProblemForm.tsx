@@ -4,13 +4,13 @@ import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useToast } from '@/components/ToastProvider';
 import { buttonStyles } from '@/components/ui';
-import { ApiError, NetworkError, adminTagApi } from '@/lib/api';
+import { ApiError, NetworkError, problemApi } from '@/lib/api';
 import type {
   AdminProblemDetail,
-  AdminTag,
   CreateAdminProblemRequest,
   Difficulty,
   ProblemWriteExample,
+  Tag,
   UpdateAdminProblemRequest,
 } from '@/lib/types';
 import { AdminApiError, AdminLoadingState, adminCard, adminField } from './AdminStates';
@@ -124,7 +124,7 @@ export function AdminProblemForm({
 }) {
   const { showToast } = useToast();
   const [values, setValues] = useState<ProblemFormValues>(() => fromProblem(problem));
-  const [tags, setTags] = useState<AdminTag[]>([]);
+  const [tags, setTags] = useState<Tag[]>([]);
   const [tagsLoading, setTagsLoading] = useState(true);
   const [tagsError, setTagsError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -132,10 +132,10 @@ export function AdminProblemForm({
 
   const loadTags = useCallback((signal?: AbortSignal) => {
     setTagsLoading(true);
-    adminTagApi
-      .list(signal)
-      .then((res) => {
-        setTags(res.items ?? []);
+    problemApi
+      .tags(signal)
+      .then((response) => {
+        setTags(response.items ?? []);
         setTagsError('');
       })
       .catch((err) => {
@@ -312,7 +312,7 @@ export function AdminProblemForm({
                     borderRadius: 8,
                     border: `1px solid ${selected ? 'var(--accent-soft2)' : 'var(--border)'}`,
                     background: selected ? 'var(--accent-soft)' : 'var(--surface)',
-                    color: tag.is_active ? 'var(--text)' : 'var(--text3)',
+                    color: 'var(--text)',
                     fontSize: 12.5,
                     cursor: 'pointer',
                   }}
@@ -328,7 +328,6 @@ export function AdminProblemForm({
                     }}
                   />
                   {tag.name}
-                  {!tag.is_active && <span style={{ color: 'var(--warn)' }}>Inactive</span>}
                 </label>
               );
             })}
