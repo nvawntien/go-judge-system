@@ -634,9 +634,25 @@ p {
 .ac-problem-example:last-child { padding-bottom: 0; border-bottom: 0; }
 .ac-problem-example-header { margin-bottom: 9px; }
 .ac-problem-example-header h3 { margin: 0; color: var(--text2); font-size: 12.5px; font-weight: 650; }
-.ac-problem-example-data { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.ac-problem-example-data { display: grid; gap: 12px; }
+.ac-problem-example-code { min-width: 0; }
+.ac-problem-example-code-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .ac-problem-example-code h4,
 .ac-problem-example-explanation h4 { margin: 0 0 6px; color: var(--text2); font-size: 11px; font-weight: 650; }
+.ac-problem-example-code-header h4 { margin: 0; }
+.ac-problem-example-actions { display: inline-flex; gap: 4px; margin-left: auto; }
+.ac-problem-example-icon-button {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text2);
+}
 .ac-problem-example-code pre {
   max-height: 260px;
   min-height: 76px;
@@ -679,7 +695,6 @@ p {
   .ac-problem-panel-content { padding: 12px 16px 24px; }
   .ac-problem-statement-header { margin: -12px -16px 10px; padding: 8px 16px; }
   .ac-statement-section-heading { margin-top: 20px; }
-  .ac-problem-example-data { grid-template-columns: 1fr; }
 }
 
 @media (min-width: 641px) and (max-width: 920px) {

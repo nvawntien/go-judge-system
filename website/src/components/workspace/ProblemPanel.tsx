@@ -301,32 +301,49 @@ export function ProblemPanel({
                       }}
                     >
                       <h3>Example {index + 1}</h3>
-                      <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-                        <button
-                          type="button"
-                          onClick={() => copy(example.input, 'Input copied')}
-                          className="ac-hover-surface2-text"
-                          style={smallButton}
-                        >
-                          Copy input
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onUseExample(example.input, example.expected_output)}
-                          className="ac-hover-surface2-text"
-                          style={smallButton}
-                        >
-                          Use as test
-                        </button>
-                      </span>
                     </div>
                     <div className="ac-problem-example-data">
                       <section className="ac-problem-example-code" aria-label={`Example ${index + 1} input`}>
-                        <h4>Input</h4>
+                        <div className="ac-problem-example-code-header">
+                          <h4>Input</h4>
+                          <span className="ac-problem-example-actions">
+                            <button
+                              type="button"
+                              onClick={() => copy(example.input, 'Input copied')}
+                              aria-label={`Copy input for example ${index + 1}`}
+                              title="Copy input"
+                              className="ac-problem-example-icon-button ac-hover-surface2"
+                            >
+                              <Icon.Copy />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onUseExample(example.input, example.expected_output)}
+                              aria-label={`Use input from example ${index + 1} as a test`}
+                              title="Use as test"
+                              className="ac-problem-example-icon-button ac-hover-surface2"
+                            >
+                              <Icon.Play />
+                            </button>
+                          </span>
+                        </div>
                         <pre><code>{example.input}</code></pre>
                       </section>
                       <section className="ac-problem-example-code" aria-label={`Example ${index + 1} output`}>
-                        <h4>Output</h4>
+                        <div className="ac-problem-example-code-header">
+                          <h4>Output</h4>
+                          <span className="ac-problem-example-actions">
+                            <button
+                              type="button"
+                              onClick={() => copy(example.expected_output, 'Output copied')}
+                              aria-label={`Copy output for example ${index + 1}`}
+                              title="Copy output"
+                              className="ac-problem-example-icon-button ac-hover-surface2"
+                            >
+                              <Icon.Copy />
+                            </button>
+                          </span>
+                        </div>
                         <pre><code>{example.expected_output}</code></pre>
                       </section>
                     </div>
@@ -365,28 +382,6 @@ export function ProblemPanel({
               </div>
             )}
 
-            <div
-              style={{
-                display: 'flex',
-                gap: 16,
-                flexWrap: 'wrap',
-                paddingTop: 14,
-                borderTop: '1px solid var(--border)',
-                fontSize: 12,
-                color: 'var(--text3)',
-              }}
-            >
-              <span>
-                Time limit <strong style={{ color: 'var(--text2)' }}>{formatTimeLimit(problem.time_limit)}</strong>
-              </span>
-              <span>
-                Memory limit{' '}
-                <strong style={{ color: 'var(--text2)' }}>{formatMemoryLimit(problem.memory_limit)}</strong>
-              </span>
-              <span>
-                Slug <strong style={{ color: 'var(--text2)', fontFamily: 'var(--font-mono)' }}>{problem.slug}</strong>
-              </span>
-            </div>
           </>
         )}
 
