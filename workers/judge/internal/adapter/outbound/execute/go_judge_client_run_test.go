@@ -262,3 +262,78 @@ func TestExecuteRaisesOutputLimitForLargeExpectedOutput(t *testing.T) {
 		t.Fatalf("result = %#v, want accepted large output", res)
 	}
 }
+
+func TestCompileUsesMinimumCompileBudget(t *testing.T) {
+	var sawCompile bool
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		var req gojudge.Request
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+
+		if len(req.Cmd) == 1 && req.Cmd[0].CopyOutCached != nil {
+			sawCompile = true
+
+			cmd := req.Cmd[0]
+
+			wantCPU := uint64(30 * time.Second)
+			wantClock := uint64(60 * time.Second)
+
+			if cmd.CPULimit != wantCPU {
+				t.Fatalf(
+					"compile CPU limit = %v, want %v",
+					time.Duration(cmd.CPULimit),
+					time.Duration(wantCPU),
+				)
+			}
+
+			if cmd.ClockLimit != wantClock {
+				t.Fatalf(
+					"compile clock limit = %v, want %v",
+					time.Duration(cmd.ClockLimit),
+					time.Duration(wantClock),
+				)
+			}
+
+			_ = json.NewEncoder(w).Encode(gojudge.Response{{
+				Status:  "Accepted",
+				FileIDs: map[string]string{"main": "exe-1"},
+			}})
+			return
+		}
+
+		_ = json.NewEncoder(w).Encode(gojudge.Response{{
+			Status: "Accepted",
+			Files: map[string]string{
+				"stdout": "42\n",
+				"stderr": "",
+			},
+		}})
+	}))
+	defer server.Close()
+
+	client := NewGoJudgeClient(server.URL, zap.NewNop())
+
+	_, err := client.Execute(context.Background(), outbound.ExecutionRequest{
+		Language:   "GO",
+		SourceCode: "package main\nfunc main() {}\n",
+		Limits: outbound.ExecutionLimits{
+			TimeLimitMS: 1_000,
+		},
+		TestCases: []outbound.ExecutionTestCase{{
+			Index: 1,
+			ID:    "case-1",
+			Kind:  "custom",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	if !sawCompile {
+		t.Fatal("compile request was not observed")
+	}
+}

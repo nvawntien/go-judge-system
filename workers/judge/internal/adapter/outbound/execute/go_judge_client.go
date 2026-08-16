@@ -14,9 +14,11 @@ import (
 	"go.uber.org/zap"
 )
 
-const batchSize = 50
-
-const expectedOutputHeadroomBytes = 64 * 1024
+const (
+	batchSize                         = 50
+	expectedOutputHeadroomBytes       = 64 * 1024
+	minCompileLimitMS           int64 = 30_000
+)
 
 type GoJudgeClient struct {
 	client *resty.Client
@@ -125,7 +127,7 @@ func (c *GoJudgeClient) compile(
 	langCfg *gojudge.LanguageConfig,
 	limits outbound.ExecutionLimits,
 ) (*outbound.ExecutionResult, string, error) {
-	compileLimitMS := maxInt64(limits.TimeLimitMS, 15_000)
+	compileLimitMS := maxInt64(limits.TimeLimitMS, minCompileLimitMS)
 	compileMemoryKB := maxInt64(limits.MemoryLimitKB, 512*1024)
 	compileReq := gojudge.Request{
 		Cmd: []*gojudge.Cmd{
