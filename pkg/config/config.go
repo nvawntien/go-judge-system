@@ -123,12 +123,14 @@ type SSEConfig struct {
 }
 
 type SMTPConfig struct {
-	Host     string `mapstructure:"host"`
-	Port     int    `mapstructure:"port"`
-	Username string `mapstructure:"username"`
-	Password string `mapstructure:"password"`
-	FromName string `mapstructure:"from_name"`
-	From     string `mapstructure:"from"`
+	Host     string        `mapstructure:"host"`
+	Port     int           `mapstructure:"port"`
+	Username string        `mapstructure:"username"`
+	Password string        `mapstructure:"password"`
+	Security string        `mapstructure:"security"`
+	Timeout  time.Duration `mapstructure:"timeout"`
+	FromName string        `mapstructure:"from_name"`
+	From     string        `mapstructure:"from"`
 }
 
 type JWTConfig struct {
