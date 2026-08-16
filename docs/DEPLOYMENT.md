@@ -10,6 +10,14 @@ Kubernetes-style zero downtime or a complete hardening program. AstraCode
 executes untrusted code; operators must review the executor, host, and network
 boundary before serving public traffic.
 
+> **Judge boundary:** the shipped executor image needs privileged Linux
+> namespace/cgroup operations. The production overlay removes the executor from
+> the general application network and does not pass service secrets to the
+> Worker, but those are defence-in-depth measures—not a same-host containment
+> guarantee. Run public untrusted submissions on a dedicated Judge node (or an
+> equivalently isolated executor host) rather than alongside Auth and stateful
+> services on the application VPS.
+
 ## Release and deployment model
 
 ```text
@@ -61,6 +69,21 @@ headers before KrakenD derives trusted identity claims.
 Named volumes persist PostgreSQL, Redis, Kafka, MinIO, and testcase cache data.
 MailHog and Kafka UI remain development-profile services and do not start in
 the production topology.
+
+### Public Judge placement
+
+For public submissions, keep `judge-worker` and `go-judge` on a dedicated
+Judge node. The application node continues to own Auth, Problem, Submission,
+Kafka, and persistent data; the Judge node consumes jobs and publishes results
+through Kafka, calls Problem's existing worker gRPC API for short-lived testcase
+metadata, and downloads the resulting presigned testcase bundle. Do not add
+direct database access from the Judge node.
+
+Connect the nodes through a private network, VPN, or equivalent authenticated
+and encrypted transport. Do not expose Kafka, Problem gRPC, the Worker gRPC
+port, or the executor HTTP API publicly. The single-VPS Compose topology
+remains suitable for local development and controlled testing, not approval to
+co-locate a privileged public-code executor with application secrets and data.
 
 ## Production email
 
