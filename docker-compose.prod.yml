@@ -67,6 +67,10 @@ services:
     pull_policy: always
     build: !reset null
     ports: !reset []
+    environment:
+      ES_ENABLE_GRPC: "false"
+    networks: !override
+      - judge_executor
 
   auth-service:
     image: ${ASTRACODE_IMAGE_ROOT:?Set ASTRACODE_IMAGE_ROOT}/auth-service:${ASTRACODE_IMAGE_TAG:?Set ASTRACODE_IMAGE_TAG}
@@ -88,5 +92,17 @@ services:
     pull_policy: always
     profiles: !reset []
     build: !reset null
+    env_file: !reset []
     environment:
       WORKER_POOL_SIZE: ${WORKER_POOL_SIZE:-1}
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks: !override
+      - judge_internal
+      - judge_executor
+
+networks:
+  judge_executor:
+    internal: true
