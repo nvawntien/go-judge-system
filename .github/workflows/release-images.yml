@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      git_ref:
+        description: Full 40-character commit SHA to publish as an immutable staging image tag
+        required: true
+        type: string
 
 concurrency:
   group: release-images-${{ github.ref }}
@@ -14,11 +20,50 @@ permissions:
   packages: write
 
 jobs:
+  prepare:
+    name: Resolve release commit
+    runs-on: ubuntu-latest
+    outputs:
+      commit_sha: ${{ steps.commit.outputs.sha }}
+      commit_time: ${{ steps.commit.outputs.time }}
+      version: ${{ steps.commit.outputs.version }}
+    steps:
+      - name: Validate staging commit input
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GIT_REF: ${{ inputs.git_ref }}
+        run: |
+          if [[ ! "$GIT_REF" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "git_ref must be a full 40-character commit SHA" >&2
+            exit 1
+          fi
+
+      - name: Check out release commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.git_ref || github.sha }}
+          fetch-depth: 1
+
+      - name: Record immutable image metadata
+        id: commit
+        run: |
+          sha="$(git rev-parse HEAD)"
+          commit_time="$(git show -s --format=%cI HEAD)"
+          version="sha-$sha"
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            version="${{ github.ref_name }}"
+          fi
+          printf 'sha=%s\n' "$sha" >> "$GITHUB_OUTPUT"
+          printf 'time=%s\n' "$commit_time" >> "$GITHUB_OUTPUT"
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+
   validate-tag:
-    name: Validate release tag
+    name: Validate release input
+    needs: prepare
     runs-on: ubuntu-latest
     steps:
       - name: Require a semantic version tag
+        if: github.event_name == 'push'
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
@@ -58,6 +103,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.commit_sha }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -76,10 +123,10 @@ jobs:
           images: ghcr.io/${{ github.repository }}/${{ matrix.image }}
           tags: |
             type=ref,event=tag
-            type=sha,format=long
+            type=raw,value=sha-${{ needs.prepare.outputs.commit_sha }}
           labels: |
             org.opencontainers.image.title=AstraCode ${{ matrix.image }}
-            org.opencontainers.image.version=${{ github.ref_name }}
+            org.opencontainers.image.version=${{ needs.prepare.outputs.version }}
 
       - name: Build and publish immutable release tags
         uses: docker/build-push-action@v7
@@ -91,9 +138,9 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            VERSION=${{ github.ref_name }}
-            BUILD_TIME=${{ github.event.head_commit.timestamp }}
-            COMMIT_SHA=${{ github.sha }}
+            VERSION=${{ needs.prepare.outputs.version }}
+            BUILD_TIME=${{ needs.prepare.outputs.commit_time }}
+            COMMIT_SHA=${{ needs.prepare.outputs.commit_sha }}
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
 
@@ -101,5 +148,7 @@ jobs:
     name: Verify release commit
     needs: validate-tag
     uses: ./.github/workflows/ci.yml
+    with:
+      git_ref: ${{ needs.prepare.outputs.commit_sha }}
     permissions:
       contents: read

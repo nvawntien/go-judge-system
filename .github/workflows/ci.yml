@@ -2,6 +2,11 @@ name: CI
 
 on:
   workflow_call:
+    inputs:
+      git_ref:
+        description: Full commit SHA to validate when called by release automation
+        required: false
+        type: string
   pull_request:
   push:
     branches:
@@ -31,6 +36,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.git_ref || github.sha }}
 
       - name: Set up Go
         uses: actions/setup-go@v7
@@ -59,6 +66,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.git_ref || github.sha }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
@@ -82,6 +91,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.git_ref || github.sha }}
 
       - name: Validate development topology
         env:
@@ -129,6 +140,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.git_ref || github.sha }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
