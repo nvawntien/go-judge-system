@@ -2,9 +2,9 @@ package gojudge
 
 // Config contains language-specific configurations for compilation and execution
 type LanguageConfig struct {
-	Image   string   // Not used strictly in go-judge sandbox but good for reference
-	Compile *RunCmd  // Command to compile the code (if needed)
-	Run     RunCmd   // Command to run the code
+	Image   string  // Not used strictly in go-judge sandbox but good for reference
+	Compile *RunCmd // Command to compile the code (if needed)
+	Run     RunCmd  // Command to run the code
 }
 
 type RunCmd struct {
@@ -45,11 +45,15 @@ func GetLanguageConfig(language string, sourceFile string, exeFile string) (*Lan
 		},
 		"JAVA": {
 			Compile: &RunCmd{
-				Command: []string{"/usr/bin/javac", sourceFile}, // Generates .class
-				Env:     []string{"PATH=/usr/bin:/bin"},
+				Command: []string{
+					"/bin/sh",
+					"-lc",
+					"mkdir -p classes && /usr/bin/javac -d classes Main.java && /usr/bin/jar --create --file main.jar -C classes .",
+				},
+				Env: []string{"PATH=/usr/bin:/bin"},
 			},
 			Run: RunCmd{
-				Command: []string{"/usr/bin/java", "-cp", ".", "Main"},
+				Command: []string{"/usr/bin/java", "-cp", exeFile, "Main"},
 				Env:     []string{"PATH=/usr/bin:/bin"},
 			},
 		},
@@ -83,7 +87,7 @@ func GetExeFileName(language string) string {
 	case "GO":
 		return "main"
 	case "JAVA":
-		return "Main.class"
+		return "main.jar"
 	default:
 		return "main.out"
 	}
