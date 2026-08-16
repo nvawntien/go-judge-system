@@ -58,7 +58,7 @@ func (uc *resendVerificationUseCase) Execute(ctx context.Context, req dto.Resend
 		return nil
 	}
 
-	allowed, err := uc.tokenRepo.TryAcquireResendCooldown(ctx, user.ID, resendVerificationCooldownTTL)
+	allowed, err := uc.tokenRepo.TryAcquireResendCooldown(ctx, outbound.TokenPurposeVerifyEmail, user.ID, resendVerificationCooldownTTL)
 	if err != nil {
 		return domain.ErrInternalServer.Wrap(err)
 	}
@@ -70,7 +70,7 @@ func (uc *resendVerificationUseCase) Execute(ctx context.Context, req dto.Resend
 	rawToken := uc.tokenGenerator.Generate(user.ID)
 	hashedToken := uc.tokenGenerator.Hash(rawToken)
 
-	if err := uc.tokenRepo.Save(ctx, hashedToken, user.ID, verificationTokenTTL); err != nil {
+	if err := uc.tokenRepo.Save(ctx, outbound.TokenPurposeVerifyEmail, hashedToken, user.ID, verificationTokenTTL); err != nil {
 		return domain.ErrInternalServer.Wrap(err)
 	}
 

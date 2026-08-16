@@ -53,7 +53,7 @@ func (uc *forgotPasswordUseCase) Execute(ctx context.Context, req dto.ForgotPass
 		return domain.ErrInternalServer.Wrap(err)
 	}
 
-	allowed, err := uc.tokenRepo.TryAcquireResendCooldown(ctx, user.ID, forgotPasswordCooldownTTL)
+	allowed, err := uc.tokenRepo.TryAcquireResendCooldown(ctx, outbound.TokenPurposeResetPassword, user.ID, forgotPasswordCooldownTTL)
 	if err != nil {
 		return domain.ErrInternalServer.Wrap(err)
 	}
@@ -65,7 +65,7 @@ func (uc *forgotPasswordUseCase) Execute(ctx context.Context, req dto.ForgotPass
 	rawToken := uc.tokenGenerator.Generate(user.ID)
 	hashedToken := uc.tokenGenerator.Hash(rawToken)
 
-	if err := uc.tokenRepo.Save(ctx, hashedToken, user.ID, forgotPasswordTokenTTL); err != nil {
+	if err := uc.tokenRepo.Save(ctx, outbound.TokenPurposeResetPassword, hashedToken, user.ID, forgotPasswordTokenTTL); err != nil {
 		return domain.ErrInternalServer.Wrap(err)
 	}
 

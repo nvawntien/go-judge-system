@@ -84,7 +84,7 @@ func (r *register) Execute(ctx context.Context, req dto.RegisterRequest) error {
 	rawToken := r.tokenGenerator.Generate(user.ID)
 	hashedToken := r.tokenGenerator.Hash(rawToken)
 
-	if err := r.tokenRepo.Save(ctx, hashedToken, user.ID, verificationTokenTTL); err != nil {
+	if err := r.tokenRepo.Save(ctx, outbound.TokenPurposeVerifyEmail, hashedToken, user.ID, verificationTokenTTL); err != nil {
 		// Rollback user creation
 		if rollbackErr := r.userRepo.DeleteUser(ctx, user.ID); rollbackErr != nil {
 			// rollback failure is logged via middleware when the outer error is returned

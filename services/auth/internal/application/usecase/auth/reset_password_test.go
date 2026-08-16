@@ -12,6 +12,7 @@ import (
 	pkgauth "go-judge-system/pkg/auth"
 	"go-judge-system/pkg/middleware"
 	"go-judge-system/services/auth/internal/application/dto"
+	"go-judge-system/services/auth/internal/application/port/outbound"
 	"go-judge-system/services/auth/internal/domain"
 
 	"github.com/gin-gonic/gin"
@@ -183,19 +184,21 @@ type resetTokenRepository struct {
 	consumed   bool
 }
 
-func (r *resetTokenRepository) Save(context.Context, string, string, time.Duration) error { return nil }
-func (r *resetTokenRepository) FindByToken(_ context.Context, hashedToken string) (string, error) {
+func (r *resetTokenRepository) Save(context.Context, outbound.TokenPurpose, string, string, time.Duration) error {
+	return nil
+}
+func (r *resetTokenRepository) FindByToken(_ context.Context, _ outbound.TokenPurpose, hashedToken string) (string, error) {
 	identifier, ok := r.tokens[hashedToken]
 	if !ok {
 		return "", domain.ErrInvalidOrExpiredToken
 	}
 	return identifier, nil
 }
-func (r *resetTokenRepository) Consume(ctx context.Context, hashedToken string) (string, error) {
+func (r *resetTokenRepository) Consume(ctx context.Context, purpose outbound.TokenPurpose, hashedToken string) (string, error) {
 	if r.consumeErr != nil {
 		return "", r.consumeErr
 	}
-	identifier, err := r.FindByToken(ctx, hashedToken)
+	identifier, err := r.FindByToken(ctx, purpose, hashedToken)
 	if err != nil {
 		return "", err
 	}
@@ -203,8 +206,10 @@ func (r *resetTokenRepository) Consume(ctx context.Context, hashedToken string) 
 	r.consumed = true
 	return identifier, nil
 }
-func (r *resetTokenRepository) Delete(context.Context, string) error { return nil }
-func (r *resetTokenRepository) TryAcquireResendCooldown(context.Context, string, time.Duration) (bool, error) {
+func (r *resetTokenRepository) Delete(context.Context, outbound.TokenPurpose, string) error {
+	return nil
+}
+func (r *resetTokenRepository) TryAcquireResendCooldown(context.Context, outbound.TokenPurpose, string, time.Duration) (bool, error) {
 	return true, nil
 }
 
