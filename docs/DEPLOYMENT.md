@@ -62,6 +62,31 @@ Named volumes persist PostgreSQL, Redis, Kafka, MinIO, and testcase cache data.
 MailHog and Kafka UI remain development-profile services and do not start in
 the production topology.
 
+## Production email
+
+Auth sends account-verification and password-reset messages through a generic
+SMTP adapter. Configure any standards-compliant transactional SMTP provider in
+the VPS-only `/etc/astracode/service.env`; no provider SDK or credentials are
+part of the image, Compose files, or GitHub Actions.
+
+Required variables are `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`,
+`SMTP_PASSWORD`, `SMTP_SECURITY`, `SMTP_TIMEOUT`, `SMTP_FROM`,
+`SMTP_FROM_NAME`, and `APP_FRONTEND_URL`. The tracked production example uses
+`SMTP_SECURITY=starttls` on port 587. `tls` supports implicit TLS (commonly
+port 465). `none` is for local MailHog only and Auth rejects it in release
+mode. TLS certificates are verified normally; do not disable verification.
+
+Use a verified sender identity such as `AstraCode <no-reply@your-domain>`.
+The sending domain/provider must be configured with SPF, DKIM, and DMARC using
+the DNS records supplied by the selected provider. Those records are provider
+and domain-specific and are not application configuration.
+
+`APP_FRONTEND_URL` must be the real HTTPS public origin, without credentials,
+query, or fragment. Auth constructs `/verify-email#token=...` and
+`/reset-password?token=...` from that single origin. Ensure the TLS ingress and
+frontend domain are live before enabling email delivery; password-reset links
+must not be sent over plaintext HTTP in production.
+
 ## One-time VPS bootstrap
 
 ### 1. Install runtime prerequisites
@@ -129,6 +154,9 @@ Important relationships:
 - `JWT_ACCESS_SECRET` must match the symmetric JWK mounted into KrakenD.
 - `APP_FRONTEND_URL` and `SSE_ALLOWED_ORIGIN` must use the real public HTTPS
   origin.
+- Configure the SMTP variables in `service.env` with the transactional
+  provider's authenticated STARTTLS or TLS settings. Do not use MailHog,
+  localhost, or a plaintext SMTP connection in production.
 - Keep `MINIO_PUBLIC_URL=/` for same-origin avatar paths in this topology.
 - `ASTRACODE_IMAGE_ROOT` must be
   `ghcr.io/<owner>/<repository>`; the release workflow appends component names.
@@ -285,6 +313,14 @@ Before public use:
 - Keep direct container/service ports unreachable from untrusted networks.
 - Rotate credentials on a documented schedule and immediately after suspected
   disclosure.
+- [ ] Create the SMTP provider account and verify its sending domain.
+- [ ] Configure SPF, DKIM, and DMARC from the provider's DNS instructions.
+- [ ] Install SMTP credentials only in `/etc/astracode/service.env`.
+- [ ] Set a verified `SMTP_FROM` and `SMTP_FROM_NAME`.
+- [ ] Set `APP_FRONTEND_URL` to the HTTPS public frontend origin.
+- [ ] Test registration and confirm its verification email/link works.
+- [ ] Test forgot-password and confirm its reset email/link works.
+- [ ] Confirm MailHog is absent from the production Compose runtime.
 
 The symmetric JWK was historically tracked in this repository. Replacing the
 working-tree value does not remove it from Git history. Treat every historical

@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"html/template"
 	"net"
+	"net/mail"
 	"net/smtp"
 	"net/url"
 	"strconv"
@@ -38,18 +40,18 @@ const verificationTemplateHTML = `
 <body>
 	<div class="container">
 		<div class="header">
-			<h2>Xác thực tài khoản Go-Judge</h2>
+			<h2>Xác thực tài khoản AstraCode</h2>
 		</div>
 		<div class="content">
 			<p>Chào bạn,</p>
-			<p>Bạn vừa đăng ký tài khoản trên hệ thống Go-Judge. Vui lòng nhấn nút bên dưới để kích hoạt tài khoản:</p>
+			<p>Bạn vừa đăng ký tài khoản trên AstraCode. Vui lòng nhấn nút bên dưới để kích hoạt tài khoản:</p>
 			<a href="{{.Link}}" class="btn">Xác thực tài khoản</a>
 			<p>Hoặc copy đường link sau vào trình duyệt:</p>
 			<p class="link">{{.Link}}</p>
 			<p>Link này sẽ hết hạn sau <strong>7 ngày</strong>. Nếu bạn không đăng ký tài khoản, hãy bỏ qua email này.</p>
 		</div>
 		<div class="footer">
-			<p>&copy; {{.Year}} Go-Judge System. All rights reserved.</p>
+			<p>&copy; {{.Year}} AstraCode. All rights reserved.</p>
 		</div>
 	</div>
 </body>
@@ -75,7 +77,7 @@ const passwordResetTemplateHTML = `
 <body>
 	<div class="container">
 		<div class="header">
-			<h2>Đặt lại mật khẩu Go-Judge</h2>
+			<h2>Đặt lại mật khẩu AstraCode</h2>
 		</div>
 		<div class="content">
 			<p>Chào bạn,</p>
@@ -86,7 +88,7 @@ const passwordResetTemplateHTML = `
 			<p>Link này sẽ hết hạn sau <strong>15 phút</strong>. Nếu bạn không yêu cầu, hãy bỏ qua email này.</p>
 		</div>
 		<div class="footer">
-			<p>&copy; {{.Year}} Go-Judge System. All rights reserved.</p>
+			<p>&copy; {{.Year}} AstraCode. All rights reserved.</p>
 		</div>
 	</div>
 </body>
@@ -102,6 +104,7 @@ type smtpProvider struct {
 }
 
 func NewSMTPProvider(smtpCfg config.SMTPConfig, appCfg config.AppConfig, logger *zap.Logger) outbound.MailProvider {
+	smtpCfg.Security = strings.ToLower(strings.TrimSpace(smtpCfg.Security))
 	verifyTmpl, err := template.New("verify_email").Parse(verificationTemplateHTML)
 	if err != nil {
 		panic("failed to parse verification email template: " + err.Error())
@@ -140,7 +143,7 @@ func (s *smtpProvider) SendVerificationEmail(ctx context.Context, toEmail, token
 		return err
 	}
 
-	return s.sendMail(toEmail, "Xác thực tài khoản Go-Judge", body.Bytes())
+	return s.sendMail(ctx, toEmail, "Xác thực tài khoản AstraCode", body.Bytes())
 }
 
 func (s *smtpProvider) SendForgotPasswordEmail(ctx context.Context, toEmail, token string) error {
@@ -162,10 +165,18 @@ func (s *smtpProvider) SendForgotPasswordEmail(ctx context.Context, toEmail, tok
 		return err
 	}
 
-	return s.sendMail(toEmail, "Đặt lại mật khẩu Go-Judge", body.Bytes())
+	return s.sendMail(ctx, toEmail, "Đặt lại mật khẩu AstraCode", body.Bytes())
 }
 
-func (s *smtpProvider) sendMail(toEmail, subject string, htmlBody []byte) error {
+func (s *smtpProvider) sendMail(ctx context.Context, toEmail, subject string, htmlBody []byte) error {
+	if strings.ContainsAny(s.smtpCfg.FromName, "\r\n") {
+		return errors.New("smtp from_name contains a newline")
+	}
+	from, err := mail.ParseAddress(s.smtpCfg.From)
+	if err != nil || from.Address != s.smtpCfg.From {
+		return errors.New("smtp from must be a valid bare email address")
+	}
+
 	headers := make(map[string]string)
 	headers["From"] = fmt.Sprintf("%s <%s>", s.smtpCfg.FromName, s.smtpCfg.From)
 	headers["To"] = toEmail
@@ -182,9 +193,18 @@ func (s *smtpProvider) sendMail(toEmail, subject string, htmlBody []byte) error 
 
 	addr := net.JoinHostPort(s.smtpCfg.Host, strconv.Itoa(s.smtpCfg.Port))
 
-	conn, err := net.Dial("tcp", addr)
+	dialer := net.Dialer{Timeout: s.smtpCfg.Timeout}
+	conn, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return fmt.Errorf("failed to connect to SMTP server: %w", err)
+	}
+	if err := conn.SetDeadline(time.Now().Add(s.smtpCfg.Timeout)); err != nil {
+		conn.Close()
+		return fmt.Errorf("set SMTP connection deadline: %w", err)
+	}
+
+	if s.smtpCfg.Security == "tls" {
+		conn = tls.Client(conn, &tls.Config{ServerName: s.smtpCfg.Host, MinVersion: tls.VersionTLS12})
 	}
 
 	client, err := smtp.NewClient(conn, s.smtpCfg.Host)
@@ -194,9 +214,11 @@ func (s *smtpProvider) sendMail(toEmail, subject string, htmlBody []byte) error 
 	}
 	defer client.Close()
 
-	if ok, _ := client.Extension("STARTTLS"); ok {
-		tlsConfig := &tls.Config{ServerName: s.smtpCfg.Host}
-		if err = client.StartTLS(tlsConfig); err != nil {
+	if s.smtpCfg.Security == "starttls" {
+		if ok, _ := client.Extension("STARTTLS"); !ok {
+			return errors.New("SMTP server does not support STARTTLS")
+		}
+		if err = client.StartTLS(&tls.Config{ServerName: s.smtpCfg.Host, MinVersion: tls.VersionTLS12}); err != nil {
 			return fmt.Errorf("STARTTLS failed: %w", err)
 		}
 	}
@@ -229,24 +251,83 @@ func (s *smtpProvider) sendMail(toEmail, subject string, htmlBody []byte) error 
 	return client.Quit()
 }
 
-func (s *smtpProvider) frontendTokenURL(path string, token string, fragment bool) (string, error) {
-	base := strings.TrimRight(strings.TrimSpace(s.appCfg.FrontendURL), "/")
-	if base == "" {
-		return "", fmt.Errorf("frontend_url is required")
+// ValidateConfig rejects unsafe or incomplete email settings before Auth starts.
+// Server release mode is the repository's production mode; debug mode retains
+// the intentionally unauthenticated MailHog development configuration.
+func ValidateConfig(smtpCfg config.SMTPConfig, appCfg config.AppConfig, serverCfg config.ServerConfig) error {
+	security := strings.ToLower(strings.TrimSpace(smtpCfg.Security))
+	if security != "none" && security != "starttls" && security != "tls" {
+		return fmt.Errorf("smtp.security must be one of none, starttls, tls")
+	}
+	if strings.TrimSpace(smtpCfg.Host) == "" {
+		return errors.New("smtp.host is required")
+	}
+	if smtpCfg.Port < 1 || smtpCfg.Port > 65535 {
+		return errors.New("smtp.port must be between 1 and 65535")
+	}
+	if smtpCfg.Timeout <= 0 {
+		return errors.New("smtp.timeout must be positive")
+	}
+	if strings.ContainsAny(smtpCfg.FromName, "\r\n") {
+		return errors.New("smtp.from_name must not contain a newline")
+	}
+	if strings.TrimSpace(smtpCfg.FromName) == "" {
+		return errors.New("smtp.from_name is required")
+	}
+	from, err := mail.ParseAddress(smtpCfg.From)
+	if err != nil || from.Address != smtpCfg.From {
+		return errors.New("smtp.from must be a valid bare email address")
+	}
+	if (smtpCfg.Username == "") != (smtpCfg.Password == "") {
+		return errors.New("smtp.username and smtp.password must be configured together")
+	}
+	if security == "none" && smtpCfg.Username != "" {
+		return errors.New("smtp authentication requires starttls or tls")
 	}
 
-	parsed, err := url.Parse(base)
+	parsed, err := parseFrontendURL(appCfg.FrontendURL)
 	if err != nil {
-		return "", fmt.Errorf("invalid frontend_url: %w", err)
+		return err
 	}
-	if parsed.Scheme == "" || parsed.Host == "" {
-		return "", fmt.Errorf("frontend_url must include scheme and host")
+	if serverCfg.Mode == "release" {
+		if security == "none" {
+			return errors.New("smtp.security must be starttls or tls in release mode")
+		}
+		if smtpCfg.Username == "" {
+			return errors.New("smtp authentication is required in release mode")
+		}
+		if parsed.Scheme != "https" {
+			return errors.New("app.frontend_url must use https in release mode")
+		}
+	}
+	return nil
+}
+
+func (s *smtpProvider) frontendTokenURL(path string, token string, fragment bool) (string, error) {
+	parsed, err := parseFrontendURL(s.appCfg.FrontendURL)
+	if err != nil {
+		return "", err
 	}
 
 	canonicalPath := "/" + strings.TrimLeft(path, "/")
 	if fragment {
-		return base + canonicalPath + "#token=" + url.QueryEscape(token), nil
+		return parsed.String() + canonicalPath + "#token=" + url.QueryEscape(token), nil
 	}
 
-	return base + canonicalPath + "?token=" + url.QueryEscape(token), nil
+	return parsed.String() + canonicalPath + "?token=" + url.QueryEscape(token), nil
+}
+
+func parseFrontendURL(raw string) (*url.URL, error) {
+	base := strings.TrimRight(strings.TrimSpace(raw), "/")
+	if base == "" {
+		return nil, errors.New("frontend_url is required")
+	}
+	parsed, err := url.Parse(base)
+	if err != nil {
+		return nil, fmt.Errorf("invalid frontend_url: %w", err)
+	}
+	if (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil || parsed.Path != "" || parsed.RawPath != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return nil, errors.New("frontend_url must be an absolute http or https origin without credentials, query, or fragment")
+	}
+	return parsed, nil
 }

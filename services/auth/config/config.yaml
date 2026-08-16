@@ -46,8 +46,10 @@ smtp:
   port: 1025
   username: ""
   password: ""
-  from_name: "Judge System"
-  from: "noreply@go-judge.com"
+  security: "none"
+  timeout: 10s
+  from_name: "AstraCode"
+  from: "noreply@localhost"
 
 jwt:
   access_secret: ""   # overridden by JWT_ACCESS_SECRET env
