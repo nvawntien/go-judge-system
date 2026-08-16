@@ -29,8 +29,11 @@ func TestVerifyEmailActivatesUserAndInvalidatesToken(t *testing.T) {
 	if !userRepo.updateCalled {
 		t.Fatal("expected user update")
 	}
-	if !tokenRepo.deleteCalled {
-		t.Fatal("expected token delete")
+	if !tokenRepo.consumed {
+		t.Fatal("expected token consume")
+	}
+	if err := useCase.Execute(context.Background(), dto.VerifyEmailRequest{Token: "valid-token"}); !errors.Is(err, domain.ErrInvalidOrExpiredToken) {
+		t.Fatalf("replayed verification error = %v, want ErrInvalidOrExpiredToken", err)
 	}
 }
 
@@ -94,17 +97,17 @@ func (verifyTokenGenerator) Generate(identifier string) string { return "raw-" +
 func (verifyTokenGenerator) Hash(token string) string          { return "hashed-" + token }
 
 type verifyTokenRepository struct {
-	tokens       map[string]string
-	findErr      error
-	deleteCalled bool
+	tokens   map[string]string
+	findErr  error
+	consumed bool
 }
 
-func (r *verifyTokenRepository) Save(ctx context.Context, hashedToken string, identifier string, ttl time.Duration) error {
+func (r *verifyTokenRepository) Save(ctx context.Context, _ outbound.TokenPurpose, hashedToken string, identifier string, ttl time.Duration) error {
 	r.tokens[hashedToken] = identifier
 	return nil
 }
 
-func (r *verifyTokenRepository) FindByToken(ctx context.Context, hashedToken string) (string, error) {
+func (r *verifyTokenRepository) FindByToken(ctx context.Context, _ outbound.TokenPurpose, hashedToken string) (string, error) {
 	if r.findErr != nil {
 		return "", r.findErr
 	}
@@ -115,24 +118,24 @@ func (r *verifyTokenRepository) FindByToken(ctx context.Context, hashedToken str
 	return identifier, nil
 }
 
-func (r *verifyTokenRepository) Consume(ctx context.Context, hashedToken string) (string, error) {
-	identifier, err := r.FindByToken(ctx, hashedToken)
+func (r *verifyTokenRepository) Consume(ctx context.Context, purpose outbound.TokenPurpose, hashedToken string) (string, error) {
+	identifier, err := r.FindByToken(ctx, purpose, hashedToken)
 	if err != nil {
 		return "", err
 	}
-	if err := r.Delete(ctx, hashedToken); err != nil {
+	if err := r.Delete(ctx, purpose, hashedToken); err != nil {
 		return "", err
 	}
+	r.consumed = true
 	return identifier, nil
 }
 
-func (r *verifyTokenRepository) Delete(ctx context.Context, hashedToken string) error {
-	r.deleteCalled = true
+func (r *verifyTokenRepository) Delete(ctx context.Context, _ outbound.TokenPurpose, hashedToken string) error {
 	delete(r.tokens, hashedToken)
 	return nil
 }
 
-func (r *verifyTokenRepository) TryAcquireResendCooldown(ctx context.Context, identifier string, ttl time.Duration) (bool, error) {
+func (r *verifyTokenRepository) TryAcquireResendCooldown(ctx context.Context, _ outbound.TokenPurpose, identifier string, ttl time.Duration) (bool, error) {
 	return true, nil
 }
 

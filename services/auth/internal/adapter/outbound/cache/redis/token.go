@@ -15,25 +15,25 @@ type tokenRepository struct {
 	rdb *redis.Client
 }
 
-func verificationTokenKey(hashedToken string) string {
-	return "token:" + hashedToken
+func tokenKey(purpose outbound.TokenPurpose, hashedToken string) string {
+	return "token:" + string(purpose) + ":" + hashedToken
 }
 
-func latestVerificationTokenKey(identifier string) string {
-	return "token:latest:" + identifier
+func latestTokenKey(purpose outbound.TokenPurpose, identifier string) string {
+	return "token:latest:" + string(purpose) + ":" + identifier
 }
 
-func resendCooldownKey(identifier string) string {
-	return "token:cooldown:resend:" + identifier
+func resendCooldownKey(purpose outbound.TokenPurpose, identifier string) string {
+	return "token:cooldown:" + string(purpose) + ":" + identifier
 }
 
 func NewTokenRepository(rdb *redis.Client) outbound.TokenRepository {
 	return &tokenRepository{rdb: rdb}
 }
 
-func (r *tokenRepository) Save(ctx context.Context, hashedToken string, identifier string, ttl time.Duration) error {
-	tokenKey := verificationTokenKey(hashedToken)
-	latestKey := latestVerificationTokenKey(identifier)
+func (r *tokenRepository) Save(ctx context.Context, purpose outbound.TokenPurpose, hashedToken string, identifier string, ttl time.Duration) error {
+	tokenKey := tokenKey(purpose, hashedToken)
+	latestKey := latestTokenKey(purpose, identifier)
 
 	_, err := r.rdb.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
 		pipe.Set(ctx, tokenKey, identifier, ttl)
@@ -44,8 +44,8 @@ func (r *tokenRepository) Save(ctx context.Context, hashedToken string, identifi
 	return err
 }
 
-func (r *tokenRepository) FindByToken(ctx context.Context, hashedToken string) (string, error) {
-	tokenKey := verificationTokenKey(hashedToken)
+func (r *tokenRepository) FindByToken(ctx context.Context, purpose outbound.TokenPurpose, hashedToken string) (string, error) {
+	tokenKey := tokenKey(purpose, hashedToken)
 
 	identifier, err := r.rdb.Get(ctx, tokenKey).Result()
 	if err == redis.Nil {
@@ -55,7 +55,7 @@ func (r *tokenRepository) FindByToken(ctx context.Context, hashedToken string) (
 		return "", err
 	}
 
-	latestKey := latestVerificationTokenKey(identifier)
+	latestKey := latestTokenKey(purpose, identifier)
 	latestHashedToken, err := r.rdb.Get(ctx, latestKey).Result()
 	if err == redis.Nil {
 		return "", domain.ErrInvalidOrExpiredToken
@@ -71,8 +71,8 @@ func (r *tokenRepository) FindByToken(ctx context.Context, hashedToken string) (
 	return identifier, nil
 }
 
-func (r *tokenRepository) Consume(ctx context.Context, hashedToken string) (string, error) {
-	tokenKey := verificationTokenKey(hashedToken)
+func (r *tokenRepository) Consume(ctx context.Context, purpose outbound.TokenPurpose, hashedToken string) (string, error) {
+	tokenKey := tokenKey(purpose, hashedToken)
 
 	// Resolve the user-specific latest-token key before watching both keys. The
 	// transaction rechecks every value after WATCH, so a concurrent consume,
@@ -85,7 +85,7 @@ func (r *tokenRepository) Consume(ctx context.Context, hashedToken string) (stri
 		return "", err
 	}
 
-	latestKey := latestVerificationTokenKey(identifier)
+	latestKey := latestTokenKey(purpose, identifier)
 	err = r.rdb.Watch(ctx, func(tx *redis.Tx) error {
 		currentIdentifier, err := tx.Get(ctx, tokenKey).Result()
 		if err == redis.Nil {
@@ -126,8 +126,8 @@ func (r *tokenRepository) Consume(ctx context.Context, hashedToken string) (stri
 	return identifier, nil
 }
 
-func (r *tokenRepository) Delete(ctx context.Context, hashedToken string) error {
-	tokenKey := verificationTokenKey(hashedToken)
+func (r *tokenRepository) Delete(ctx context.Context, purpose outbound.TokenPurpose, hashedToken string) error {
+	tokenKey := tokenKey(purpose, hashedToken)
 
 	identifier, err := r.rdb.Get(ctx, tokenKey).Result()
 	if err == redis.Nil {
@@ -137,7 +137,7 @@ func (r *tokenRepository) Delete(ctx context.Context, hashedToken string) error 
 		return err
 	}
 
-	latestKey := latestVerificationTokenKey(identifier)
+	latestKey := latestTokenKey(purpose, identifier)
 
 	latestHashedToken, err := r.rdb.Get(ctx, latestKey).Result()
 	if err != nil && err != redis.Nil {
@@ -156,6 +156,6 @@ func (r *tokenRepository) Delete(ctx context.Context, hashedToken string) error 
 	return err
 }
 
-func (r *tokenRepository) TryAcquireResendCooldown(ctx context.Context, identifier string, ttl time.Duration) (bool, error) {
-	return r.rdb.SetNX(ctx, resendCooldownKey(identifier), "1", ttl).Result()
+func (r *tokenRepository) TryAcquireResendCooldown(ctx context.Context, purpose outbound.TokenPurpose, identifier string, ttl time.Duration) (bool, error) {
+	return r.rdb.SetNX(ctx, resendCooldownKey(purpose, identifier), "1", ttl).Result()
 }

@@ -32,8 +32,7 @@ func (uc *verifyEmail) Execute(ctx context.Context, req dto.VerifyEmailRequest) 
 	// Hash the raw token to look up in Redis
 	hashedToken := uc.tokenGenerator.Hash(req.Token)
 
-	// Find the associated email
-	userID, err := uc.tokenRepo.FindByToken(ctx, hashedToken)
+	userID, err := uc.tokenRepo.FindByToken(ctx, outbound.TokenPurposeVerifyEmail, hashedToken)
 	if err != nil {
 		if errors.Is(err, domain.ErrInvalidOrExpiredToken) {
 			return domain.ErrInvalidOrExpiredToken
@@ -55,14 +54,20 @@ func (uc *verifyEmail) Execute(ctx context.Context, req dto.VerifyEmailRequest) 
 		return domain.ErrUserAlreadyActive
 	}
 
+	// Consume immediately before activation so concurrent verification requests
+	// cannot replay the same token. Reset-token state is purpose-isolated.
+	if _, err := uc.tokenRepo.Consume(ctx, outbound.TokenPurposeVerifyEmail, hashedToken); err != nil {
+		if errors.Is(err, domain.ErrInvalidOrExpiredToken) {
+			return domain.ErrInvalidOrExpiredToken
+		}
+		return domain.ErrInternalServer.Wrap(err)
+	}
+
 	// Activate user
 	user.Activate()
 	if err := uc.userRepo.UpdateUser(ctx, user); err != nil {
 		return domain.ErrInternalServer.Wrap(err)
 	}
-
-	// Clean up token — non-critical
-	_ = uc.tokenRepo.Delete(ctx, hashedToken)
 
 	return nil
 }

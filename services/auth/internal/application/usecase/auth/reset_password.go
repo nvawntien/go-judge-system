@@ -50,7 +50,7 @@ func (uc *resetPasswordUseCase) Execute(ctx context.Context, req dto.ResetPasswo
 	hashedToken := uc.tokenGenerator.Hash(req.Token)
 	// Consume before side effects so a reset token cannot be replayed when a
 	// downstream invalidation or database write fails.
-	userID, err := uc.tokenRepo.Consume(ctx, hashedToken)
+	userID, err := uc.tokenRepo.Consume(ctx, outbound.TokenPurposeResetPassword, hashedToken)
 	if err != nil {
 		if errors.Is(err, domain.ErrInvalidOrExpiredToken) {
 			return domain.ErrInvalidOrExpiredToken
