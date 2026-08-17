@@ -2,6 +2,8 @@ name: Release container images
 
 on:
   push:
+    branches:
+      - develop
     tags:
       - 'v*.*.*'
   workflow_dispatch:
@@ -50,8 +52,8 @@ jobs:
           sha="$(git rev-parse HEAD)"
           commit_time="$(git show -s --format=%cI HEAD)"
           version="sha-$sha"
-          if [[ "${{ github.event_name }}" == "push" ]]; then
-            version="${{ github.ref_name }}"
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            version="${GITHUB_REF_NAME}"
           fi
           printf 'sha=%s\n' "$sha" >> "$GITHUB_OUTPUT"
           printf 'time=%s\n' "$commit_time" >> "$GITHUB_OUTPUT"
@@ -63,7 +65,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Require a semantic version tag
-        if: github.event_name == 'push'
+        if: startsWith(github.ref, 'refs/tags/')
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
@@ -75,6 +77,7 @@ jobs:
   publish:
     name: Publish ${{ matrix.image }}
     needs:
+      - prepare
       - validate-tag
       - verify
     runs-on: ubuntu-latest
@@ -146,7 +149,9 @@ jobs:
 
   verify:
     name: Verify release commit
-    needs: validate-tag
+    needs:
+      - prepare
+      - validate-tag
     uses: ./.github/workflows/ci.yml
     with:
       git_ref: ${{ needs.prepare.outputs.commit_sha }}
