@@ -29,3 +29,10 @@ func TestTokenKeysArePurposeScoped(t *testing.T) {
 		}
 	}
 }
+
+func TestAuthAbuseKeysHashSensitiveScope(t *testing.T) {
+	key := authAbuseKey("login:identifier", "person@example.test")
+	if key == "" || key == "auth:abuse:login:identifier:person@example.test" {
+		t.Fatalf("key exposes or omits scope hash: %q", key)
+	}
+}

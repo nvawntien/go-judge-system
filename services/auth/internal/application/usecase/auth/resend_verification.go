@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"go-judge-system/pkg/config"
 	"time"
 
 	"go-judge-system/services/auth/internal/application/dto"
@@ -19,6 +20,11 @@ type resendVerificationUseCase struct {
 	mailProvider   outbound.MailProvider
 	tokenGenerator outbound.TokenGenerator
 	tokenRepo      outbound.TokenRepository
+	abuse          authAbuse
+}
+
+func NewResendVerificationUseCaseWithAbuse(userRepo outbound.UserRepository, mailProvider outbound.MailProvider, tokenGenerator outbound.TokenGenerator, tokenRepo outbound.TokenRepository, limiter outbound.AuthAbuseLimiter, policy config.AuthAbuseConfig) inbound.ResendVerificationUseCase {
+	return &resendVerificationUseCase{userRepo: userRepo, mailProvider: mailProvider, tokenGenerator: tokenGenerator, tokenRepo: tokenRepo, abuse: authAbuse{limiter: limiter, policy: policy}}
 }
 
 func NewResendVerificationUseCase(
@@ -42,6 +48,15 @@ func (uc *resendVerificationUseCase) Execute(ctx context.Context, req dto.Resend
 	}
 
 	email := emailVO.String()
+	if uc.abuse.limiter != nil {
+		// Always return the generic success response to preserve account privacy.
+		if _, err := uc.abuse.allow(ctx, "verify-email-send:ip:hour", req.ClientIP, uc.abuse.policy.MailIPHourlyLimit, time.Hour); err != nil {
+			return nil
+		}
+		if _, err := uc.abuse.allow(ctx, "verify-email-send:ip:day", req.ClientIP, uc.abuse.policy.MailIPDailyLimit, 24*time.Hour); err != nil {
+			return nil
+		}
+	}
 
 	user, err := uc.userRepo.GetUserByEmail(ctx, email)
 	if err != nil {
@@ -57,14 +72,25 @@ func (uc *resendVerificationUseCase) Execute(ctx context.Context, req dto.Resend
 	if user.IsActive {
 		return nil
 	}
+	if uc.abuse.limiter != nil {
+		if _, err := uc.abuse.allow(ctx, "verify-email-send:account:cooldown", user.ID, 1, uc.abuse.policy.EmailCooldown); err != nil {
+			return nil
+		}
+		if _, err := uc.abuse.allow(ctx, "verify-email-send:account:hour", user.ID, uc.abuse.policy.ResendAccountHourlyLimit, time.Hour); err != nil {
+			return nil
+		}
+		if _, err := uc.abuse.allow(ctx, "verify-email-send:account:day", user.ID, uc.abuse.policy.ResendAccountDailyLimit, 24*time.Hour); err != nil {
+			return nil
+		}
+	} else {
 
-	allowed, err := uc.tokenRepo.TryAcquireResendCooldown(ctx, outbound.TokenPurposeVerifyEmail, user.ID, resendVerificationCooldownTTL)
-	if err != nil {
-		return domain.ErrInternalServer.Wrap(err)
-	}
-
-	if !allowed {
-		return domain.ErrRateLimitExceeded
+		allowed, err := uc.tokenRepo.TryAcquireResendCooldown(ctx, outbound.TokenPurposeVerifyEmail, user.ID, resendVerificationCooldownTTL)
+		if err != nil {
+			return domain.ErrInternalServer.Wrap(err)
+		}
+		if !allowed {
+			return nil
+		}
 	}
 
 	rawToken := uc.tokenGenerator.Generate(user.ID)

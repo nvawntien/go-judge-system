@@ -38,6 +38,7 @@ var InfrastructureProviderSet = wire.NewSet(
 var OutboundProviderSet = wire.NewSet(
 	postgres.NewUserRepository,
 	redis.NewTokenRepository,
+	redis.NewAuthAbuseLimiter,
 	auth.NewRedisLogoutAllIATStore,
 	jwt.NewJWTProvider,
 	crypto.NewTokenGenerator,
@@ -51,15 +52,15 @@ var MiddlewareProviderSet = wire.NewSet(
 )
 
 var UseCaseProviderSet = wire.NewSet(
-	authusecase.NewRegisterUseCase,
-	authusecase.NewVerifyEmailUseCase,
-	authusecase.NewResendVerificationUseCase,
-	authusecase.NewLoginUseCase,
-	authusecase.NewForgotPasswordUseCase,
-	authusecase.NewResetPasswordUseCase,
+	authusecase.NewRegisterUseCaseWithAbuse,
+	authusecase.NewVerifyEmailUseCaseWithAbuse,
+	authusecase.NewResendVerificationUseCaseWithAbuse,
+	authusecase.NewLoginUseCaseWithAbuse,
+	authusecase.NewForgotPasswordUseCaseWithAbuse,
+	authusecase.NewResetPasswordUseCaseWithAbuse,
 	authusecase.NewChangePasswordUseCase,
 	authusecase.NewLogoutAllUseCase,
-	authusecase.NewRefreshTokenUseCase,
+	authusecase.NewRefreshTokenUseCaseWithAbuse,
 
 	userusecase.NewGetMeUseCase,
 	userusecase.NewGetProfileUseCase,

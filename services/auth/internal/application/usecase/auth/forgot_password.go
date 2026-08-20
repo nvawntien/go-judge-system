@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"go-judge-system/pkg/config"
 	"go-judge-system/services/auth/internal/application/dto"
 	"go-judge-system/services/auth/internal/application/port/inbound"
 	"go-judge-system/services/auth/internal/application/port/outbound"
@@ -21,6 +22,11 @@ type forgotPasswordUseCase struct {
 	tokenRepo      outbound.TokenRepository
 	tokenGenerator outbound.TokenGenerator
 	mailProvider   outbound.MailProvider
+	abuse          authAbuse
+}
+
+func NewForgotPasswordUseCaseWithAbuse(userRepo outbound.UserRepository, tokenRepo outbound.TokenRepository, tokenGenerator outbound.TokenGenerator, mailProvider outbound.MailProvider, limiter outbound.AuthAbuseLimiter, policy config.AuthAbuseConfig) inbound.ForgotPasswordUseCase {
+	return &forgotPasswordUseCase{userRepo: userRepo, tokenRepo: tokenRepo, tokenGenerator: tokenGenerator, mailProvider: mailProvider, abuse: authAbuse{limiter: limiter, policy: policy}}
 }
 
 func NewForgotPasswordUseCase(
@@ -44,6 +50,14 @@ func (uc *forgotPasswordUseCase) Execute(ctx context.Context, req dto.ForgotPass
 	}
 
 	email := emailVO.String()
+	if uc.abuse.limiter != nil {
+		if _, err := uc.abuse.allow(ctx, "forgot-password:ip:hour", req.ClientIP, uc.abuse.policy.MailIPHourlyLimit, time.Hour); err != nil {
+			return nil
+		}
+		if _, err := uc.abuse.allow(ctx, "forgot-password:ip:day", req.ClientIP, uc.abuse.policy.MailIPDailyLimit, 24*time.Hour); err != nil {
+			return nil
+		}
+	}
 
 	user, err := uc.userRepo.GetUserByEmail(ctx, email)
 	if err != nil {
@@ -52,14 +66,25 @@ func (uc *forgotPasswordUseCase) Execute(ctx context.Context, req dto.ForgotPass
 		}
 		return domain.ErrInternalServer.Wrap(err)
 	}
+	if uc.abuse.limiter != nil {
+		if _, err := uc.abuse.allow(ctx, "forgot-password:account:cooldown", user.ID, 1, uc.abuse.policy.EmailCooldown); err != nil {
+			return nil
+		}
+		if _, err := uc.abuse.allow(ctx, "forgot-password:account:hour", user.ID, uc.abuse.policy.ForgotAccountHourlyLimit, time.Hour); err != nil {
+			return nil
+		}
+		if _, err := uc.abuse.allow(ctx, "forgot-password:account:day", user.ID, uc.abuse.policy.ForgotAccountDailyLimit, 24*time.Hour); err != nil {
+			return nil
+		}
+	} else {
 
-	allowed, err := uc.tokenRepo.TryAcquireResendCooldown(ctx, outbound.TokenPurposeResetPassword, user.ID, forgotPasswordCooldownTTL)
-	if err != nil {
-		return domain.ErrInternalServer.Wrap(err)
-	}
-
-	if !allowed {
-		return domain.ErrRateLimitExceeded
+		allowed, err := uc.tokenRepo.TryAcquireResendCooldown(ctx, outbound.TokenPurposeResetPassword, user.ID, forgotPasswordCooldownTTL)
+		if err != nil {
+			return domain.ErrInternalServer.Wrap(err)
+		}
+		if !allowed {
+			return nil
+		}
 	}
 
 	rawToken := uc.tokenGenerator.Generate(user.ID)

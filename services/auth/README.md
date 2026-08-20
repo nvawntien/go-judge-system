@@ -202,5 +202,18 @@ Current default runtime profile:
 - Redis: `redis:6379`
 - MailHog SMTP: `mailhog:1025`
 
+### Public-auth abuse controls
+
+`auth_abuse` in `config/config.yaml` configures Redis-backed fixed-window
+limits. Redis keys use `auth:abuse:<purpose>:<sha256(normalized-scope)>`; raw
+emails, identifiers, refresh tokens, and IP addresses are not placed in keys.
+The Lua `INCR`/`PEXPIRE` operation is atomic across Auth replicas. Login,
+registration, verification/reset token consumption, and refresh fail closed
+with a safe 503/429 if the limiter is unavailable. Resend-verification and
+forgot-password instead return their existing generic success response while
+sending no email, so Redis or quota state cannot reveal whether an account
+exists. Envoy strips and overwrites `X-Client-IP` from its downstream peer;
+Auth never trusts client-provided forwarding headers.
+
 ---
 Built for the Go Judge System.

@@ -57,6 +57,27 @@ jwt:
   access_ttl: 15m
   refresh_ttl: 168h
 
+# Redis-backed public-auth controls. Mail endpoints keep a generic response
+# when limited so account state and quota state cannot be enumerated.
+auth_abuse:
+  login_ip_limit: 20
+  login_identifier_limit: 5
+  login_window: 15m
+  register_ip_hourly_limit: 5
+  register_ip_daily_limit: 20
+  register_email_daily_limit: 3
+  mail_ip_hourly_limit: 10
+  mail_ip_daily_limit: 40
+  resend_account_hourly_limit: 5
+  resend_account_daily_limit: 12
+  forgot_account_hourly_limit: 3
+  forgot_account_daily_limit: 10
+  email_cooldown: 60s
+  token_ip_limit: 30
+  token_window: 5m
+  refresh_ip_limit: 60
+  refresh_window: 1m
+
 minio:
   endpoint: "minio:9000"
   access_key: ""      # overridden by MINIO_ACCESS_KEY env

@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"go-judge-system/pkg/config"
 	"time"
 
 	pkgauth "go-judge-system/pkg/auth"
@@ -19,6 +20,11 @@ type resetPasswordUseCase struct {
 	tokenGenerator  outbound.TokenGenerator
 	passwordEncoder outbound.PasswordEncoder
 	logoutAllStore  pkgauth.LogoutAllIATStore
+	abuse           authAbuse
+}
+
+func NewResetPasswordUseCaseWithAbuse(userRepo outbound.UserRepository, tokenRepo outbound.TokenRepository, tokenGenerator outbound.TokenGenerator, passwordEncoder outbound.PasswordEncoder, logoutAllStore pkgauth.LogoutAllIATStore, limiter outbound.AuthAbuseLimiter, policy config.AuthAbuseConfig) inbound.ResetPasswordUseCase {
+	return &resetPasswordUseCase{userRepo: userRepo, tokenRepo: tokenRepo, tokenGenerator: tokenGenerator, passwordEncoder: passwordEncoder, logoutAllStore: logoutAllStore, abuse: authAbuse{limiter: limiter, policy: policy}}
 }
 
 func NewResetPasswordUseCase(
@@ -38,6 +44,11 @@ func NewResetPasswordUseCase(
 }
 
 func (uc *resetPasswordUseCase) Execute(ctx context.Context, req dto.ResetPasswordRequest) error {
+	if uc.abuse.limiter != nil {
+		if _, err := uc.abuse.allow(ctx, "reset-password:ip", req.ClientIP, uc.abuse.policy.TokenIPLimit, uc.abuse.policy.TokenWindow); err != nil {
+			return err
+		}
+	}
 	// Hash the raw token to look up in Redis
 	if err := valueobject.ValidatePlainPassword(req.NewPassword); err != nil {
 		return domain.ErrPasswordTooWeak

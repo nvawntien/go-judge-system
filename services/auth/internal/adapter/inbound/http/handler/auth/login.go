@@ -1,10 +1,10 @@
 package auth
 
 import (
+	"github.com/gin-gonic/gin"
+	"go-judge-system/pkg/response"
 	"go-judge-system/services/auth/internal/application/dto"
 	"go-judge-system/services/auth/internal/application/port/inbound"
-	"go-judge-system/pkg/response"
-	"github.com/gin-gonic/gin"
 )
 
 type LoginHandler struct {
@@ -21,6 +21,7 @@ func (h *LoginHandler) Handle(c *gin.Context) {
 		response.HandleError(c, response.NewAppError(response.CodeBadRequest, "invalid request payload", err))
 		return
 	}
+	req.ClientIP = clientIP(c)
 
 	res, err := h.uc.Execute(c.Request.Context(), req)
 	if err != nil {

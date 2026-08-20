@@ -22,6 +22,29 @@ type Config struct {
 	JudgeGRPC   JudgeGRPCConfig   `mapstructure:"judge_grpc"`
 	RunCode     RunCodeConfig     `mapstructure:"run_code"`
 	SSE         SSEConfig         `mapstructure:"sse"`
+	AuthAbuse   AuthAbuseConfig   `mapstructure:"auth_abuse"`
+}
+
+// AuthAbuseConfig is deliberately owned by Auth although it lives in the
+// shared config package. Durations are fixed-window Redis TTLs.
+type AuthAbuseConfig struct {
+	LoginIPLimit             int           `mapstructure:"login_ip_limit"`
+	LoginIdentifierLimit     int           `mapstructure:"login_identifier_limit"`
+	LoginWindow              time.Duration `mapstructure:"login_window"`
+	RegisterIPHourlyLimit    int           `mapstructure:"register_ip_hourly_limit"`
+	RegisterIPDailyLimit     int           `mapstructure:"register_ip_daily_limit"`
+	RegisterEmailDailyLimit  int           `mapstructure:"register_email_daily_limit"`
+	MailIPHourlyLimit        int           `mapstructure:"mail_ip_hourly_limit"`
+	MailIPDailyLimit         int           `mapstructure:"mail_ip_daily_limit"`
+	ResendAccountHourlyLimit int           `mapstructure:"resend_account_hourly_limit"`
+	ResendAccountDailyLimit  int           `mapstructure:"resend_account_daily_limit"`
+	ForgotAccountHourlyLimit int           `mapstructure:"forgot_account_hourly_limit"`
+	ForgotAccountDailyLimit  int           `mapstructure:"forgot_account_daily_limit"`
+	EmailCooldown            time.Duration `mapstructure:"email_cooldown"`
+	TokenIPLimit             int           `mapstructure:"token_ip_limit"`
+	TokenWindow              time.Duration `mapstructure:"token_window"`
+	RefreshIPLimit           int           `mapstructure:"refresh_ip_limit"`
+	RefreshWindow            time.Duration `mapstructure:"refresh_window"`
 }
 
 type AppConfig struct {

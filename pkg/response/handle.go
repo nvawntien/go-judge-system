@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"go-judge-system/pkg/auth"
+	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -415,6 +417,13 @@ func HandleError(c *gin.Context, err error) {
 
 	var appErr *AppError
 	if errors.As(err, &appErr) {
+		if appErr.RetryAfter > 0 {
+			seconds := int(appErr.RetryAfter.Round(time.Second) / time.Second)
+			if seconds < 1 {
+				seconds = 1
+			}
+			c.Header("Retry-After", strconv.Itoa(seconds))
+		}
 		Error(c, appErr.Code, appErr.Message)
 		return
 	}

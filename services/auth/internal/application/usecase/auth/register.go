@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"go-judge-system/pkg/config"
 	"time"
 
 	"go-judge-system/services/auth/internal/application/dto"
@@ -21,6 +22,11 @@ type register struct {
 	tokenGenerator  outbound.TokenGenerator
 	tokenRepo       outbound.TokenRepository
 	passwordEncoder outbound.PasswordEncoder
+	abuse           authAbuse
+}
+
+func NewRegisterUseCaseWithAbuse(userRepo outbound.UserRepository, mailProvider outbound.MailProvider, tokenGenerator outbound.TokenGenerator, tokenRepo outbound.TokenRepository, passwordEncoder outbound.PasswordEncoder, limiter outbound.AuthAbuseLimiter, policy config.AuthAbuseConfig) inbound.RegisterUseCase {
+	return &register{userRepo: userRepo, mailProvider: mailProvider, tokenGenerator: tokenGenerator, tokenRepo: tokenRepo, passwordEncoder: passwordEncoder, abuse: authAbuse{limiter: limiter, policy: policy}}
 }
 
 func NewRegisterUseCase(
@@ -44,12 +50,23 @@ func (r *register) Execute(ctx context.Context, req dto.RegisterRequest) error {
 	if err != nil {
 		return domain.ErrInvalidEmail
 	}
+	if r.abuse.limiter != nil {
+		if _, err := r.abuse.allow(ctx, "register:ip:hour", req.ClientIP, r.abuse.policy.RegisterIPHourlyLimit, time.Hour); err != nil {
+			return err
+		}
+		if _, err := r.abuse.allow(ctx, "register:ip:day", req.ClientIP, r.abuse.policy.RegisterIPDailyLimit, 24*time.Hour); err != nil {
+			return err
+		}
+		if _, err := r.abuse.allow(ctx, "register:email:day", emailVO.String(), r.abuse.policy.RegisterEmailDailyLimit, 24*time.Hour); err != nil {
+			return err
+		}
+	}
 
 	if err := valueobject.ValidatePlainPassword(req.Password); err != nil {
 		return domain.ErrPasswordTooWeak
 	}
 
-	_, err = r.userRepo.GetUserByEmail(ctx, req.Email)
+	_, err = r.userRepo.GetUserByEmail(ctx, emailVO.String())
 	if err != nil && !errors.Is(err, domain.ErrUserNotFound) {
 		return domain.ErrInternalServer.Wrap(err)
 	}

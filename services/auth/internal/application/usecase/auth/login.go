@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	pkgauth "go-judge-system/pkg/auth"
+	"go-judge-system/pkg/config"
 	"go-judge-system/services/auth/internal/application/dto"
 	"go-judge-system/services/auth/internal/application/port/inbound"
 	"go-judge-system/services/auth/internal/application/port/outbound"
@@ -17,14 +18,28 @@ type loginUseCase struct {
 	passwordEncoder outbound.PasswordEncoder
 	jwtProvider     outbound.JWTProvider
 	logoutAllStore  pkgauth.LogoutAllIATStore
+	abuse           authAbuse
 }
 
 func NewLoginUseCase(userRepo outbound.UserRepository, passwordEncoder outbound.PasswordEncoder, jwtProvider outbound.JWTProvider, logoutAllStore pkgauth.LogoutAllIATStore) inbound.LoginUseCase {
 	return &loginUseCase{userRepo: userRepo, passwordEncoder: passwordEncoder, jwtProvider: jwtProvider, logoutAllStore: logoutAllStore}
 }
 
+func NewLoginUseCaseWithAbuse(userRepo outbound.UserRepository, passwordEncoder outbound.PasswordEncoder, jwtProvider outbound.JWTProvider, logoutAllStore pkgauth.LogoutAllIATStore, limiter outbound.AuthAbuseLimiter, policy config.AuthAbuseConfig) inbound.LoginUseCase {
+	return &loginUseCase{userRepo: userRepo, passwordEncoder: passwordEncoder, jwtProvider: jwtProvider, logoutAllStore: logoutAllStore, abuse: authAbuse{limiter: limiter, policy: policy}}
+}
+
 func (uc *loginUseCase) Execute(ctx context.Context, req dto.LoginRequest) (*dto.LoginResponse, error) {
-	user, err := uc.resolveUser(ctx, req.Identifier)
+	identifier := normalizedIdentifier(req.Identifier)
+	if uc.abuse.limiter != nil {
+		if _, err := uc.abuse.allow(ctx, "login:ip", req.ClientIP, uc.abuse.policy.LoginIPLimit, uc.abuse.policy.LoginWindow); err != nil {
+			return nil, err
+		}
+		if _, err := uc.abuse.allow(ctx, "login:identifier", identifier, uc.abuse.policy.LoginIdentifierLimit, uc.abuse.policy.LoginWindow); err != nil {
+			return nil, err
+		}
+	}
+	user, err := uc.resolveUser(ctx, identifier)
 	if err != nil {
 		if errors.Is(err, domain.ErrUserNotFound) {
 			return nil, domain.ErrInvalidCredentials
@@ -41,6 +56,9 @@ func (uc *loginUseCase) Execute(ctx context.Context, req dto.LoginRequest) (*dto
 
 	if check := uc.passwordEncoder.ComparePasswords(user.Password, []byte(req.Password)); !check {
 		return nil, domain.ErrInvalidCredentials
+	}
+	if uc.abuse.limiter != nil {
+		_ = uc.abuse.limiter.Reset(ctx, "login:identifier", identifier)
 	}
 
 	waited, err := waitForTokenIssuedAfterInvalidation(ctx, uc.logoutAllStore, user.ID)
