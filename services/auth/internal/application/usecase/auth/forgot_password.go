@@ -51,10 +51,14 @@ func (uc *forgotPasswordUseCase) Execute(ctx context.Context, req dto.ForgotPass
 
 	email := emailVO.String()
 	if uc.abuse.limiter != nil {
-		if _, err := uc.abuse.allow(ctx, "forgot-password:ip:hour", req.ClientIP, uc.abuse.policy.MailIPHourlyLimit, time.Hour); err != nil {
+		clientIP, err := uc.abuse.clientIP(ctx)
+		if err != nil {
 			return nil
 		}
-		if _, err := uc.abuse.allow(ctx, "forgot-password:ip:day", req.ClientIP, uc.abuse.policy.MailIPDailyLimit, 24*time.Hour); err != nil {
+		if _, err := uc.abuse.allow(ctx, "forgot-password:ip:hour", clientIP, uc.abuse.policy.MailIPHourlyLimit, time.Hour); err != nil {
+			return nil
+		}
+		if _, err := uc.abuse.allow(ctx, "forgot-password:ip:day", clientIP, uc.abuse.policy.MailIPDailyLimit, 24*time.Hour); err != nil {
 			return nil
 		}
 	}

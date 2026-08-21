@@ -2,7 +2,6 @@ package auth
 
 import (
 	"go-judge-system/pkg/response"
-	"go-judge-system/services/auth/internal/application/dto"
 	"go-judge-system/services/auth/internal/application/port/inbound"
 
 	"github.com/gin-gonic/gin"
@@ -17,15 +16,5 @@ func NewResendVerificationHandler(uc inbound.ResendVerificationUseCase) *ResendV
 }
 
 func (h *ResendVerificationHandler) Handle(c *gin.Context) {
-	var req dto.ResendVerificationRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.HandleError(c, response.NewAppError(response.CodeBadRequest, "invalid request payload", err))
-		return
-	}
-	req.ClientIP = clientIP(c)
-	if err := h.uc.Execute(c.Request.Context(), req); err != nil {
-		response.HandleError(c, err)
-		return
-	}
-	response.SuccessWithMessage(c, response.CodeSuccess, "If the email is valid, a link has been sent. Please check your email.", nil)
+	response.HandleVoid(c, h.uc.Execute, response.CodeSuccess, "If the email is valid, a link has been sent. Please check your email.")
 }

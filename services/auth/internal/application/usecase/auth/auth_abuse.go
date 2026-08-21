@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"go-judge-system/pkg/config"
+	"go-judge-system/pkg/requestctx"
 	"go-judge-system/pkg/response"
 	"go-judge-system/services/auth/internal/application/port/outbound"
 )
@@ -13,6 +14,14 @@ import (
 type authAbuse struct {
 	limiter outbound.AuthAbuseLimiter
 	policy  config.AuthAbuseConfig
+}
+
+func (a authAbuse) clientIP(ctx context.Context) (string, error) {
+	ip, ok := requestctx.ClientIP(ctx)
+	if !ok {
+		return "", response.NewAppError(response.CodeServiceUnavailable, "authentication protection temporarily unavailable", nil)
+	}
+	return ip, nil
 }
 
 func (a authAbuse) allow(ctx context.Context, purpose, scope string, limit int, window time.Duration) (time.Duration, error) {

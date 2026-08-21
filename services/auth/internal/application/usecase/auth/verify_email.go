@@ -36,7 +36,11 @@ func NewVerifyEmailUseCase(
 
 func (uc *verifyEmail) Execute(ctx context.Context, req dto.VerifyEmailRequest) error {
 	if uc.abuse.limiter != nil {
-		if _, err := uc.abuse.allow(ctx, "verify-email:ip", req.ClientIP, uc.abuse.policy.TokenIPLimit, uc.abuse.policy.TokenWindow); err != nil {
+		clientIP, err := uc.abuse.clientIP(ctx)
+		if err != nil {
+			return err
+		}
+		if _, err := uc.abuse.allow(ctx, "verify-email:ip", clientIP, uc.abuse.policy.TokenIPLimit, uc.abuse.policy.TokenWindow); err != nil {
 			return err
 		}
 	}

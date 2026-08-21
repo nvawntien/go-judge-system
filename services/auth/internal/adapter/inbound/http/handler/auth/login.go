@@ -21,8 +21,6 @@ func (h *LoginHandler) Handle(c *gin.Context) {
 		response.HandleError(c, response.NewAppError(response.CodeBadRequest, "invalid request payload", err))
 		return
 	}
-	req.ClientIP = clientIP(c)
-
 	res, err := h.uc.Execute(c.Request.Context(), req)
 	if err != nil {
 		response.HandleError(c, err)

@@ -24,6 +24,7 @@ type Router struct {
 
 func NewRouter(authHandler *handler.AuthHandler, userHandler *handler.UserHandler, adminHandler *handler.AdminHandler, authMiddleware gin.HandlerFunc, logger *zap.Logger) *Router {
 	r := gin.New()
+	r.Use(pkgmiddleware.NewRequestMetadataMiddleware())
 	r.Use(pkgmiddleware.Recovery(logger))
 	r.Use(pkgmiddleware.UnifiedLogger(logger))
 

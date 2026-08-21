@@ -49,11 +49,15 @@ func (uc *resendVerificationUseCase) Execute(ctx context.Context, req dto.Resend
 
 	email := emailVO.String()
 	if uc.abuse.limiter != nil {
-		// Always return the generic success response to preserve account privacy.
-		if _, err := uc.abuse.allow(ctx, "verify-email-send:ip:hour", req.ClientIP, uc.abuse.policy.MailIPHourlyLimit, time.Hour); err != nil {
+		clientIP, err := uc.abuse.clientIP(ctx)
+		if err != nil {
 			return nil
 		}
-		if _, err := uc.abuse.allow(ctx, "verify-email-send:ip:day", req.ClientIP, uc.abuse.policy.MailIPDailyLimit, 24*time.Hour); err != nil {
+		// Always return the generic success response to preserve account privacy.
+		if _, err := uc.abuse.allow(ctx, "verify-email-send:ip:hour", clientIP, uc.abuse.policy.MailIPHourlyLimit, time.Hour); err != nil {
+			return nil
+		}
+		if _, err := uc.abuse.allow(ctx, "verify-email-send:ip:day", clientIP, uc.abuse.policy.MailIPDailyLimit, 24*time.Hour); err != nil {
 			return nil
 		}
 	}

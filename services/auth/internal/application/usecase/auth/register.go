@@ -51,10 +51,14 @@ func (r *register) Execute(ctx context.Context, req dto.RegisterRequest) error {
 		return domain.ErrInvalidEmail
 	}
 	if r.abuse.limiter != nil {
-		if _, err := r.abuse.allow(ctx, "register:ip:hour", req.ClientIP, r.abuse.policy.RegisterIPHourlyLimit, time.Hour); err != nil {
+		clientIP, err := r.abuse.clientIP(ctx)
+		if err != nil {
 			return err
 		}
-		if _, err := r.abuse.allow(ctx, "register:ip:day", req.ClientIP, r.abuse.policy.RegisterIPDailyLimit, 24*time.Hour); err != nil {
+		if _, err := r.abuse.allow(ctx, "register:ip:hour", clientIP, r.abuse.policy.RegisterIPHourlyLimit, time.Hour); err != nil {
+			return err
+		}
+		if _, err := r.abuse.allow(ctx, "register:ip:day", clientIP, r.abuse.policy.RegisterIPDailyLimit, 24*time.Hour); err != nil {
 			return err
 		}
 		if _, err := r.abuse.allow(ctx, "register:email:day", emailVO.String(), r.abuse.policy.RegisterEmailDailyLimit, 24*time.Hour); err != nil {

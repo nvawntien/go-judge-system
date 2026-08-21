@@ -32,7 +32,11 @@ func NewLoginUseCaseWithAbuse(userRepo outbound.UserRepository, passwordEncoder 
 func (uc *loginUseCase) Execute(ctx context.Context, req dto.LoginRequest) (*dto.LoginResponse, error) {
 	identifier := normalizedIdentifier(req.Identifier)
 	if uc.abuse.limiter != nil {
-		if _, err := uc.abuse.allow(ctx, "login:ip", req.ClientIP, uc.abuse.policy.LoginIPLimit, uc.abuse.policy.LoginWindow); err != nil {
+		clientIP, err := uc.abuse.clientIP(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := uc.abuse.allow(ctx, "login:ip", clientIP, uc.abuse.policy.LoginIPLimit, uc.abuse.policy.LoginWindow); err != nil {
 			return nil, err
 		}
 		if _, err := uc.abuse.allow(ctx, "login:identifier", identifier, uc.abuse.policy.LoginIdentifierLimit, uc.abuse.policy.LoginWindow); err != nil {
