@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"math"
 	"strings"
 	"time"
 
@@ -49,12 +48,12 @@ func (a authAbuse) checkFailureLimit(ctx context.Context, purpose, scope string,
 
 // recordFailure uses the existing atomic fixed-window Lua increment without
 // imposing a threshold here; hard decisions are made only by pre-checks.
-func (a authAbuse) recordFailure(ctx context.Context, purpose, scope string, window time.Duration) error {
-	_, _, err := a.limiter.Allow(ctx, purpose, scope, math.MaxInt, window)
+func (a authAbuse) recordFailure(ctx context.Context, purpose, scope string, limit int, window time.Duration) (bool, time.Duration, error) {
+	allowed, retry, err := a.limiter.Allow(ctx, purpose, scope, limit, window)
 	if err != nil {
-		return response.NewAppError(response.CodeServiceUnavailable, "authentication protection temporarily unavailable", err)
+		return false, 0, response.NewAppError(response.CodeServiceUnavailable, "authentication protection temporarily unavailable", err)
 	}
-	return nil
+	return !allowed, retry, nil
 }
 
 func (a authAbuse) delayForIdentifierRisk(ctx context.Context, identifier string) error {

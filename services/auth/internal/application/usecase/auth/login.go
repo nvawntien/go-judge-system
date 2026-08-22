@@ -5,11 +5,13 @@ import (
 	"errors"
 	pkgauth "go-judge-system/pkg/auth"
 	"go-judge-system/pkg/config"
+	"go-judge-system/pkg/response"
 	"go-judge-system/services/auth/internal/application/dto"
 	"go-judge-system/services/auth/internal/application/port/inbound"
 	"go-judge-system/services/auth/internal/application/port/outbound"
 	"go-judge-system/services/auth/internal/domain"
 	"go-judge-system/services/auth/internal/domain/entity"
+	"math"
 	"strings"
 )
 
@@ -117,13 +119,25 @@ func (uc *loginUseCase) recordLoginFailure(ctx context.Context, clientIP, identi
 	if uc.abuse.limiter == nil {
 		return nil
 	}
-	if err := uc.abuse.recordFailure(ctx, "login:ip-identifier", loginIPIdentifierScope(clientIP, identifier), uc.abuse.policy.LoginWindow); err != nil {
+	pairExceeded, pairRetry, err := uc.abuse.recordFailure(ctx, "login:ip-identifier", loginIPIdentifierScope(clientIP, identifier), uc.abuse.policy.LoginIPIdentifierLimit, uc.abuse.policy.LoginWindow)
+	if err != nil {
 		return err
 	}
-	if err := uc.abuse.recordFailure(ctx, "login:identifier", identifier, uc.abuse.policy.LoginWindow); err != nil {
+	_, _, err = uc.abuse.recordFailure(ctx, "login:identifier", identifier, math.MaxInt, uc.abuse.policy.LoginWindow)
+	if err != nil {
 		return err
 	}
-	return uc.abuse.recordFailure(ctx, "login:ip", clientIP, uc.abuse.policy.LoginWindow)
+	broadExceeded, broadRetry, err := uc.abuse.recordFailure(ctx, "login:ip", clientIP, uc.abuse.policy.LoginBroadIPLimit, uc.abuse.policy.LoginWindow)
+	if err != nil {
+		return err
+	}
+	if pairExceeded {
+		return response.NewRateLimitError("too many requests, please try again later", pairRetry)
+	}
+	if broadExceeded {
+		return response.NewRateLimitError("too many requests, please try again later", broadRetry)
+	}
+	return nil
 }
 
 func (uc *loginUseCase) resolveUser(ctx context.Context, identifier string) (*entity.User, error) {
