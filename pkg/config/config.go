@@ -28,8 +28,10 @@ type Config struct {
 // AuthAbuseConfig is deliberately owned by Auth although it lives in the
 // shared config package. Durations are fixed-window Redis TTLs.
 type AuthAbuseConfig struct {
-	LoginIPLimit             int           `mapstructure:"login_ip_limit"`
-	LoginIdentifierLimit     int           `mapstructure:"login_identifier_limit"`
+	LoginIPIdentifierLimit   int           `mapstructure:"login_ip_identifier_limit"`
+	LoginIdentifierRiskLimit int           `mapstructure:"login_identifier_risk_limit"`
+	LoginIdentifierRiskDelay time.Duration `mapstructure:"login_identifier_risk_delay"`
+	LoginBroadIPLimit        int           `mapstructure:"login_broad_ip_limit"`
 	LoginWindow              time.Duration `mapstructure:"login_window"`
 	RegisterIPHourlyLimit    int           `mapstructure:"register_ip_hourly_limit"`
 	RegisterIPDailyLimit     int           `mapstructure:"register_ip_daily_limit"`

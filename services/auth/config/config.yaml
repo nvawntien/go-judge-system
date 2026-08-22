@@ -60,8 +60,12 @@ jwt:
 # Redis-backed public-auth controls. Mail endpoints keep a generic response
 # when limited so account state and quota state cannot be enumerated.
 auth_abuse:
-  login_ip_limit: 20
-  login_identifier_limit: 5
+  # Failed-login counters only. The broad IP threshold is intentionally high:
+  # one address can represent a university, office, or CGNAT population.
+  login_ip_identifier_limit: 5
+  login_identifier_risk_limit: 5
+  login_identifier_risk_delay: 250ms
+  login_broad_ip_limit: 200
   login_window: 15m
   register_ip_hourly_limit: 5
   register_ip_daily_limit: 20

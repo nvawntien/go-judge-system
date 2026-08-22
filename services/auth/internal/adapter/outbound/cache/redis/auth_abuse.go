@@ -38,6 +38,22 @@ func (l *authAbuseLimiter) Allow(ctx context.Context, purpose, scope string, lim
 	}
 	return values[0] == 1, time.Duration(values[1]) * time.Millisecond, nil
 }
+
+func (l *authAbuseLimiter) Count(ctx context.Context, purpose, scope string) (int64, time.Duration, error) {
+	key := authAbuseKey(purpose, scope)
+	count, err := l.rdb.Get(ctx, key).Int64()
+	if err == redis.Nil {
+		return 0, 0, nil
+	}
+	if err != nil {
+		return 0, 0, err
+	}
+	ttl, err := l.rdb.PTTL(ctx, key).Result()
+	if err != nil {
+		return 0, 0, err
+	}
+	return count, ttl, nil
+}
 func (l *authAbuseLimiter) Reset(ctx context.Context, purpose, scope string) error {
 	return l.rdb.Del(ctx, authAbuseKey(purpose, scope)).Err()
 }

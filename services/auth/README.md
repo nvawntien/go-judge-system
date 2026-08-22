@@ -215,5 +215,10 @@ sending no email, so Redis or quota state cannot reveal whether an account
 exists. Envoy strips and overwrites `X-Client-IP` from its downstream peer;
 Auth never trusts client-provided forwarding headers.
 
+Login records only failed authentication attempts. Its hard controls are the
+per-IP-and-normalized-identifier scope and a deliberately high broad-IP scope
+for password spraying; identifier-wide failures apply only the configured,
+bounded soft delay so they cannot lock an account globally.
+
 ---
 Built for the Go Judge System.

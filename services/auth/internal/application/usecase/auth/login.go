@@ -31,21 +31,29 @@ func NewLoginUseCaseWithAbuse(userRepo outbound.UserRepository, passwordEncoder 
 
 func (uc *loginUseCase) Execute(ctx context.Context, req dto.LoginRequest) (*dto.LoginResponse, error) {
 	identifier := normalizedIdentifier(req.Identifier)
+	var clientIP string
 	if uc.abuse.limiter != nil {
-		clientIP, err := uc.abuse.clientIP(ctx)
+		var err error
+		clientIP, err = uc.abuse.clientIP(ctx)
 		if err != nil {
 			return nil, err
 		}
-		if _, err := uc.abuse.allow(ctx, "login:ip", clientIP, uc.abuse.policy.LoginIPLimit, uc.abuse.policy.LoginWindow); err != nil {
+		if err := uc.abuse.checkFailureLimit(ctx, "login:ip-identifier", loginIPIdentifierScope(clientIP, identifier), uc.abuse.policy.LoginIPIdentifierLimit); err != nil {
 			return nil, err
 		}
-		if _, err := uc.abuse.allow(ctx, "login:identifier", identifier, uc.abuse.policy.LoginIdentifierLimit, uc.abuse.policy.LoginWindow); err != nil {
+		if err := uc.abuse.checkFailureLimit(ctx, "login:ip", clientIP, uc.abuse.policy.LoginBroadIPLimit); err != nil {
+			return nil, err
+		}
+		if err := uc.abuse.delayForIdentifierRisk(ctx, identifier); err != nil {
 			return nil, err
 		}
 	}
 	user, err := uc.resolveUser(ctx, identifier)
 	if err != nil {
 		if errors.Is(err, domain.ErrUserNotFound) {
+			if err := uc.recordLoginFailure(ctx, clientIP, identifier); err != nil {
+				return nil, err
+			}
 			return nil, domain.ErrInvalidCredentials
 		}
 		return nil, domain.ErrInternalServer.Wrap(err)
@@ -59,9 +67,13 @@ func (uc *loginUseCase) Execute(ctx context.Context, req dto.LoginRequest) (*dto
 	}
 
 	if check := uc.passwordEncoder.ComparePasswords(user.Password, []byte(req.Password)); !check {
+		if err := uc.recordLoginFailure(ctx, clientIP, identifier); err != nil {
+			return nil, err
+		}
 		return nil, domain.ErrInvalidCredentials
 	}
 	if uc.abuse.limiter != nil {
+		_ = uc.abuse.limiter.Reset(ctx, "login:ip-identifier", loginIPIdentifierScope(clientIP, identifier))
 		_ = uc.abuse.limiter.Reset(ctx, "login:identifier", identifier)
 	}
 
@@ -99,6 +111,19 @@ func (uc *loginUseCase) Execute(ctx context.Context, req dto.LoginRequest) (*dto
 		RefreshExpire: refreshExpire,
 	}, nil
 
+}
+
+func (uc *loginUseCase) recordLoginFailure(ctx context.Context, clientIP, identifier string) error {
+	if uc.abuse.limiter == nil {
+		return nil
+	}
+	if err := uc.abuse.recordFailure(ctx, "login:ip-identifier", loginIPIdentifierScope(clientIP, identifier), uc.abuse.policy.LoginWindow); err != nil {
+		return err
+	}
+	if err := uc.abuse.recordFailure(ctx, "login:identifier", identifier, uc.abuse.policy.LoginWindow); err != nil {
+		return err
+	}
+	return uc.abuse.recordFailure(ctx, "login:ip", clientIP, uc.abuse.policy.LoginWindow)
 }
 
 func (uc *loginUseCase) resolveUser(ctx context.Context, identifier string) (*entity.User, error) {
