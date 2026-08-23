@@ -51,6 +51,10 @@ static_resources:
                       domains:
                         - "*"
                       request_headers_to_remove:
+                        - x-user-id
+                        - x-role
+                        - x-username
+                        - x-token-iat
                         - x-client-ip
                       request_headers_to_add:
                         - header:
