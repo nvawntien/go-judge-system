@@ -215,6 +215,18 @@ sending no email, so Redis or quota state cannot reveal whether an account
 exists. Envoy strips and overwrites `X-Client-IP` from its downstream peer;
 Auth never trusts client-provided forwarding headers.
 
+This assumes Envoy's downstream peer is the end-user connection. If a CDN,
+load balancer, or another reverse proxy is added ahead of Envoy, this boundary
+must be redesigned with an explicit trusted-proxy chain before relying on the
+header for abuse controls.
+
+With an isolated, source-built non-production stack running behind Envoy, run
+the black-box regression test with
+`AUTH_CLIENT_IP_TRUST_INTEGRATION_BASE_URL=http://127.0.0.1:8080 go test
+./internal/adapter/inbound/http -run TestClientIPTrustIntegration -count=1`.
+It verifies that rotating client-supplied `X-Client-IP`, `X-Forwarded-For`, and
+`X-Real-IP` cannot create fresh login limiter buckets.
+
 Login records only failed authentication attempts. Its hard controls are the
 per-IP-and-normalized-identifier scope and a deliberately high broad-IP scope
 for password spraying; identifier-wide failures apply only the configured,
