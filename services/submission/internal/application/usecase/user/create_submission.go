@@ -22,6 +22,7 @@ type createSubmissionUseCase struct {
 	judgePublisher outbound.JudgePublisher
 	attemptIDs     outbound.AttemptIDGenerator
 	problemReader  outbound.ProblemReader
+	cooldown       outbound.SubmissionCooldown
 }
 
 func NewCreateSubmissionUseCase(
@@ -30,6 +31,7 @@ func NewCreateSubmissionUseCase(
 	judgePublisher outbound.JudgePublisher,
 	attemptIDs outbound.AttemptIDGenerator,
 	problemReader outbound.ProblemReader,
+	cooldown outbound.SubmissionCooldown,
 	attemptRepos ...outbound.SubmissionAttemptRepository,
 ) inbound.CreateSubmissionUseCase {
 	var attemptRepo outbound.SubmissionAttemptRepository
@@ -43,6 +45,7 @@ func NewCreateSubmissionUseCase(
 		judgePublisher: judgePublisher,
 		attemptIDs:     attemptIDs,
 		problemReader:  problemReader,
+		cooldown:       cooldown,
 	}
 }
 
@@ -77,6 +80,20 @@ func (uc *createSubmissionUseCase) Execute(
 	})
 	if err != nil {
 		return dto.CreateSubmissionResponse{}, err
+	}
+	if uc.cooldown == nil {
+		return dto.CreateSubmissionResponse{}, domain.ErrSubmissionCooldownUnavailable
+	}
+
+	cooldownResult, err := uc.cooldown.Acquire(ctx, claims.UserID, problem.ID)
+	if err != nil {
+		return dto.CreateSubmissionResponse{}, domain.ErrSubmissionCooldownUnavailable.Wrap(err)
+	}
+	if !cooldownResult.Allowed {
+		return dto.CreateSubmissionResponse{}, response.NewRateLimitError(
+			"You're submitting too quickly. Please try again shortly.",
+			cooldownResult.RetryAfter,
+		)
 	}
 
 	attemptID := strings.TrimSpace(uc.attemptIDs.NewAttemptID())

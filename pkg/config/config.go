@@ -20,6 +20,7 @@ type Config struct {
 	AuthGRPC    AuthGRPCConfig    `mapstructure:"auth_grpc"`
 	ProblemGRPC ProblemGRPCConfig `mapstructure:"problem_grpc"`
 	JudgeGRPC   JudgeGRPCConfig   `mapstructure:"judge_grpc"`
+	Submission  SubmissionConfig  `mapstructure:"submission"`
 	RunCode     RunCodeConfig     `mapstructure:"run_code"`
 	SSE         SSEConfig         `mapstructure:"sse"`
 	AuthAbuse   AuthAbuseConfig   `mapstructure:"auth_abuse"`
@@ -129,6 +130,12 @@ type ProblemGRPCConfig struct {
 type JudgeGRPCConfig struct {
 	Address string        `mapstructure:"address"`
 	Timeout time.Duration `mapstructure:"timeout"`
+}
+
+// SubmissionConfig contains small, service-owned controls for official
+// submission intake. It is intentionally separate from queue/worker settings.
+type SubmissionConfig struct {
+	SubmitCooldown time.Duration `mapstructure:"submit_cooldown"`
 }
 
 type RunCodeConfig struct {

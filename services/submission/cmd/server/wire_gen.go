@@ -20,6 +20,7 @@ import (
 	user2 "go-judge-system/services/submission/internal/adapter/inbound/http/handler/user"
 	kafka2 "go-judge-system/services/submission/internal/adapter/inbound/kafka"
 	auth2 "go-judge-system/services/submission/internal/adapter/outbound/auth"
+	"go-judge-system/services/submission/internal/adapter/outbound/cooldown"
 	"go-judge-system/services/submission/internal/adapter/outbound/id"
 	"go-judge-system/services/submission/internal/adapter/outbound/judge"
 	"go-judge-system/services/submission/internal/adapter/outbound/outbox"
@@ -71,8 +72,6 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	problemServiceClient := container.ProvideProblemServiceClient(clientConn)
 	duration := container.ProvideProblemGRPCTimeout(problemGRPCConfig)
 	problemReader := problem.NewGRPCProblemReader(problemServiceClient, duration)
-	createSubmissionUseCase := user.NewCreateSubmissionUseCase(submissionRepository, transactionManager, judgePublisher, attemptIDGenerator, problemReader, submissionAttemptRepository)
-	createSubmissionHandler := user2.NewCreateSubmissionHandler(createSubmissionUseCase)
 	judgeGRPCConfig, err := container.ProvideJudgeGRPCConfig(cfg)
 	if err != nil {
 		return nil, err
@@ -108,7 +107,6 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	string2 := provideServerMode(serverConfig)
 	zapLogger := logger.NewLogger(loggerConfig, string2)
 	submissionEventsHandler := user2.NewSubmissionEventsHandler(submissionStreamSnapshotRepository, submissionStreamTicketService, submissionEventHub, sseConfig, zapLogger)
-	userHandler := handler.NewUserHandler(createSubmissionHandler, runCodeHandler, getSubmissionHandler, listMySubmissionsHandler, getMyProfileStatsHandler, getPublicProfileStatsHandler, issueSubmissionStreamTicketHandler, submissionEventsHandler)
 	listAdminSubmissionsUseCase := admin.NewListAdminSubmissionsUseCase(submissionRepository)
 	listSubmissionsHandler := admin2.NewListSubmissionsHandler(listAdminSubmissionsUseCase)
 	getAdminSubmissionDetailUseCase := admin.NewGetAdminSubmissionDetailUseCase(submissionRepository, submissionResultRepository, submissionAttemptRepository)
@@ -121,6 +119,14 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	if err != nil {
 		return nil, err
 	}
+	submissionConfig := cfg.Submission
+	redisSubmissionCooldown, err := cooldown.NewRedisSubmissionCooldown(client, submissionConfig)
+	if err != nil {
+		return nil, err
+	}
+	createSubmissionUseCase := user.NewCreateSubmissionUseCase(submissionRepository, transactionManager, judgePublisher, attemptIDGenerator, problemReader, redisSubmissionCooldown, submissionAttemptRepository)
+	createSubmissionHandler := user2.NewCreateSubmissionHandler(createSubmissionUseCase)
+	userHandler := handler.NewUserHandler(createSubmissionHandler, runCodeHandler, getSubmissionHandler, listMySubmissionsHandler, getMyProfileStatsHandler, getPublicProfileStatsHandler, issueSubmissionStreamTicketHandler, submissionEventsHandler)
 	jwtConfig := cfg.JWT
 	logoutAllIATStore := auth.NewRedisLogoutAllIATStore(client, jwtConfig)
 	handlerFunc := middleware.NewAuthMiddleware(logoutAllIATStore)
