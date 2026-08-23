@@ -3,6 +3,9 @@ package admin
 import (
 	"context"
 	"errors"
+	"fmt"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -16,9 +19,10 @@ import (
 )
 
 type fakeRejudgeSubmissionRepo struct {
-	submission *entity.Submission
-	updated    *entity.Submission
-	updateErr  error
+	submission     *entity.Submission
+	updated        *entity.Submission
+	updateErr      error
+	forUpdateCalls int
 }
 
 func (r *fakeRejudgeSubmissionRepo) Create(context.Context, *entity.Submission) error { return nil }
@@ -30,6 +34,7 @@ func (r *fakeRejudgeSubmissionRepo) GetByID(context.Context, int64) (*entity.Sub
 	return &copy, nil
 }
 func (r *fakeRejudgeSubmissionRepo) GetByIDForUpdate(context.Context, int64) (*entity.Submission, error) {
+	r.forUpdateCalls++
 	if r.submission == nil {
 		return nil, domain.ErrSubmissionNotFound
 	}
@@ -53,11 +58,13 @@ func (r *fakeRejudgeSubmissionRepo) ResultSummaries(context.Context, []int64) (m
 }
 
 type fakeRejudgeAttemptRepo struct {
-	created   *entity.SubmissionAttempt
-	createErr error
+	created     *entity.SubmissionAttempt
+	createErr   error
+	createCalls int
 }
 
 func (r *fakeRejudgeAttemptRepo) Create(_ context.Context, attempt *entity.SubmissionAttempt) error {
+	r.createCalls++
 	if r.createErr != nil {
 		return r.createErr
 	}
@@ -122,11 +129,13 @@ func (tx rollbackRejudgeTx) ExecuteInTx(ctx context.Context, fn func(context.Con
 }
 
 type fakeRejudgePublisher struct {
-	job pkgjudge.JobMessage
-	err error
+	job   pkgjudge.JobMessage
+	err   error
+	calls int
 }
 
 func (p *fakeRejudgePublisher) Publish(_ context.Context, job pkgjudge.JobMessage) error {
+	p.calls++
 	p.job = job
 	return p.err
 }
@@ -176,6 +185,9 @@ func TestRejudgeAdminSubmissionCreatesNewAttemptAndJob(t *testing.T) {
 	}
 	if subRepo.updated == nil || subRepo.updated.Status != entity.StatusPending || subRepo.updated.CurrentAttemptID != "attempt-rejudge" {
 		t.Fatalf("updated submission = %+v", subRepo.updated)
+	}
+	if subRepo.forUpdateCalls != 1 {
+		t.Fatalf("locked submission reads = %d, want 1", subRepo.forUpdateCalls)
 	}
 	if subRepo.updated.ExecutionTime != nil || subRepo.updated.MemoryUsed != nil || subRepo.updated.CompileOutput != nil || subRepo.updated.ErrorMessage != nil {
 		t.Fatalf("rejudge did not clear previous terminal fields: %+v", subRepo.updated)
@@ -263,18 +275,43 @@ func TestRejudgeAdminSubmissionOutboxFailureRollsBack(t *testing.T) {
 	assertRejudgeRollback(t, subRepo, attemptRepo, publisher, submission)
 }
 
+func TestRejudgeAdminSubmissionAllowsModeratorAndAdmin(t *testing.T) {
+	for _, claims := range []auth.Claims{
+		{UserID: "moderator-1", Role: rbac.RoleModerator},
+		{UserID: "admin-1", Role: rbac.RoleAdmin},
+	} {
+		t.Run(string(claims.Role), func(t *testing.T) {
+			uc := NewRejudgeAdminSubmissionUseCase(
+				&fakeRejudgeSubmissionRepo{submission: rejudgeSubmissionFixture(entity.StatusAccepted)},
+				&fakeRejudgeAttemptRepo{},
+				fakeRejudgeTx{},
+				&fakeRejudgePublisher{},
+				fakeRejudgeAttemptIDs{next: "attempt-rejudge"},
+				fakeRejudgeProblemReader{},
+			)
+			if _, err := uc.Execute(context.Background(), claims, dto.RejudgeAdminSubmissionRequest{SubmissionID: 77}); err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+		})
+	}
+}
+
 func TestRejudgeAdminSubmissionRejectsForbiddenRole(t *testing.T) {
-	uc := NewRejudgeAdminSubmissionUseCase(
-		&fakeRejudgeSubmissionRepo{submission: rejudgeSubmissionFixture(entity.StatusAccepted)},
-		&fakeRejudgeAttemptRepo{},
-		fakeRejudgeTx{},
-		&fakeRejudgePublisher{},
-		fakeRejudgeAttemptIDs{next: "attempt-rejudge"},
-		fakeRejudgeProblemReader{},
-	)
-	_, err := uc.Execute(context.Background(), auth.Claims{UserID: "user-1", Role: rbac.RoleContributor}, dto.RejudgeAdminSubmissionRequest{SubmissionID: 77})
-	if !errors.Is(err, domain.ErrSubmissionForbidden) {
-		t.Fatalf("Execute() error = %v, want forbidden", err)
+	for _, role := range []rbac.Role{rbac.RoleUser, rbac.RoleContributor} {
+		t.Run(string(role), func(t *testing.T) {
+			uc := NewRejudgeAdminSubmissionUseCase(
+				&fakeRejudgeSubmissionRepo{submission: rejudgeSubmissionFixture(entity.StatusAccepted)},
+				&fakeRejudgeAttemptRepo{},
+				fakeRejudgeTx{},
+				&fakeRejudgePublisher{},
+				fakeRejudgeAttemptIDs{next: "attempt-rejudge"},
+				fakeRejudgeProblemReader{},
+			)
+			_, err := uc.Execute(context.Background(), auth.Claims{UserID: "user-1", Role: role}, dto.RejudgeAdminSubmissionRequest{SubmissionID: 77})
+			if !errors.Is(err, domain.ErrSubmissionForbidden) {
+				t.Fatalf("Execute() error = %v, want forbidden", err)
+			}
+		})
 	}
 }
 
@@ -299,18 +336,247 @@ func assertRejudgeRollback(
 	}
 }
 
-func TestRejudgeAdminSubmissionRejectsActiveSubmission(t *testing.T) {
+func TestRejudgeAdminSubmissionRejectsActiveSubmissionWithoutSideEffects(t *testing.T) {
+	for _, status := range []entity.Status{entity.StatusPending, entity.StatusJudging} {
+		for _, claims := range []auth.Claims{
+			{UserID: "moderator-1", Role: rbac.RoleModerator},
+			{UserID: "admin-1", Role: rbac.RoleAdmin},
+		} {
+			t.Run(string(status)+"/"+string(claims.Role), func(t *testing.T) {
+				attempts := &fakeRejudgeAttemptRepo{}
+				publisher := &fakeRejudgePublisher{}
+				uc := NewRejudgeAdminSubmissionUseCase(
+					&fakeRejudgeSubmissionRepo{submission: rejudgeSubmissionFixture(status)},
+					attempts,
+					fakeRejudgeTx{},
+					publisher,
+					fakeRejudgeAttemptIDs{next: "attempt-rejudge"},
+					fakeRejudgeProblemReader{},
+				)
+				_, err := uc.Execute(context.Background(), claims, dto.RejudgeAdminSubmissionRequest{SubmissionID: 77})
+				if !errors.Is(err, domain.ErrSubmissionRejudgeConflict) {
+					t.Fatalf("Execute() error = %v, want conflict", err)
+				}
+				if attempts.createCalls != 0 || publisher.calls != 0 {
+					t.Fatalf("active rejudge created attempt/outbox calls = %d/%d, want 0/0", attempts.createCalls, publisher.calls)
+				}
+			})
+		}
+	}
+}
+
+func TestRejudgeAdminSubmissionAllowsRejudgeAfterTerminalCompletion(t *testing.T) {
+	submission := rejudgeSubmissionFixture(entity.StatusPending)
+	repo := &fakeRejudgeSubmissionRepo{submission: submission}
+	attempts := &fakeRejudgeAttemptRepo{}
+	publisher := &fakeRejudgePublisher{}
 	uc := NewRejudgeAdminSubmissionUseCase(
-		&fakeRejudgeSubmissionRepo{submission: rejudgeSubmissionFixture(entity.StatusPending)},
-		&fakeRejudgeAttemptRepo{},
+		repo,
+		attempts,
 		fakeRejudgeTx{},
-		&fakeRejudgePublisher{},
+		publisher,
 		fakeRejudgeAttemptIDs{next: "attempt-rejudge"},
 		fakeRejudgeProblemReader{},
 	)
-	_, err := uc.Execute(context.Background(), auth.Claims{UserID: "mod-1", Role: rbac.RoleModerator}, dto.RejudgeAdminSubmissionRequest{SubmissionID: 77})
-	if !errors.Is(err, domain.ErrSubmissionRejudgeConflict) {
-		t.Fatalf("Execute() error = %v, want conflict", err)
+	claims := auth.Claims{UserID: "moderator-1", Role: rbac.RoleModerator}
+	req := dto.RejudgeAdminSubmissionRequest{SubmissionID: submission.ID}
+
+	if _, err := uc.Execute(context.Background(), claims, req); !errors.Is(err, domain.ErrSubmissionRejudgeConflict) {
+		t.Fatalf("active rejudge error = %v, want conflict", err)
+	}
+	repo.submission.Status = entity.StatusAccepted
+	if _, err := uc.Execute(context.Background(), claims, req); err != nil {
+		t.Fatalf("terminal rejudge error = %v", err)
+	}
+	if attempts.createCalls != 1 || publisher.calls != 1 {
+		t.Fatalf("attempt/outbox calls = %d/%d, want 1/1", attempts.createCalls, publisher.calls)
+	}
+}
+
+func TestRejudgeAdminSubmissionDifferentSubmissionsRemainIndependent(t *testing.T) {
+	claims := auth.Claims{UserID: "moderator-1", Role: rbac.RoleModerator}
+	for _, submissionID := range []int64{100, 101, 102} {
+		t.Run(fmt.Sprintf("submission-%d", submissionID), func(t *testing.T) {
+			submission := rejudgeSubmissionFixture(entity.StatusAccepted)
+			submission.ID = submissionID
+			attempts := &fakeRejudgeAttemptRepo{}
+			publisher := &fakeRejudgePublisher{}
+			uc := NewRejudgeAdminSubmissionUseCase(
+				&fakeRejudgeSubmissionRepo{submission: submission},
+				attempts,
+				fakeRejudgeTx{},
+				publisher,
+				fakeRejudgeAttemptIDs{next: fmt.Sprintf("attempt-%d", submissionID)},
+				fakeRejudgeProblemReader{},
+			)
+			if _, err := uc.Execute(context.Background(), claims, dto.RejudgeAdminSubmissionRequest{SubmissionID: submissionID}); err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+			if attempts.createCalls != 1 || publisher.calls != 1 {
+				t.Fatalf("attempt/outbox calls = %d/%d, want 1/1", attempts.createCalls, publisher.calls)
+			}
+		})
+	}
+}
+
+type serializedRejudgeTx struct {
+	mu sync.Mutex
+}
+
+func (tx *serializedRejudgeTx) ExecuteInTx(ctx context.Context, fn func(context.Context) error) error {
+	tx.mu.Lock()
+	defer tx.mu.Unlock()
+	return fn(ctx)
+}
+
+type concurrentRejudgeSubmissionRepo struct {
+	mu         sync.Mutex
+	submission *entity.Submission
+	updates    int
+}
+
+func (r *concurrentRejudgeSubmissionRepo) Create(context.Context, *entity.Submission) error {
+	return nil
+}
+
+func (r *concurrentRejudgeSubmissionRepo) GetByID(context.Context, int64) (*entity.Submission, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.submission == nil {
+		return nil, domain.ErrSubmissionNotFound
+	}
+	copy := *r.submission
+	return &copy, nil
+}
+
+func (r *concurrentRejudgeSubmissionRepo) GetByIDForUpdate(ctx context.Context, id int64) (*entity.Submission, error) {
+	return r.GetByID(ctx, id)
+}
+
+func (r *concurrentRejudgeSubmissionRepo) Update(_ context.Context, submission *entity.Submission) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	copy := *submission
+	r.submission = &copy
+	r.updates++
+	return nil
+}
+
+func (r *concurrentRejudgeSubmissionRepo) List(context.Context, outbound.ListSubmissionsFilter) (outbound.ListSubmissionsResult, error) {
+	return outbound.ListSubmissionsResult{}, nil
+}
+
+func (r *concurrentRejudgeSubmissionRepo) ResultSummaries(context.Context, []int64) (map[int64]outbound.SubmissionResultSummary, error) {
+	return map[int64]outbound.SubmissionResultSummary{}, nil
+}
+
+type concurrentRejudgeAttemptRepo struct {
+	mu       sync.Mutex
+	attempts []*entity.SubmissionAttempt
+}
+
+func (r *concurrentRejudgeAttemptRepo) Create(_ context.Context, attempt *entity.SubmissionAttempt) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	copy := *attempt
+	r.attempts = append(r.attempts, &copy)
+	return nil
+}
+
+func (r *concurrentRejudgeAttemptRepo) GetByAttemptID(context.Context, string) (*entity.SubmissionAttempt, error) {
+	return nil, domain.ErrSubmissionNotFound
+}
+
+func (r *concurrentRejudgeAttemptRepo) MarkCompleted(context.Context, string, entity.Status, *int, *int, *string) error {
+	return nil
+}
+
+type concurrentRejudgePublisher struct {
+	mu   sync.Mutex
+	jobs []pkgjudge.JobMessage
+}
+
+func (p *concurrentRejudgePublisher) Publish(_ context.Context, job pkgjudge.JobMessage) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.jobs = append(p.jobs, job)
+	return nil
+}
+
+type concurrentRejudgeAttemptIDs struct {
+	next atomic.Int64
+}
+
+func (g *concurrentRejudgeAttemptIDs) NewAttemptID() string {
+	return fmt.Sprintf("attempt-concurrent-%d", g.next.Add(1))
+}
+
+func TestRejudgeAdminSubmissionConcurrentRequestsCreateOneAttemptAndOutboxJob(t *testing.T) {
+	const requests = 20
+	submission := rejudgeSubmissionFixture(entity.StatusAccepted)
+	repo := &concurrentRejudgeSubmissionRepo{submission: submission}
+	attempts := &concurrentRejudgeAttemptRepo{}
+	publisher := &concurrentRejudgePublisher{}
+	uc := NewRejudgeAdminSubmissionUseCase(
+		repo,
+		attempts,
+		&serializedRejudgeTx{},
+		publisher,
+		&concurrentRejudgeAttemptIDs{},
+		fakeRejudgeProblemReader{},
+	)
+
+	start := make(chan struct{})
+	errs := make(chan error, requests)
+	var wg sync.WaitGroup
+	for range requests {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, err := uc.Execute(
+				context.Background(),
+				auth.Claims{UserID: "moderator-1", Role: rbac.RoleModerator},
+				dto.RejudgeAdminSubmissionRequest{SubmissionID: submission.ID},
+			)
+			errs <- err
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+
+	successes := 0
+	conflicts := 0
+	for err := range errs {
+		switch {
+		case err == nil:
+			successes++
+		case errors.Is(err, domain.ErrSubmissionRejudgeConflict):
+			conflicts++
+		default:
+			t.Fatalf("unexpected concurrent rejudge error: %v", err)
+		}
+	}
+	if successes != 1 || conflicts != requests-1 {
+		t.Fatalf("successes/conflicts = %d/%d, want 1/%d", successes, conflicts, requests-1)
+	}
+
+	repo.mu.Lock()
+	current := *repo.submission
+	updates := repo.updates
+	repo.mu.Unlock()
+	attempts.mu.Lock()
+	createdAttempts := append([]*entity.SubmissionAttempt(nil), attempts.attempts...)
+	attempts.mu.Unlock()
+	publisher.mu.Lock()
+	jobs := append([]pkgjudge.JobMessage(nil), publisher.jobs...)
+	publisher.mu.Unlock()
+	if updates != 1 || len(createdAttempts) != 1 || len(jobs) != 1 {
+		t.Fatalf("submission updates/attempts/outbox jobs = %d/%d/%d, want 1/1/1", updates, len(createdAttempts), len(jobs))
+	}
+	if current.Status != entity.StatusPending || current.CurrentAttemptID != createdAttempts[0].AttemptID || jobs[0].AttemptID != current.CurrentAttemptID {
+		t.Fatalf("current submission/attempt/job mismatch: %+v / %+v / %+v", current, createdAttempts[0], jobs[0])
 	}
 }
 
