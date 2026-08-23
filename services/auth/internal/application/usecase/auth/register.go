@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"go-judge-system/pkg/config"
+	"go-judge-system/pkg/response"
 	"time"
 
 	"go-judge-system/services/auth/internal/application/dto"
@@ -25,8 +26,8 @@ type register struct {
 	abuse           authAbuse
 }
 
-func NewRegisterUseCaseWithAbuse(userRepo outbound.UserRepository, mailProvider outbound.MailProvider, tokenGenerator outbound.TokenGenerator, tokenRepo outbound.TokenRepository, passwordEncoder outbound.PasswordEncoder, limiter outbound.AuthAbuseLimiter, policy config.AuthAbuseConfig) inbound.RegisterUseCase {
-	return &register{userRepo: userRepo, mailProvider: mailProvider, tokenGenerator: tokenGenerator, tokenRepo: tokenRepo, passwordEncoder: passwordEncoder, abuse: authAbuse{limiter: limiter, policy: policy}}
+func NewRegisterUseCaseWithAbuse(userRepo outbound.UserRepository, mailProvider outbound.MailProvider, tokenGenerator outbound.TokenGenerator, tokenRepo outbound.TokenRepository, passwordEncoder outbound.PasswordEncoder, admission outbound.AbuseAdmission, policy config.AuthAbuseConfig) inbound.RegisterUseCase {
+	return &register{userRepo: userRepo, mailProvider: mailProvider, tokenGenerator: tokenGenerator, tokenRepo: tokenRepo, passwordEncoder: passwordEncoder, abuse: authAbuse{admission: admission, policy: policy}}
 }
 
 func NewRegisterUseCase(
@@ -50,19 +51,21 @@ func (r *register) Execute(ctx context.Context, req dto.RegisterRequest) error {
 	if err != nil {
 		return domain.ErrInvalidEmail
 	}
-	if r.abuse.limiter != nil {
+	if r.abuse.admission != nil {
 		clientIP, err := r.abuse.clientIP(ctx)
 		if err != nil {
 			return err
 		}
-		if _, err := r.abuse.allow(ctx, "register:ip:hour", clientIP, r.abuse.policy.RegisterIPHourlyLimit, time.Hour); err != nil {
+		result, err := r.abuse.acquire(ctx, outbound.AdmissionRequest{Scopes: []outbound.AdmissionScope{
+			{Purpose: "register:ip-email", Scope: ipTargetScope(clientIP, emailVO.String()), Limit: r.abuse.policy.RegisterIPEmailLimit, Window: r.abuse.policy.MailHourlyWindow},
+			{Purpose: "register:ip-hour", Scope: clientIP, Limit: r.abuse.policy.RegisterBroadIPHourlyLimit, Window: r.abuse.policy.MailHourlyWindow},
+			{Purpose: "register:ip-day", Scope: clientIP, Limit: r.abuse.policy.RegisterBroadIPDailyLimit, Window: r.abuse.policy.MailDailyWindow},
+		}})
+		if err != nil {
 			return err
 		}
-		if _, err := r.abuse.allow(ctx, "register:ip:day", clientIP, r.abuse.policy.RegisterIPDailyLimit, 24*time.Hour); err != nil {
-			return err
-		}
-		if _, err := r.abuse.allow(ctx, "register:email:day", emailVO.String(), r.abuse.policy.RegisterEmailDailyLimit, 24*time.Hour); err != nil {
-			return err
+		if !result.Allowed {
+			return response.NewRateLimitError("too many requests, please try again later", result.RetryAfter)
 		}
 	}
 

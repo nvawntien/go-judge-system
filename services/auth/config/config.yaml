@@ -67,15 +67,23 @@ auth_abuse:
   login_identifier_risk_delay: 250ms
   login_broad_ip_limit: 200
   login_window: 15m
-  register_ip_hourly_limit: 5
-  register_ip_daily_limit: 20
-  register_email_daily_limit: 3
-  mail_ip_hourly_limit: 10
-  mail_ip_daily_limit: 40
+  # These broad IP limits are deliberately high: one public address can
+  # represent a university, office, computer lab, or CGNAT population.
+  register_ip_email_limit: 3
+  register_broad_ip_hourly_limit: 100
+  register_broad_ip_daily_limit: 500
+  mail_hourly_window: 1h
+  mail_daily_window: 24h
   resend_account_hourly_limit: 5
   resend_account_daily_limit: 12
+  resend_ip_account_limit: 5
+  resend_broad_ip_hourly_limit: 100
+  resend_broad_ip_daily_limit: 500
   forgot_account_hourly_limit: 3
   forgot_account_daily_limit: 10
+  forgot_ip_account_limit: 5
+  forgot_broad_ip_hourly_limit: 100
+  forgot_broad_ip_daily_limit: 500
   email_cooldown: 60s
   token_ip_limit: 30
   token_window: 5m

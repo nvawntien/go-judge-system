@@ -23,8 +23,8 @@ type resendVerificationUseCase struct {
 	abuse          authAbuse
 }
 
-func NewResendVerificationUseCaseWithAbuse(userRepo outbound.UserRepository, mailProvider outbound.MailProvider, tokenGenerator outbound.TokenGenerator, tokenRepo outbound.TokenRepository, limiter outbound.AuthAbuseLimiter, policy config.AuthAbuseConfig) inbound.ResendVerificationUseCase {
-	return &resendVerificationUseCase{userRepo: userRepo, mailProvider: mailProvider, tokenGenerator: tokenGenerator, tokenRepo: tokenRepo, abuse: authAbuse{limiter: limiter, policy: policy}}
+func NewResendVerificationUseCaseWithAbuse(userRepo outbound.UserRepository, mailProvider outbound.MailProvider, tokenGenerator outbound.TokenGenerator, tokenRepo outbound.TokenRepository, admission outbound.AbuseAdmission, policy config.AuthAbuseConfig) inbound.ResendVerificationUseCase {
+	return &resendVerificationUseCase{userRepo: userRepo, mailProvider: mailProvider, tokenGenerator: tokenGenerator, tokenRepo: tokenRepo, abuse: authAbuse{admission: admission, policy: policy}}
 }
 
 func NewResendVerificationUseCase(
@@ -48,16 +48,10 @@ func (uc *resendVerificationUseCase) Execute(ctx context.Context, req dto.Resend
 	}
 
 	email := emailVO.String()
-	if uc.abuse.limiter != nil {
-		clientIP, err := uc.abuse.clientIP(ctx)
+	var clientIP string
+	if uc.abuse.admission != nil {
+		clientIP, err = uc.abuse.clientIP(ctx)
 		if err != nil {
-			return nil
-		}
-		// Always return the generic success response to preserve account privacy.
-		if _, err := uc.abuse.allow(ctx, "verify-email-send:ip:hour", clientIP, uc.abuse.policy.MailIPHourlyLimit, time.Hour); err != nil {
-			return nil
-		}
-		if _, err := uc.abuse.allow(ctx, "verify-email-send:ip:day", clientIP, uc.abuse.policy.MailIPDailyLimit, 24*time.Hour); err != nil {
 			return nil
 		}
 	}
@@ -66,6 +60,7 @@ func (uc *resendVerificationUseCase) Execute(ctx context.Context, req dto.Resend
 	if err != nil {
 		// Do not leak whether an email exists in the system.
 		if errors.Is(err, domain.ErrUserNotFound) {
+			uc.acquireGenericRequest(ctx, clientIP, email)
 			return nil
 		}
 
@@ -74,16 +69,18 @@ func (uc *resendVerificationUseCase) Execute(ctx context.Context, req dto.Resend
 
 	// User is already active: keep response generic to avoid account enumeration.
 	if user.IsActive {
+		uc.acquireGenericRequest(ctx, clientIP, email)
 		return nil
 	}
-	if uc.abuse.limiter != nil {
-		if _, err := uc.abuse.allow(ctx, "verify-email-send:account:cooldown", user.ID, 1, uc.abuse.policy.EmailCooldown); err != nil {
-			return nil
-		}
-		if _, err := uc.abuse.allow(ctx, "verify-email-send:account:hour", user.ID, uc.abuse.policy.ResendAccountHourlyLimit, time.Hour); err != nil {
-			return nil
-		}
-		if _, err := uc.abuse.allow(ctx, "verify-email-send:account:day", user.ID, uc.abuse.policy.ResendAccountDailyLimit, 24*time.Hour); err != nil {
+	if uc.abuse.admission != nil {
+		result, err := uc.abuse.acquire(ctx, outbound.AdmissionRequest{
+			Scopes: append(emailRequestScopes("resend", clientIP, email, uc.abuse.policy.ResendIPAccountLimit, uc.abuse.policy.ResendBroadIPHourlyLimit, uc.abuse.policy.ResendBroadIPDailyLimit, uc.abuse.policy.MailHourlyWindow, uc.abuse.policy.MailDailyWindow),
+				outbound.AdmissionScope{Purpose: "resend:account-hour", Scope: user.ID, Limit: uc.abuse.policy.ResendAccountHourlyLimit, Window: uc.abuse.policy.MailHourlyWindow},
+				outbound.AdmissionScope{Purpose: "resend:account-day", Scope: user.ID, Limit: uc.abuse.policy.ResendAccountDailyLimit, Window: uc.abuse.policy.MailDailyWindow},
+			),
+			Cooldown: &outbound.CooldownScope{Purpose: "resend:cooldown", Scope: user.ID, Duration: uc.abuse.policy.EmailCooldown},
+		})
+		if err != nil || !result.Allowed {
 			return nil
 		}
 	} else {
@@ -108,4 +105,11 @@ func (uc *resendVerificationUseCase) Execute(ctx context.Context, req dto.Resend
 	_ = uc.mailProvider.SendVerificationEmail(ctx, user.Email, rawToken)
 
 	return nil
+}
+
+func (uc *resendVerificationUseCase) acquireGenericRequest(ctx context.Context, clientIP, email string) {
+	if uc.abuse.admission == nil {
+		return
+	}
+	_, _ = uc.abuse.acquire(ctx, outbound.AdmissionRequest{Scopes: emailRequestScopes("resend", clientIP, email, uc.abuse.policy.ResendIPAccountLimit, uc.abuse.policy.ResendBroadIPHourlyLimit, uc.abuse.policy.ResendBroadIPDailyLimit, uc.abuse.policy.MailHourlyWindow, uc.abuse.policy.MailDailyWindow)})
 }

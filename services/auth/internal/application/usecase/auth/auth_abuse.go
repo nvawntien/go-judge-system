@@ -12,8 +12,17 @@ import (
 )
 
 type authAbuse struct {
-	limiter outbound.AuthAbuseLimiter
-	policy  config.AuthAbuseConfig
+	limiter   outbound.AuthAbuseLimiter
+	admission outbound.AbuseAdmission
+	policy    config.AuthAbuseConfig
+}
+
+func (a authAbuse) acquire(ctx context.Context, request outbound.AdmissionRequest) (outbound.AdmissionResult, error) {
+	result, err := a.admission.Acquire(ctx, request)
+	if err != nil {
+		return outbound.AdmissionResult{}, response.NewAppError(response.CodeServiceUnavailable, "authentication protection temporarily unavailable", err)
+	}
+	return result, nil
 }
 
 func (a authAbuse) clientIP(ctx context.Context) (string, error) {
@@ -77,4 +86,13 @@ func (a authAbuse) delayForIdentifierRisk(ctx context.Context, identifier string
 func loginIPIdentifierScope(clientIP, identifier string) string {
 	return clientIP + "\x00" + identifier
 }
-func normalizedIdentifier(value string) string { return strings.ToLower(strings.TrimSpace(value)) }
+func ipTargetScope(clientIP, target string) string { return clientIP + "\x00" + target }
+func normalizedIdentifier(value string) string     { return strings.ToLower(strings.TrimSpace(value)) }
+
+func emailRequestScopes(prefix, clientIP, target string, pairLimit, broadHourlyLimit, broadDailyLimit int, hourlyWindow, dailyWindow time.Duration) []outbound.AdmissionScope {
+	return []outbound.AdmissionScope{
+		{Purpose: prefix + ":ip-account", Scope: ipTargetScope(clientIP, target), Limit: pairLimit, Window: hourlyWindow},
+		{Purpose: prefix + ":ip-hour", Scope: clientIP, Limit: broadHourlyLimit, Window: hourlyWindow},
+		{Purpose: prefix + ":ip-day", Scope: clientIP, Limit: broadDailyLimit, Window: dailyWindow},
+	}
+}

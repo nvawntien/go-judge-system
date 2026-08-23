@@ -191,8 +191,11 @@ func TestResendAndForgotQuotaBlockMailWithoutChangingGenericResult(t *testing.T)
 	user := newVerifyTestUser(t, "quota-user", false)
 	users := &verifyUserRepository{users: map[string]*entity.User{user.ID: user}}
 	mail := &countingMail{}
-	policy := config.AuthAbuseConfig{MailIPHourlyLimit: 10, MailIPDailyLimit: 10, ResendAccountHourlyLimit: 1, ResendAccountDailyLimit: 10, ForgotAccountHourlyLimit: 1, ForgotAccountDailyLimit: 10, EmailCooldown: time.Hour}
-	resend := NewResendVerificationUseCaseWithAbuse(users, mail, &lifecycleTokenGenerator{tokens: []string{"verify-1"}}, newLifecycleTokenRepository(), newMemoryLimiter(), policy)
+	policy := mailAbusePolicy()
+	policy.ResendAccountHourlyLimit = 1
+	policy.ForgotAccountHourlyLimit = 1
+	policy.EmailCooldown = time.Hour
+	resend := NewResendVerificationUseCaseWithAbuse(users, mail, &lifecycleTokenGenerator{tokens: []string{"verify-1"}}, newLifecycleTokenRepository(), newMemoryAdmission(), policy)
 	resendCtx := requestctx.WithClientIP(context.Background(), "203.0.113.2")
 	for i := 0; i < 2; i++ {
 		if err := resend.Execute(resendCtx, dto.ResendVerificationRequest{Email: user.Email}); err != nil {
@@ -207,7 +210,7 @@ func TestResendAndForgotQuotaBlockMailWithoutChangingGenericResult(t *testing.T)
 	}
 
 	forgotMail := &countingMail{}
-	forgot := NewForgotPasswordUseCaseWithAbuse(users, newLifecycleTokenRepository(), &lifecycleTokenGenerator{tokens: []string{"reset-1"}}, forgotMail, newMemoryLimiter(), policy)
+	forgot := NewForgotPasswordUseCaseWithAbuse(users, newLifecycleTokenRepository(), &lifecycleTokenGenerator{tokens: []string{"reset-1"}}, forgotMail, newMemoryAdmission(), policy)
 	forgotCtx := requestctx.WithClientIP(context.Background(), "203.0.113.4")
 	for i := 0; i < 2; i++ {
 		if err := forgot.Execute(forgotCtx, dto.ForgotPasswordRequest{Email: user.Email}); err != nil {
@@ -231,16 +234,16 @@ func TestLoginFailsClosedWhenTrustedClientIPMetadataIsMissing(t *testing.T) {
 func TestEmailFlowsFailClosedWithoutTrustedClientIPMetadata(t *testing.T) {
 	user := newVerifyTestUser(t, "missing-ip", false)
 	users := &verifyUserRepository{users: map[string]*entity.User{user.ID: user}}
-	policy := config.AuthAbuseConfig{MailIPHourlyLimit: 10, MailIPDailyLimit: 10, ResendAccountHourlyLimit: 5, ResendAccountDailyLimit: 12, ForgotAccountHourlyLimit: 3, ForgotAccountDailyLimit: 10, EmailCooldown: time.Minute}
+	policy := mailAbusePolicy()
 
 	resendMail := &countingMail{}
-	resend := NewResendVerificationUseCaseWithAbuse(users, resendMail, &lifecycleTokenGenerator{tokens: []string{"verify"}}, newLifecycleTokenRepository(), newMemoryLimiter(), policy)
+	resend := NewResendVerificationUseCaseWithAbuse(users, resendMail, &lifecycleTokenGenerator{tokens: []string{"verify"}}, newLifecycleTokenRepository(), newMemoryAdmission(), policy)
 	if err := resend.Execute(context.Background(), dto.ResendVerificationRequest{Email: user.Email}); err != nil || resendMail.verify != 0 {
 		t.Fatalf("resend error=%v emails=%d", err, resendMail.verify)
 	}
 
 	forgotMail := &countingMail{}
-	forgot := NewForgotPasswordUseCaseWithAbuse(users, newLifecycleTokenRepository(), &lifecycleTokenGenerator{tokens: []string{"reset"}}, forgotMail, newMemoryLimiter(), policy)
+	forgot := NewForgotPasswordUseCaseWithAbuse(users, newLifecycleTokenRepository(), &lifecycleTokenGenerator{tokens: []string{"reset"}}, forgotMail, newMemoryAdmission(), policy)
 	if err := forgot.Execute(context.Background(), dto.ForgotPasswordRequest{Email: user.Email}); err != nil || forgotMail.forgot != 0 {
 		t.Fatalf("forgot error=%v emails=%d", err, forgotMail.forgot)
 	}
@@ -273,6 +276,38 @@ func (m *memoryLimiter) Reset(_ context.Context, purpose, scope string) error {
 
 var _ outbound.AuthAbuseLimiter = (*memoryLimiter)(nil)
 
+type memoryAdmission struct {
+	mu        sync.Mutex
+	values    map[string]int
+	cooldowns map[string]bool
+}
+
+func newMemoryAdmission() *memoryAdmission {
+	return &memoryAdmission{values: map[string]int{}, cooldowns: map[string]bool{}}
+}
+
+func (m *memoryAdmission) Acquire(_ context.Context, request outbound.AdmissionRequest) (outbound.AdmissionResult, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, scope := range request.Scopes {
+		if m.values[scope.Purpose+":"+scope.Scope] >= scope.Limit {
+			return outbound.AdmissionResult{RetryAfter: time.Minute}, nil
+		}
+	}
+	if request.Cooldown != nil && m.cooldowns[request.Cooldown.Purpose+":"+request.Cooldown.Scope] {
+		return outbound.AdmissionResult{RetryAfter: time.Minute}, nil
+	}
+	for _, scope := range request.Scopes {
+		m.values[scope.Purpose+":"+scope.Scope]++
+	}
+	if request.Cooldown != nil {
+		m.cooldowns[request.Cooldown.Purpose+":"+request.Cooldown.Scope] = true
+	}
+	return outbound.AdmissionResult{Allowed: true}, nil
+}
+
+var _ outbound.AbuseAdmission = (*memoryAdmission)(nil)
+
 type countingMail struct{ verify, forgot int }
 
 func (m *countingMail) SendVerificationEmail(context.Context, string, string) error {
@@ -288,4 +323,13 @@ var _ outbound.MailProvider = (*countingMail)(nil)
 
 func loginPolicy() config.AuthAbuseConfig {
 	return config.AuthAbuseConfig{LoginIPIdentifierLimit: 5, LoginIdentifierRiskLimit: 5, LoginIdentifierRiskDelay: 0, LoginBroadIPLimit: 200, LoginWindow: time.Minute}
+}
+
+func mailAbusePolicy() config.AuthAbuseConfig {
+	return config.AuthAbuseConfig{
+		RegisterIPEmailLimit: 3, RegisterBroadIPHourlyLimit: 100, RegisterBroadIPDailyLimit: 500,
+		ResendAccountHourlyLimit: 5, ResendAccountDailyLimit: 12, ResendIPAccountLimit: 5, ResendBroadIPHourlyLimit: 100, ResendBroadIPDailyLimit: 500,
+		ForgotAccountHourlyLimit: 3, ForgotAccountDailyLimit: 10, ForgotIPAccountLimit: 5, ForgotBroadIPHourlyLimit: 100, ForgotBroadIPDailyLimit: 500,
+		MailHourlyWindow: time.Hour, MailDailyWindow: 24 * time.Hour, EmailCooldown: time.Minute,
+	}
 }

@@ -39,6 +39,7 @@ var OutboundProviderSet = wire.NewSet(
 	postgres.NewUserRepository,
 	redis.NewTokenRepository,
 	redis.NewAuthAbuseLimiter,
+	redis.NewAbuseAdmission,
 	auth.NewRedisLogoutAllIATStore,
 	jwt.NewJWTProvider,
 	crypto.NewTokenGenerator,

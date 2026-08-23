@@ -33,15 +33,21 @@ type AuthAbuseConfig struct {
 	LoginIdentifierRiskDelay time.Duration `mapstructure:"login_identifier_risk_delay"`
 	LoginBroadIPLimit        int           `mapstructure:"login_broad_ip_limit"`
 	LoginWindow              time.Duration `mapstructure:"login_window"`
-	RegisterIPHourlyLimit    int           `mapstructure:"register_ip_hourly_limit"`
-	RegisterIPDailyLimit     int           `mapstructure:"register_ip_daily_limit"`
-	RegisterEmailDailyLimit  int           `mapstructure:"register_email_daily_limit"`
-	MailIPHourlyLimit        int           `mapstructure:"mail_ip_hourly_limit"`
-	MailIPDailyLimit         int           `mapstructure:"mail_ip_daily_limit"`
-	ResendAccountHourlyLimit int           `mapstructure:"resend_account_hourly_limit"`
-	ResendAccountDailyLimit  int           `mapstructure:"resend_account_daily_limit"`
-	ForgotAccountHourlyLimit int           `mapstructure:"forgot_account_hourly_limit"`
-	ForgotAccountDailyLimit  int           `mapstructure:"forgot_account_daily_limit"`
+	RegisterIPEmailLimit       int           `mapstructure:"register_ip_email_limit"`
+	RegisterBroadIPHourlyLimit int           `mapstructure:"register_broad_ip_hourly_limit"`
+	RegisterBroadIPDailyLimit  int           `mapstructure:"register_broad_ip_daily_limit"`
+	MailHourlyWindow            time.Duration `mapstructure:"mail_hourly_window"`
+	MailDailyWindow             time.Duration `mapstructure:"mail_daily_window"`
+	ResendAccountHourlyLimit    int           `mapstructure:"resend_account_hourly_limit"`
+	ResendAccountDailyLimit     int           `mapstructure:"resend_account_daily_limit"`
+	ResendIPAccountLimit        int           `mapstructure:"resend_ip_account_limit"`
+	ResendBroadIPHourlyLimit    int           `mapstructure:"resend_broad_ip_hourly_limit"`
+	ResendBroadIPDailyLimit     int           `mapstructure:"resend_broad_ip_daily_limit"`
+	ForgotAccountHourlyLimit    int           `mapstructure:"forgot_account_hourly_limit"`
+	ForgotAccountDailyLimit     int           `mapstructure:"forgot_account_daily_limit"`
+	ForgotIPAccountLimit        int           `mapstructure:"forgot_ip_account_limit"`
+	ForgotBroadIPHourlyLimit    int           `mapstructure:"forgot_broad_ip_hourly_limit"`
+	ForgotBroadIPDailyLimit     int           `mapstructure:"forgot_broad_ip_daily_limit"`
 	EmailCooldown            time.Duration `mapstructure:"email_cooldown"`
 	TokenIPLimit             int           `mapstructure:"token_ip_limit"`
 	TokenWindow              time.Duration `mapstructure:"token_window"`

@@ -25,8 +25,8 @@ type forgotPasswordUseCase struct {
 	abuse          authAbuse
 }
 
-func NewForgotPasswordUseCaseWithAbuse(userRepo outbound.UserRepository, tokenRepo outbound.TokenRepository, tokenGenerator outbound.TokenGenerator, mailProvider outbound.MailProvider, limiter outbound.AuthAbuseLimiter, policy config.AuthAbuseConfig) inbound.ForgotPasswordUseCase {
-	return &forgotPasswordUseCase{userRepo: userRepo, tokenRepo: tokenRepo, tokenGenerator: tokenGenerator, mailProvider: mailProvider, abuse: authAbuse{limiter: limiter, policy: policy}}
+func NewForgotPasswordUseCaseWithAbuse(userRepo outbound.UserRepository, tokenRepo outbound.TokenRepository, tokenGenerator outbound.TokenGenerator, mailProvider outbound.MailProvider, admission outbound.AbuseAdmission, policy config.AuthAbuseConfig) inbound.ForgotPasswordUseCase {
+	return &forgotPasswordUseCase{userRepo: userRepo, tokenRepo: tokenRepo, tokenGenerator: tokenGenerator, mailProvider: mailProvider, abuse: authAbuse{admission: admission, policy: policy}}
 }
 
 func NewForgotPasswordUseCase(
@@ -50,15 +50,10 @@ func (uc *forgotPasswordUseCase) Execute(ctx context.Context, req dto.ForgotPass
 	}
 
 	email := emailVO.String()
-	if uc.abuse.limiter != nil {
-		clientIP, err := uc.abuse.clientIP(ctx)
+	var clientIP string
+	if uc.abuse.admission != nil {
+		clientIP, err = uc.abuse.clientIP(ctx)
 		if err != nil {
-			return nil
-		}
-		if _, err := uc.abuse.allow(ctx, "forgot-password:ip:hour", clientIP, uc.abuse.policy.MailIPHourlyLimit, time.Hour); err != nil {
-			return nil
-		}
-		if _, err := uc.abuse.allow(ctx, "forgot-password:ip:day", clientIP, uc.abuse.policy.MailIPDailyLimit, 24*time.Hour); err != nil {
 			return nil
 		}
 	}
@@ -66,18 +61,20 @@ func (uc *forgotPasswordUseCase) Execute(ctx context.Context, req dto.ForgotPass
 	user, err := uc.userRepo.GetUserByEmail(ctx, email)
 	if err != nil {
 		if errors.Is(err, domain.ErrUserNotFound) {
+			uc.acquireGenericRequest(ctx, clientIP, email)
 			return nil
 		}
 		return domain.ErrInternalServer.Wrap(err)
 	}
-	if uc.abuse.limiter != nil {
-		if _, err := uc.abuse.allow(ctx, "forgot-password:account:cooldown", user.ID, 1, uc.abuse.policy.EmailCooldown); err != nil {
-			return nil
-		}
-		if _, err := uc.abuse.allow(ctx, "forgot-password:account:hour", user.ID, uc.abuse.policy.ForgotAccountHourlyLimit, time.Hour); err != nil {
-			return nil
-		}
-		if _, err := uc.abuse.allow(ctx, "forgot-password:account:day", user.ID, uc.abuse.policy.ForgotAccountDailyLimit, 24*time.Hour); err != nil {
+	if uc.abuse.admission != nil {
+		result, err := uc.abuse.acquire(ctx, outbound.AdmissionRequest{
+			Scopes: append(emailRequestScopes("forgot", clientIP, email, uc.abuse.policy.ForgotIPAccountLimit, uc.abuse.policy.ForgotBroadIPHourlyLimit, uc.abuse.policy.ForgotBroadIPDailyLimit, uc.abuse.policy.MailHourlyWindow, uc.abuse.policy.MailDailyWindow),
+				outbound.AdmissionScope{Purpose: "forgot:account-hour", Scope: user.ID, Limit: uc.abuse.policy.ForgotAccountHourlyLimit, Window: uc.abuse.policy.MailHourlyWindow},
+				outbound.AdmissionScope{Purpose: "forgot:account-day", Scope: user.ID, Limit: uc.abuse.policy.ForgotAccountDailyLimit, Window: uc.abuse.policy.MailDailyWindow},
+			),
+			Cooldown: &outbound.CooldownScope{Purpose: "forgot:cooldown", Scope: user.ID, Duration: uc.abuse.policy.EmailCooldown},
+		})
+		if err != nil || !result.Allowed {
 			return nil
 		}
 	} else {
@@ -103,4 +100,11 @@ func (uc *forgotPasswordUseCase) Execute(ctx context.Context, req dto.ForgotPass
 	}
 
 	return nil
+}
+
+func (uc *forgotPasswordUseCase) acquireGenericRequest(ctx context.Context, clientIP, email string) {
+	if uc.abuse.admission == nil {
+		return
+	}
+	_, _ = uc.abuse.acquire(ctx, outbound.AdmissionRequest{Scopes: emailRequestScopes("forgot", clientIP, email, uc.abuse.policy.ForgotIPAccountLimit, uc.abuse.policy.ForgotBroadIPHourlyLimit, uc.abuse.policy.ForgotBroadIPDailyLimit, uc.abuse.policy.MailHourlyWindow, uc.abuse.policy.MailDailyWindow)})
 }
