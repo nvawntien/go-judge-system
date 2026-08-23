@@ -16,5 +16,5 @@ func NewPublishProblemHandler(uc inbound.PublishProblemUseCase) *PublishProblemH
 }
 
 func (h *PublishProblemHandler) Handle(c *gin.Context) {
-	response.HandleWithParams(c, h.uc.Execute, response.CodeSuccess)
+	response.HandleWithParamsAndClaims(c, h.uc.Execute, response.CodeSuccess)
 }

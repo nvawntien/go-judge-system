@@ -77,6 +77,41 @@ func TestAdminUsersGetRequiresAdminAndReturnsUser(t *testing.T) {
 	}
 }
 
+func TestAssignRoleRequiresAdminInUseCase(t *testing.T) {
+	tests := []struct {
+		name    string
+		role    rbac.Role
+		allowed bool
+	}{
+		{name: "user", role: rbac.RoleUser},
+		{name: "moderator", role: rbac.RoleModerator},
+		{name: "admin", role: rbac.RoleAdmin, allowed: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			user := &entity.User{ID: testUserID, Role: rbac.RoleUser}
+			repo := &adminUsersRepository{users: map[string]*entity.User{testUserID: user}}
+			err := NewAssignRoleUseCase(repo).Execute(
+				context.Background(),
+				pkgauth.Claims{UserID: "actor", Role: test.role},
+				dto.UserIDRequest{UserID: testUserID},
+				dto.AssignRoleRequest{Role: rbac.RoleContributor},
+			)
+
+			if test.allowed {
+				if err != nil || user.Role != rbac.RoleContributor || repo.updateCalls != 1 {
+					t.Fatalf("error/role/updates = %v/%q/%d", err, user.Role, repo.updateCalls)
+				}
+				return
+			}
+			if !errors.Is(err, domain.ErrForbidden) || user.Role != rbac.RoleUser || repo.updateCalls != 0 {
+				t.Fatalf("error/role/updates = %v/%q/%d, want forbidden/user/0", err, user.Role, repo.updateCalls)
+			}
+		})
+	}
+}
+
 func TestAdminUsersSuspensionRevokesBeforePersistenceAndUnsuspendKeepsCutoff(t *testing.T) {
 	user := &entity.User{ID: testUserID, IsActive: true, UpdatedAt: time.Unix(1, 0)}
 	repo := &adminUsersRepository{users: map[string]*entity.User{user.ID: user}}

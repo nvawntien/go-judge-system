@@ -196,6 +196,35 @@ func HandleVoidWithParamsAndClaims[Req any](c *gin.Context, fn func(context.Cont
 	SuccessWithMessage(c, successCode, successMsg, nil)
 }
 
+// HandleVoidWithClaimsParamsAndBody binds authenticated claims, URI params, and
+// a JSON body for a void response.
+func HandleVoidWithClaimsParamsAndBody[P any, B any](c *gin.Context, fn func(context.Context, auth.Claims, P, B) error, successCode int, successMsg string) {
+	claims, ok := auth.GetClaims(c)
+	if !ok {
+		HandleError(c, NewAppError(CodeUnauthorized, "unauthorized", nil))
+		return
+	}
+
+	var params P
+	if err := c.ShouldBindUri(&params); err != nil {
+		HandleError(c, NewAppError(CodeParamInvalid, "invalid uri params", err))
+		return
+	}
+
+	var body B
+	if err := c.ShouldBindJSON(&body); err != nil {
+		HandleError(c, NewAppError(CodeBadRequest, "invalid request payload", err))
+		return
+	}
+
+	if err := fn(c.Request.Context(), claims, params, body); err != nil {
+		HandleError(c, err)
+		return
+	}
+
+	SuccessWithMessage(c, successCode, successMsg, nil)
+}
+
 // HandleWithParamsAndClaims: URI params + claims → data. Used for admin GET by ID.
 func HandleWithParamsAndClaims[Req any, Res any](c *gin.Context, fn func(context.Context, auth.Claims, Req) (Res, error), successCode int) {
 	claims, ok := auth.GetClaims(c)
