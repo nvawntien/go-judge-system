@@ -14,8 +14,8 @@ import (
 	"go-judge-system/pkg/logger"
 	"go-judge-system/pkg/middleware"
 	"go-judge-system/pkg/minio"
-	grpc "go-judge-system/services/auth/internal/adapter/inbound/grpc"
-	grpc2 "go-judge-system/services/auth/internal/adapter/inbound/grpc/handler"
+	"go-judge-system/services/auth/internal/adapter/inbound/grpc"
+	handler2 "go-judge-system/services/auth/internal/adapter/inbound/grpc/handler"
 	"go-judge-system/services/auth/internal/adapter/inbound/http"
 	"go-judge-system/services/auth/internal/adapter/inbound/http/handler"
 	admin2 "go-judge-system/services/auth/internal/adapter/inbound/http/handler/admin"
@@ -58,37 +58,36 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	}
 	tokenRepository := redis.NewTokenRepository(client)
 	passwordEncoder := security.NewBcryptHasher()
-	registerUseCase := auth.NewRegisterUseCase(userRepository, mailProvider, tokenGenerator, tokenRepository, passwordEncoder)
+	authAbuseLimiter := redis.NewAuthAbuseLimiter(client)
+	abuseAdmission := redis.NewAbuseAdmission(client)
+	authAbuseConfig := cfg.AuthAbuse
+	registerUseCase := auth.NewRegisterUseCaseWithAbuse(userRepository, mailProvider, tokenGenerator, tokenRepository, passwordEncoder, abuseAdmission, authAbuseConfig)
 	registerHandler := auth2.NewRegisterHandler(registerUseCase)
-	verifyEmailUseCase := auth.NewVerifyEmailUseCase(tokenGenerator, tokenRepository, userRepository)
+	verifyEmailUseCase := auth.NewVerifyEmailUseCaseWithAbuse(tokenGenerator, tokenRepository, userRepository, authAbuseLimiter, authAbuseConfig)
 	verifyEmailHandler := auth2.NewVerifyEmailHandler(verifyEmailUseCase)
-	resendVerificationUseCase := auth.NewResendVerificationUseCase(userRepository, mailProvider, tokenGenerator, tokenRepository)
+	resendVerificationUseCase := auth.NewResendVerificationUseCaseWithAbuse(userRepository, mailProvider, tokenGenerator, tokenRepository, abuseAdmission, authAbuseConfig)
 	resendVerificationHandler := auth2.NewResendVerificationHandler(resendVerificationUseCase)
 	jwtConfig := cfg.JWT
 	jwtProvider := jwt.NewJWTProvider(jwtConfig)
 	logoutAllIATStore := auth3.NewRedisLogoutAllIATStore(client, jwtConfig)
-	loginUseCase := auth.NewLoginUseCase(userRepository, passwordEncoder, jwtProvider, logoutAllIATStore)
+	loginUseCase := auth.NewLoginUseCaseWithAbuse(userRepository, passwordEncoder, jwtProvider, logoutAllIATStore, authAbuseLimiter, authAbuseConfig)
 	loginHandler := auth2.NewLoginHandler(loginUseCase)
 	logoutHandler := auth2.NewLogoutHandler()
 	logoutAllUseCase := auth.NewLogoutAllUseCase(logoutAllIATStore)
 	logoutAllHandler := auth2.NewLogoutAllHandler(logoutAllUseCase)
-	forgotPasswordUseCase := auth.NewForgotPasswordUseCase(userRepository, tokenRepository, tokenGenerator, mailProvider)
+	forgotPasswordUseCase := auth.NewForgotPasswordUseCaseWithAbuse(userRepository, tokenRepository, tokenGenerator, mailProvider, abuseAdmission, authAbuseConfig)
 	forgotPasswordHandler := auth2.NewForgotPasswordHandler(forgotPasswordUseCase)
-	resetPasswordUseCase := auth.NewResetPasswordUseCase(userRepository, tokenRepository, tokenGenerator, passwordEncoder, logoutAllIATStore)
+	resetPasswordUseCase := auth.NewResetPasswordUseCaseWithAbuse(userRepository, tokenRepository, tokenGenerator, passwordEncoder, logoutAllIATStore, authAbuseLimiter, authAbuseConfig)
 	resetPasswordHandler := auth2.NewResetPasswordHandler(resetPasswordUseCase)
 	changePasswordUseCase := auth.NewChangePasswordUseCase(userRepository, passwordEncoder, logoutAllIATStore)
 	changePasswordHandler := auth2.NewChangePasswordHandler(changePasswordUseCase)
-	refreshTokenUseCase := auth.NewRefreshTokenUseCase(jwtProvider, userRepository, logoutAllIATStore)
+	refreshTokenUseCase := auth.NewRefreshTokenUseCaseWithAbuse(jwtProvider, userRepository, logoutAllIATStore, authAbuseLimiter, authAbuseConfig)
 	refreshTokenHandler := auth2.NewRefreshTokenHandler(refreshTokenUseCase)
 	authHandler := handler.NewAuthHandler(registerHandler, verifyEmailHandler, resendVerificationHandler, loginHandler, logoutHandler, logoutAllHandler, forgotPasswordHandler, resetPasswordHandler, changePasswordHandler, refreshTokenHandler)
 	getMeUseCase := user.NewGetMeUseCase(userRepository)
 	getMeHandler := user2.NewGetMeHandler(getMeUseCase)
 	getProfileUseCase := user.NewGetProfileUseCase(userRepository)
 	getProfileHandler := user2.NewGetProfileHandler(getProfileUseCase)
-	resolvePublicUserUseCase := user.NewResolvePublicUserUseCase(userRepository)
-	resolvePublicUserHandler := grpc2.NewResolvePublicUserHandler(resolvePublicUserUseCase)
-	publicUserServer := grpc.NewPublicUserServer(resolvePublicUserHandler)
-	grpcServer := grpc.NewServer(serverConfig, publicUserServer)
 	searchPublicUsersUseCase := user.NewSearchPublicUsersUseCase(userRepository)
 	searchPublicUsersHandler := user2.NewSearchPublicUsersHandler(searchPublicUsersUseCase)
 	updateProfileUseCase := user.NewUpdateProfileUseCase(userRepository)
@@ -113,7 +112,11 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	adminHandler := handler.NewAdminHandler(assignRoleHandler, adminUsersHandler)
 	handlerFunc := middleware.NewAuthMiddleware(logoutAllIATStore)
 	router := http.NewRouter(authHandler, userHandler, adminHandler, handlerFunc, zapLogger)
-	app := container.NewApp(cfg, router, grpcServer, zapLogger)
+	resolvePublicUserUseCase := user.NewResolvePublicUserUseCase(userRepository)
+	resolvePublicUserHandler := handler2.NewResolvePublicUserHandler(resolvePublicUserUseCase)
+	publicUserServer := grpc.NewPublicUserServer(resolvePublicUserHandler)
+	server := grpc.NewServer(serverConfig, publicUserServer)
+	app := container.NewApp(cfg, router, server, zapLogger)
 	return app, nil
 }
 

@@ -20,8 +20,40 @@ type Config struct {
 	AuthGRPC    AuthGRPCConfig    `mapstructure:"auth_grpc"`
 	ProblemGRPC ProblemGRPCConfig `mapstructure:"problem_grpc"`
 	JudgeGRPC   JudgeGRPCConfig   `mapstructure:"judge_grpc"`
+	Submission  SubmissionConfig  `mapstructure:"submission"`
 	RunCode     RunCodeConfig     `mapstructure:"run_code"`
 	SSE         SSEConfig         `mapstructure:"sse"`
+	AuthAbuse   AuthAbuseConfig   `mapstructure:"auth_abuse"`
+}
+
+// AuthAbuseConfig is deliberately owned by Auth although it lives in the
+// shared config package. Durations are fixed-window Redis TTLs.
+type AuthAbuseConfig struct {
+	LoginIPIdentifierLimit   int           `mapstructure:"login_ip_identifier_limit"`
+	LoginIdentifierRiskLimit int           `mapstructure:"login_identifier_risk_limit"`
+	LoginIdentifierRiskDelay time.Duration `mapstructure:"login_identifier_risk_delay"`
+	LoginBroadIPLimit        int           `mapstructure:"login_broad_ip_limit"`
+	LoginWindow              time.Duration `mapstructure:"login_window"`
+	RegisterIPEmailLimit       int           `mapstructure:"register_ip_email_limit"`
+	RegisterBroadIPHourlyLimit int           `mapstructure:"register_broad_ip_hourly_limit"`
+	RegisterBroadIPDailyLimit  int           `mapstructure:"register_broad_ip_daily_limit"`
+	MailHourlyWindow            time.Duration `mapstructure:"mail_hourly_window"`
+	MailDailyWindow             time.Duration `mapstructure:"mail_daily_window"`
+	ResendAccountHourlyLimit    int           `mapstructure:"resend_account_hourly_limit"`
+	ResendAccountDailyLimit     int           `mapstructure:"resend_account_daily_limit"`
+	ResendIPAccountLimit        int           `mapstructure:"resend_ip_account_limit"`
+	ResendBroadIPHourlyLimit    int           `mapstructure:"resend_broad_ip_hourly_limit"`
+	ResendBroadIPDailyLimit     int           `mapstructure:"resend_broad_ip_daily_limit"`
+	ForgotAccountHourlyLimit    int           `mapstructure:"forgot_account_hourly_limit"`
+	ForgotAccountDailyLimit     int           `mapstructure:"forgot_account_daily_limit"`
+	ForgotIPAccountLimit        int           `mapstructure:"forgot_ip_account_limit"`
+	ForgotBroadIPHourlyLimit    int           `mapstructure:"forgot_broad_ip_hourly_limit"`
+	ForgotBroadIPDailyLimit     int           `mapstructure:"forgot_broad_ip_daily_limit"`
+	EmailCooldown            time.Duration `mapstructure:"email_cooldown"`
+	TokenIPLimit             int           `mapstructure:"token_ip_limit"`
+	TokenWindow              time.Duration `mapstructure:"token_window"`
+	RefreshIPLimit           int           `mapstructure:"refresh_ip_limit"`
+	RefreshWindow            time.Duration `mapstructure:"refresh_window"`
 }
 
 type AppConfig struct {
@@ -98,6 +130,12 @@ type ProblemGRPCConfig struct {
 type JudgeGRPCConfig struct {
 	Address string        `mapstructure:"address"`
 	Timeout time.Duration `mapstructure:"timeout"`
+}
+
+// SubmissionConfig contains small, service-owned controls for official
+// submission intake. It is intentionally separate from queue/worker settings.
+type SubmissionConfig struct {
+	SubmitCooldown time.Duration `mapstructure:"submit_cooldown"`
 }
 
 type RunCodeConfig struct {

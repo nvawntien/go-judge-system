@@ -16,10 +16,5 @@ func NewResetPasswordHandler(uc inbound.ResetPasswordUseCase) *ResetPasswordHand
 }
 
 func (h *ResetPasswordHandler) Handle(c *gin.Context) {
-	response.HandleVoid(
-		c,
-		h.uc.Execute,
-		response.CodeSuccess,
-		"password reset successfully, you can now log in with your new password",
-	)
+	response.HandleVoid(c, h.uc.Execute, response.CodeSuccess, "password reset successfully, you can now log in with your new password")
 }

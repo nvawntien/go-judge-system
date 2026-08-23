@@ -16,10 +16,5 @@ func NewForgotPasswordHandler(uc inbound.ForgotPasswordUseCase) *ForgotPasswordH
 }
 
 func (h *ForgotPasswordHandler) Handle(c *gin.Context) {
-	response.HandleVoid(
-		c,
-		h.uc.Execute,
-		response.CodeSuccess,
-		"If the email is valid, a link has been sent. Please check your email.",
-	)
+	response.HandleVoid(c, h.uc.Execute, response.CodeSuccess, "If the email is valid, a link has been sent. Please check your email.")
 }

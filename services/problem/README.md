@@ -77,7 +77,13 @@ graph TD
 
 ### Local Access Note
 
-Protected routes in this service expect `X-User-ID`, `X-Username`, and `X-Role` headers injected by the API gateway. For realistic local testing of authenticated endpoints, call the service through the gateway on `http://localhost:8080` or provide those headers manually in direct requests. In the Docker Compose setup, the service port is internal to the network.
+Protected routes trust `X-User-ID`, `X-Username`, `X-Role`, and `X-Token-Iat`
+only because Envoy removes client-supplied identity headers and KrakenD recreates
+them from a validated access token. For realistic local testing of authenticated
+endpoints, call the service through the gateway on `http://localhost:8080`.
+Supplying these headers directly is appropriate only for isolated middleware
+unit tests, never as an integration or deployment substitute. In Docker
+Compose, the service port is internal to the network.
 
 ---
 

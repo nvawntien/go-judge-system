@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	pkgauth "go-judge-system/pkg/auth"
+	"go-judge-system/pkg/config"
 	"go-judge-system/services/auth/internal/application/dto"
 	"go-judge-system/services/auth/internal/application/port/inbound"
 	"go-judge-system/services/auth/internal/application/port/outbound"
@@ -14,6 +15,11 @@ type refreshTokenUseCase struct {
 	jwt            outbound.JWTProvider
 	userRepo       outbound.UserRepository
 	logoutAllStore pkgauth.LogoutAllIATStore
+	abuse          authAbuse
+}
+
+func NewRefreshTokenUseCaseWithAbuse(jwt outbound.JWTProvider, userRepo outbound.UserRepository, logoutAllStore pkgauth.LogoutAllIATStore, limiter outbound.AuthAbuseLimiter, policy config.AuthAbuseConfig) inbound.RefreshTokenUseCase {
+	return &refreshTokenUseCase{jwt: jwt, userRepo: userRepo, logoutAllStore: logoutAllStore, abuse: authAbuse{limiter: limiter, policy: policy}}
 }
 
 func NewRefreshTokenUseCase(jwt outbound.JWTProvider, userRepo outbound.UserRepository, logoutAllStore pkgauth.LogoutAllIATStore) inbound.RefreshTokenUseCase {
@@ -25,6 +31,11 @@ func NewRefreshTokenUseCase(jwt outbound.JWTProvider, userRepo outbound.UserRepo
 }
 
 func (uc *refreshTokenUseCase) Execute(ctx context.Context, refreshToken string) (*dto.LoginResponse, error) {
+	if uc.abuse.limiter != nil {
+		if _, err := uc.abuse.allow(ctx, "refresh-token", refreshToken, uc.abuse.policy.RefreshIPLimit, uc.abuse.policy.RefreshWindow); err != nil {
+			return &dto.LoginResponse{}, err
+		}
+	}
 	id, username, role, refreshTokenIAT, err := uc.jwt.VerifyRefreshToken(ctx, refreshToken)
 	if err != nil {
 		return &dto.LoginResponse{}, domain.ErrInvalidOrExpiredToken

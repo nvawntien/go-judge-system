@@ -24,11 +24,11 @@ type GetProblemUseCase interface {
 }
 
 type PublishProblemUseCase interface {
-	Execute(ctx context.Context, params dto.ProblemIDRequest) (dto.ProblemDetailResponse, error)
+	Execute(ctx context.Context, claims auth.Claims, params dto.ProblemIDRequest) (dto.ProblemDetailResponse, error)
 }
 
 type HiddenProblemUseCase interface {
-	Execute(ctx context.Context, params dto.ProblemIDRequest) (dto.ProblemDetailResponse, error)
+	Execute(ctx context.Context, claims auth.Claims, params dto.ProblemIDRequest) (dto.ProblemDetailResponse, error)
 }
 
 type DeleteProblemUseCase interface {

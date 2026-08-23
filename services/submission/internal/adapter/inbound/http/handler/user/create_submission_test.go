@@ -11,6 +11,7 @@ import (
 
 	"go-judge-system/pkg/auth"
 	"go-judge-system/pkg/rbac"
+	"go-judge-system/pkg/response"
 	"go-judge-system/services/submission/internal/application/dto"
 	"go-judge-system/services/submission/internal/domain"
 
@@ -195,5 +196,37 @@ func TestCreateSubmissionHandler_InvalidPayload(t *testing.T) {
 	}
 	if useCase.called {
 		t.Fatal("use case must not be called for invalid payload")
+	}
+}
+
+func TestCreateSubmissionHandler_CooldownResponse(t *testing.T) {
+	claims := auth.Claims{UserID: "user-1"}
+	recorder, useCase := performRequestWithUseCase(
+		t,
+		`{"problem_id":42,"language":"GO","source_code":"x"}`,
+		&claims,
+		&fakeCreateSubmissionUseCase{err: response.NewRateLimitError("You're submitting too quickly. Please try again shortly.", 2*time.Second)},
+	)
+
+	if recorder.Code != http.StatusTooManyRequests {
+		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusTooManyRequests, recorder.Body.String())
+	}
+	if got := recorder.Header().Get("Retry-After"); got != "2" {
+		t.Fatalf("Retry-After = %q, want 2", got)
+	}
+	if !useCase.called {
+		t.Fatal("use case was not called")
+	}
+
+	var responseBody struct {
+		Status string `json:"status"`
+		Code   int    `json:"code"`
+		Msg    string `json:"msg"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &responseBody); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if responseBody.Status != "error" || responseBody.Code != 42900 || responseBody.Msg != "You're submitting too quickly. Please try again shortly." {
+		t.Fatalf("unexpected rate-limit envelope: %+v", responseBody)
 	}
 }

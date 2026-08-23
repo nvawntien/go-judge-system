@@ -4,14 +4,16 @@ import (
 	"fmt"
 	"net/http"
 	"runtime"
+	"time"
 )
 
 // AppError is a custom error carrying a business code
 type AppError struct {
-	Code    int
-	Message string
-	Err     error  // Root cause (for logging, not exposed to client)
-	Stack   string // caller info for debugging
+	Code       int
+	Message    string
+	Err        error         // Root cause (for logging, not exposed to client)
+	Stack      string        // caller info for debugging
+	RetryAfter time.Duration // optional HTTP Retry-After value for throttles
 }
 
 // Error implements the error interface
@@ -52,6 +54,10 @@ func NewAppError(code int, message string, err error) *AppError {
 		Message: message,
 		Err:     err,
 	}
+}
+
+func NewRateLimitError(message string, retryAfter time.Duration) *AppError {
+	return &AppError{Code: CodeRateLimitExceeded, Message: message, RetryAfter: retryAfter}
 }
 
 // GetHTTPStatus maps a business code to an HTTP status code

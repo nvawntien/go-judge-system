@@ -59,6 +59,9 @@ judge_grpc:
   address: "judge-worker:9093"
   timeout: 30s
 
+submission:
+  submit_cooldown: 3s
+
 run_code:
   max_testcases: 10
   max_source_code_bytes: 262144

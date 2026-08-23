@@ -3,6 +3,8 @@ package auth
 import (
 	"context"
 	"errors"
+	"go-judge-system/pkg/config"
+	"go-judge-system/pkg/response"
 	"time"
 
 	"go-judge-system/services/auth/internal/application/dto"
@@ -21,6 +23,11 @@ type register struct {
 	tokenGenerator  outbound.TokenGenerator
 	tokenRepo       outbound.TokenRepository
 	passwordEncoder outbound.PasswordEncoder
+	abuse           authAbuse
+}
+
+func NewRegisterUseCaseWithAbuse(userRepo outbound.UserRepository, mailProvider outbound.MailProvider, tokenGenerator outbound.TokenGenerator, tokenRepo outbound.TokenRepository, passwordEncoder outbound.PasswordEncoder, admission outbound.AbuseAdmission, policy config.AuthAbuseConfig) inbound.RegisterUseCase {
+	return &register{userRepo: userRepo, mailProvider: mailProvider, tokenGenerator: tokenGenerator, tokenRepo: tokenRepo, passwordEncoder: passwordEncoder, abuse: authAbuse{admission: admission, policy: policy}}
 }
 
 func NewRegisterUseCase(
@@ -44,12 +51,29 @@ func (r *register) Execute(ctx context.Context, req dto.RegisterRequest) error {
 	if err != nil {
 		return domain.ErrInvalidEmail
 	}
+	if r.abuse.admission != nil {
+		clientIP, err := r.abuse.clientIP(ctx)
+		if err != nil {
+			return err
+		}
+		result, err := r.abuse.acquire(ctx, outbound.AdmissionRequest{Scopes: []outbound.AdmissionScope{
+			{Purpose: "register:ip-email", Scope: ipTargetScope(clientIP, emailVO.String()), Limit: r.abuse.policy.RegisterIPEmailLimit, Window: r.abuse.policy.MailHourlyWindow},
+			{Purpose: "register:ip-hour", Scope: clientIP, Limit: r.abuse.policy.RegisterBroadIPHourlyLimit, Window: r.abuse.policy.MailHourlyWindow},
+			{Purpose: "register:ip-day", Scope: clientIP, Limit: r.abuse.policy.RegisterBroadIPDailyLimit, Window: r.abuse.policy.MailDailyWindow},
+		}})
+		if err != nil {
+			return err
+		}
+		if !result.Allowed {
+			return response.NewRateLimitError("too many requests, please try again later", result.RetryAfter)
+		}
+	}
 
 	if err := valueobject.ValidatePlainPassword(req.Password); err != nil {
 		return domain.ErrPasswordTooWeak
 	}
 
-	_, err = r.userRepo.GetUserByEmail(ctx, req.Email)
+	_, err = r.userRepo.GetUserByEmail(ctx, emailVO.String())
 	if err != nil && !errors.Is(err, domain.ErrUserNotFound) {
 		return domain.ErrInternalServer.Wrap(err)
 	}

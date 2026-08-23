@@ -16,7 +16,7 @@ func NewAssignRoleHandler(uc inbound.AssignRoleUseCase) *AssignRoleHandler {
 }
 
 func (h *AssignRoleHandler) Handle(c *gin.Context) {
-	response.HandleVoidWithParamsAndBody(
+	response.HandleVoidWithClaimsParamsAndBody(
 		c,
 		h.uc.Execute,
 		response.CodeSuccess,

@@ -98,7 +98,11 @@ graph TD
 
 ### Authenticated Endpoints
 
-Protected routes are expected to be called through the gateway, which validates the `access_token` cookie and injects `X-User-*` headers for the auth service.
+Protected routes are expected to be called through Envoy and the gateway. Envoy
+removes client-supplied `X-User-*` headers, then KrakenD validates the access
+token and injects claim-derived identity for the Auth service. Direct service
+requests with manually supplied identity headers are valid only in isolated
+middleware unit tests, not as an authentication integration test.
 
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
@@ -201,6 +205,36 @@ Current default runtime profile:
 - Database: `auth_db`
 - Redis: `redis:6379`
 - MailHog SMTP: `mailhog:1025`
+
+### Public-auth abuse controls
+
+`auth_abuse` in `config/config.yaml` configures Redis-backed fixed-window
+limits. Redis keys use `auth:abuse:<purpose>:<sha256(normalized-scope)>`; raw
+emails, identifiers, refresh tokens, and IP addresses are not placed in keys.
+The Lua `INCR`/`PEXPIRE` operation is atomic across Auth replicas. Login,
+registration, verification/reset token consumption, and refresh fail closed
+with a safe 503/429 if the limiter is unavailable. Resend-verification and
+forgot-password instead return their existing generic success response while
+sending no email, so Redis or quota state cannot reveal whether an account
+exists. Envoy strips and overwrites `X-Client-IP` from its downstream peer;
+Auth never trusts client-provided forwarding headers.
+
+This assumes Envoy's downstream peer is the end-user connection. If a CDN,
+load balancer, or another reverse proxy is added ahead of Envoy, this boundary
+must be redesigned with an explicit trusted-proxy chain before relying on the
+header for abuse controls.
+
+With an isolated, source-built non-production stack running behind Envoy, run
+the black-box regression test with
+`AUTH_CLIENT_IP_TRUST_INTEGRATION_BASE_URL=http://127.0.0.1:8080 go test
+./internal/adapter/inbound/http -run TestClientIPTrustIntegration -count=1`.
+It verifies that rotating client-supplied `X-Client-IP`, `X-Forwarded-For`, and
+`X-Real-IP` cannot create fresh login limiter buckets.
+
+Login records only failed authentication attempts. Its hard controls are the
+per-IP-and-normalized-identifier scope and a deliberately high broad-IP scope
+for password spraying; identifier-wide failures apply only the configured,
+bounded soft delay so they cannot lock an account globally.
 
 ---
 Built for the Go Judge System.

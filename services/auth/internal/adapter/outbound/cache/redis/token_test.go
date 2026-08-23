@@ -1,6 +1,7 @@
 package redis
 
 import (
+	"strings"
 	"testing"
 
 	"go-judge-system/services/auth/internal/application/port/outbound"
@@ -27,5 +28,19 @@ func TestTokenKeysArePurposeScoped(t *testing.T) {
 		if pair.got == pair.other {
 			t.Fatalf("%s keys collide: %q", name, pair.got)
 		}
+	}
+}
+
+func TestAuthAbuseKeysHashSensitiveScope(t *testing.T) {
+	key := authAbuseKey("login:identifier", "person@example.test")
+	if key == "" || key == "auth:abuse:login:identifier:person@example.test" {
+		t.Fatalf("key exposes or omits scope hash: %q", key)
+	}
+}
+
+func TestAuthAbuseIPIdentifierKeyDoesNotExposeEitherSignal(t *testing.T) {
+	key := authAbuseKey("login:ip-identifier", "203.0.113.9\x00person@example.test")
+	if strings.Contains(key, "203.0.113.9") || strings.Contains(key, "person@example.test") {
+		t.Fatalf("key exposes scope: %q", key)
 	}
 }

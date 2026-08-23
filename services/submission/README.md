@@ -37,14 +37,24 @@ Submissions with an empty `current_attempt_id` are intentionally treated as
 unverifiable and also ignored; backfill or cleanup for those rows should be done
 separately before relying on historical result replay.
 
+## Rejudge single-flight
+
+Only moderators and administrators may initiate a rejudge. The rejudge
+transaction locks the target Submission row and permits a new attempt only when
+its current status is terminal. A request while that Submission is `PENDING` or
+`JUDGING` returns `409 Conflict`; it creates no replacement attempt or outbox
+job. This is scoped to the Submission itself, so it applies across moderators
+and service replicas without delaying rejudge requests for different
+Submissions.
+
 Duplicate results for the current attempt are safe: processing repeats the same
 deterministic replacement for testcase rows and converges on the same Submission
 status/result snapshot. Invalid/malformed result messages are non-retryable and
 are forwarded to the DLT/drop policy by the Kafka adapter.
 
 Attempt IDs are internal transport/storage fields only. Public HTTP request and
-response DTOs do not expose them. Rejudge API routing and HTTP handlers are still
-deferred.
+response DTOs do not expose them. Rejudge APIs are protected separately and are
+documented below.
 
 ## Submission detail
 
