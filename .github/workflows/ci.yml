@@ -111,18 +111,21 @@ jobs:
           ASTRACODE_IMAGE_TAG: v0.0.0-ci
         run: |
           docker compose \
+            --project-name go-judge-system \
             -f docker-compose.yml \
             -f docker-compose.prod.yml \
             -f environment/app-node.override.ci.yml \
             config --quiet
 
           docker compose \
+            --project-name go-judge-system \
             -f docker-compose.yml \
             -f docker-compose.prod.yml \
             -f environment/app-node.override.ci.yml \
             config --format json >/tmp/app-node-compose.json
 
           jq -e '
+            .name == "go-judge-system" and
             (.services | has("go-judge") | not) and
             (.services | has("judge-worker") | not) and
             (.services.kafka.ports | any(.[]; .host_ip == "192.0.2.10" and .published == "9094" and .target == 9094)) and
