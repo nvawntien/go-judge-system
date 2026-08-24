@@ -101,7 +101,7 @@ jobs:
           GATEWAY_JWK_FILE: ./gateway/symmetric.json
         run: docker compose config --quiet
 
-      - name: Validate production topology
+      - name: Validate App Node production topology
         env:
           POSTGRES_ENV_FILE: ./environment/postgres.prod.env.example
           REDIS_ENV_FILE: ./environment/redis.prod.env.example
@@ -109,7 +109,51 @@ jobs:
           GATEWAY_JWK_FILE: ./gateway/symmetric.json
           ASTRACODE_IMAGE_ROOT: ghcr.io/example/astracode
           ASTRACODE_IMAGE_TAG: v0.0.0-ci
-        run: docker compose -f docker-compose.yml -f docker-compose.prod.yml config --quiet
+        run: |
+          docker compose \
+            -f docker-compose.yml \
+            -f docker-compose.prod.yml \
+            -f environment/app-node.override.ci.yml \
+            config --quiet
+
+          docker compose \
+            -f docker-compose.yml \
+            -f docker-compose.prod.yml \
+            -f environment/app-node.override.ci.yml \
+            config --format json >/tmp/app-node-compose.json
+
+          jq -e '
+            (.services | has("go-judge") | not) and
+            (.services | has("judge-worker") | not) and
+            (.services.kafka.ports | any(.[]; .host_ip == "192.0.2.10" and .published == "9094" and .target == 9094)) and
+            (.services["problem-service"].ports | any(.[]; .host_ip == "192.0.2.10" and .published == "9092" and .target == 9092)) and
+            (.services.minio.ports | any(.[]; .host_ip == "192.0.2.10" and .published == "9000" and .target == 9000))
+          ' /tmp/app-node-compose.json >/dev/null
+
+  deployment-scripts:
+    name: Deployment script checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.git_ref || github.sha }}
+
+      - name: Validate shell syntax and Judge image override generation
+        run: |
+          bash -n scripts/deploy-app-node.sh
+          bash -n scripts/deploy-judge-node.sh
+          bash -n scripts/deploy-production.sh
+
+          rendered="$(
+            ASTRACODE_JUDGE_DEPLOY_DRY_RUN=1 \
+            ASTRACODE_JUDGE_COMPOSE=./environment/judge-node.compose.ci.yml \
+            ASTRACODE_JUDGE_CONFIG=./workers/judge/config/config.yaml \
+            ASTRACODE_JUDGE_STATE_DIR=/tmp/astracode-judge-state \
+            ./scripts/deploy-judge-node.sh v0.0.0-ci
+          )"
+          grep -Fqx '    image: ghcr.io/nvawntien/go-judge-system/sandbox:v0.0.0-ci' <<<"$rendered"
+          grep -Fqx '    image: ghcr.io/nvawntien/go-judge-system/judge-worker:v0.0.0-ci' <<<"$rendered"
 
   images:
     name: Build image (${{ matrix.image }})
