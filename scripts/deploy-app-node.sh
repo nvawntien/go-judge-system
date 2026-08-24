@@ -6,6 +6,7 @@ set -Eeuo pipefail
 readonly APP_DIR="${ASTRACODE_APP_DIR:-/opt/astracode}"
 readonly STACK_ENV="${ASTRACODE_STACK_ENV:-/etc/astracode/stack.env}"
 readonly APP_OVERRIDE="${ASTRACODE_APP_OVERRIDE:-/etc/astracode/app-node.override.yml}"
+readonly APP_COMPOSE_PROJECT="${ASTRACODE_APP_COMPOSE_PROJECT:-go-judge-system}"
 readonly STATE_DIR="${ASTRACODE_APP_STATE_DIR:-$APP_DIR/.deploy/app}"
 readonly CURRENT_TAG_FILE="$STATE_DIR/current-image-tag"
 readonly PREVIOUS_TAG_FILE="$STATE_DIR/previous-image-tag"
@@ -111,6 +112,11 @@ if [[ -z "${ASTRACODE_IMAGE_ROOT:-}" ]]; then
   exit 1
 fi
 
+if [[ -z "$APP_COMPOSE_PROJECT" ]]; then
+  echo "ASTRACODE_APP_COMPOSE_PROJECT must not be empty" >&2
+  exit 1
+fi
+
 requested="${1:-}"
 if [[ "$requested" == "--rollback" ]]; then
   require_readable_file "$PREVIOUS_TAG_FILE" "previous App release state"
@@ -135,6 +141,7 @@ fi
 
 compose() {
   docker compose \
+    --project-name "$APP_COMPOSE_PROJECT" \
     --env-file "$STACK_ENV" \
     -f "$APP_DIR/docker-compose.yml" \
     -f "$APP_DIR/docker-compose.prod.yml" \
