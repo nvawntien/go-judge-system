@@ -1,376 +1,244 @@
-# AstraCode production deployment
+# AstraCode dual-node production deployment
 
-This document describes the reference v0.1.0 deployment on a single Linux VPS.
-It uses immutable images from GitHub Container Registry (GHCR), Docker Compose,
-and a host-managed TLS reverse proxy. It is intentionally separate from the
-local development workflow.
-
-The reference topology is production-oriented, but it is not a claim of
-Kubernetes-style zero downtime or a complete hardening program. AstraCode
-executes untrusted code; operators must review the executor, host, and network
-boundary before serving public traffic.
-
-> **Judge boundary:** the shipped executor image needs privileged Linux
-> namespace/cgroup operations. The production overlay removes the executor from
-> the general application network and does not pass service secrets to the
-> Worker, but those are defence-in-depth measures—not a same-host containment
-> guarantee. Run public untrusted submissions on a dedicated Judge node (or an
-> equivalently isolated executor host) rather than alongside Auth and stateful
-> services on the application VPS.
-
-## Release and deployment model
+Production uses immutable GHCR release images, Docker Compose, and a protected
+manual GitHub Actions deployment. It has two distinct nodes:
 
 ```text
-pull request -> CI -> develop -> main -> vX.Y.Z tag
-                                         |
-                                         v
-                              immutable GHCR images
-                                         |
-                             manual production approval
-                                         |
-                                         v
-                    /opt/astracode on the production VPS
+GitHub Actions runner
+  ├─ SSH ────────────────────────────────> App Node (astracode-app)
+  └─ SSH ProxyJump through App Node ─────> Judge Node (astracode-judge-01)
 ```
 
-- `.github/workflows/ci.yml` validates Go modules, the website, Compose, and all
-  custom images. It has read-only repository permission and no production
-  secrets.
-- `.github/workflows/release-images.yml` runs for a semantic release tag and
-  publishes every custom image with both `vX.Y.Z` and `sha-<full-commit>` tags.
-- `.github/workflows/deploy-production.yml` is manual, uses the GitHub
-  `production` Environment, uploads only non-secret deployment material, and
-  activates an immutable tag.
-- Application secrets remain in `/etc/astracode` on the VPS. They are not sent
-  on every deployment.
+This document describes the production deployment contract. It does not claim
+zero downtime or replace host/sandbox security review.
 
-Normal deployments pull images. They do not compile Go or Next.js on the VPS.
+## Release policy
 
-## Production topology
-
-The Compose overlay adds the standalone Next.js website and makes Envoy the
-only host-bound AstraCode container:
+Only a published semantic release tag is valid for production:
 
 ```text
-TLS reverse proxy on host
-          |
-          v
-127.0.0.1:8080 -> Envoy
-                    |-- /              -> Next.js website
-                    |-- /api/*         -> KrakenD -> Go services
-                    |-- /events/*      -> Submission Service SSE
-                    `-- /avatars/*     -> MinIO avatar bucket
+vX.Y.Z
+vX.Y.Z-prerelease
 ```
 
-PostgreSQL, Redis, Kafka, MinIO, KrakenD, Go services, Judge Worker, and the
-executor are reachable only on the Compose network. The production Envoy also
-removes incoming `X-User-ID`, `X-Role`, `X-Username`, and `X-Token-Iat`
-headers before KrakenD derives trusted identity claims.
-
-Named volumes persist PostgreSQL, Redis, Kafka, MinIO, and testcase cache data.
-MailHog and Kafka UI remain development-profile services and do not start in
-the production topology.
-
-### Public Judge placement
-
-For public submissions, keep `judge-worker` and `go-judge` on a dedicated
-Judge node. The application node continues to own Auth, Problem, Submission,
-Kafka, and persistent data; the Judge node consumes jobs and publishes results
-through Kafka, calls Problem's existing worker gRPC API for short-lived testcase
-metadata, and downloads the resulting presigned testcase bundle. Do not add
-direct database access from the Judge node.
-
-Connect the nodes through a private network, VPN, or equivalent authenticated
-and encrypted transport. Do not expose Kafka, Problem gRPC, the Worker gRPC
-port, or the executor HTTP API publicly. The single-VPS Compose topology
-remains suitable for local development and controlled testing, not approval to
-co-locate a privileged public-code executor with application secrets and data.
-
-## Production email
-
-Auth sends account-verification and password-reset messages through a generic
-SMTP adapter. Configure any standards-compliant transactional SMTP provider in
-the VPS-only `/etc/astracode/service.env`; no provider SDK or credentials are
-part of the image, Compose files, or GitHub Actions.
-
-Required variables are `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`,
-`SMTP_PASSWORD`, `SMTP_SECURITY`, `SMTP_TIMEOUT`, `SMTP_FROM`,
-`SMTP_FROM_NAME`, and `APP_FRONTEND_URL`. The tracked production example uses
-`SMTP_SECURITY=starttls` on port 587. `tls` supports implicit TLS (commonly
-port 465). `none` is for local MailHog only and Auth rejects it in release
-mode. TLS certificates are verified normally; do not disable verification.
-
-Use a verified sender identity such as `AstraCode <no-reply@your-domain>`.
-The sending domain/provider must be configured with SPF, DKIM, and DMARC using
-the DNS records supplied by the selected provider. Those records are provider
-and domain-specific and are not application configuration.
-
-`APP_FRONTEND_URL` must be the real HTTPS public origin, without credentials,
-query, or fragment. Auth constructs `/verify-email#token=...` and
-`/reset-password?token=...` from that single origin. Ensure the TLS ingress and
-frontend domain are live before enabling email delivery; password-reset links
-must not be sent over plaintext HTTP in production.
-
-## One-time VPS bootstrap
-
-### 1. Install runtime prerequisites
-
-Install on a supported Linux host:
-
-- Docker Engine;
-- Docker Compose plugin;
-- `curl`;
-- OpenSSH server for deployment automation;
-- a host TLS reverse proxy such as Caddy, Nginx, or an equivalent managed edge.
-
-The v0.1.0 release workflow publishes `linux/amd64` images. Use an x86-64 VPS;
-multi-architecture publishing is intentionally not claimed by this release.
-
-Verify:
-
-```bash
-docker version
-docker compose version
-curl --version
-```
-
-Create stable directories and make the deployment user the owner of the
-non-secret application directory:
-
-```bash
-sudo install -d -m 0755 -o DEPLOY_USER -g DEPLOY_USER /opt/astracode
-sudo groupadd --system astracode-secrets
-sudo usermod -aG astracode-secrets DEPLOY_USER
-sudo install -d -m 0750 -o root -g astracode-secrets /etc/astracode
-```
-
-Replace `DEPLOY_USER` with the dedicated SSH deployment account. That account
-needs permission to use Docker and read the `astracode-secrets` group. Start a
-new login session after adding group membership. Do not grant it broader
-privileges than the deployment requires.
-
-### 2. Provision production environment files
-
-From a trusted checkout/workstation, use these tracked templates:
+The image workflow publishes all custom images for semantic releases with both
+the release tag and `sha-<full-commit>`:
 
 ```text
-environment/postgres.prod.env.example -> /etc/astracode/postgres.env
-environment/redis.prod.env.example    -> /etc/astracode/redis.env
-environment/service.prod.env.example  -> /etc/astracode/service.env
-environment/stack.env.example         -> /etc/astracode/stack.env
+website
+auth-service
+problem-service
+submission-service
+judge-worker
+sandbox
 ```
 
-Copy them through your secret-provisioning channel, replace every `REPLACE_*`
-value, and restrict access:
+SHA images are useful for CI and staging, but production deployment accepts
+only `vX.Y.Z` tags. It never uses `latest`, a branch name, or an arbitrary
+commit. Protect release Git tags and configure registry policy so a release tag
+cannot be silently overwritten.
 
-```bash
-sudo chown root:astracode-secrets /etc/astracode/*.env
-sudo chmod 0640 /etc/astracode/*.env
-```
+## Node ownership boundary
 
-Important relationships:
-
-- `POSTGRES_PASSWORD` and `DATABASE_PASSWORD` must match across the PostgreSQL
-  and service files.
-- `REDIS_PASSWORD` must match across the Redis and service files.
-- `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD` must match the service-side
-  `MINIO_ACCESS_KEY`/`MINIO_SECRET_KEY`.
-- `JWT_ACCESS_SECRET` must match the symmetric JWK mounted into KrakenD.
-- `APP_FRONTEND_URL` and `SSE_ALLOWED_ORIGIN` must use the real public HTTPS
-  origin.
-- Configure the SMTP variables in `service.env` with the transactional
-  provider's authenticated STARTTLS or TLS settings. Do not use MailHog,
-  localhost, or a plaintext SMTP connection in production.
-- Keep `MINIO_PUBLIC_URL=/` for same-origin avatar paths in this topology.
-- `ASTRACODE_IMAGE_ROOT` must be
-  `ghcr.io/<owner>/<repository>`; the release workflow appends component names.
-- Keep `ASTRACODE_EDGE_BIND=127.0.0.1` when TLS terminates on the same host.
-
-Generate independent high-entropy values. Do not reuse development examples.
-Avoid putting generated secrets in shell history, chat, CI output, or Git.
-
-### 3. Generate the production JWK
-
-The repository's `gateway/gen_jwk.go` converts the raw HS256 access secret into
-the KrakenD JWK representation and writes it with mode `0600`:
-
-```bash
-umask 077
-export JWT_ACCESS_SECRET='THE_SAME_RANDOM_VALUE_USED_IN_SERVICE_ENV'
-JWK_OUTPUT_PATH=/tmp/astracode-symmetric.json go run ./gateway/gen_jwk.go
-unset JWT_ACCESS_SECRET
-sudo install -m 0640 -o root -g astracode-secrets \
-  /tmp/astracode-symmetric.json /etc/astracode/symmetric.json
-```
-
-Run this on a trusted workstation if Go is intentionally absent from the VPS,
-then transfer the file through the same secure bootstrap channel. Never use the
-tracked local-development JWK in production.
-
-### 4. Authenticate the VPS to GHCR
-
-Public GHCR packages need no registry login. If the packages are private, log
-in once on the VPS using a least-privilege read token supplied interactively or
-by your secret manager:
-
-```bash
-docker login ghcr.io -u GITHUB_USERNAME --password-stdin
-```
-
-Do not store this token in the repository or production Compose files.
-
-### 5. Configure TLS and firewall rules
-
-Terminate TLS at the host/managed ingress and proxy the public origin to
-`http://127.0.0.1:8080`. Preserve the `Host` and standard forwarded headers.
-For `/events/`, disable response buffering and allow long-lived streaming
-connections.
-
-The Compose configuration deliberately does not invent a domain or acquire a
-certificate. The operator must provide the real hostname, DNS, TLS certificate,
-and renewal policy.
-
-Internet-facing firewall rules should normally expose only:
-
-- TCP 80/443 for the TLS ingress;
-- SSH according to operator policy.
-
-Do not expose PostgreSQL, Redis, Kafka, MinIO API/console, KrakenD, service HTTP
-or gRPC ports, Judge Worker, or the executor.
-
-### 6. Configure GitHub production deployment
-
-Create a GitHub Environment named `production`. Add required reviewers and
-deployment-branch restrictions as appropriate. Configure these secrets by name:
-
-| Secret | Purpose |
-| --- | --- |
-| `PROD_HOST` | VPS host or IP. |
-| `PROD_PORT` | SSH port. |
-| `PROD_USER` | Dedicated deployment account. |
-| `PROD_SSH_KEY` | Private SSH key for that account. |
-| `PROD_KNOWN_HOSTS` | Pinned `known_hosts` entry for strict host verification. |
-
-No database, JWT, Redis, MinIO, SMTP, or SSE secret belongs in this workflow.
-The deploy account must be able to create files under `/opt/astracode`, use
-Docker, and read the externally provisioned environment files through Compose.
-
-## Publishing a release
-
-After CI and release-candidate validation, creating and pushing a semantic tag
-such as `v0.1.0` triggers the image workflow. It publishes:
+GitHub Actions uploads repository-controlled files only. The following files
+are node-owned operational inputs and must never be overwritten, copied from
+the repository, or edited by a deployment script:
 
 ```text
-ghcr.io/<owner>/<repository>/website:v0.1.0
-ghcr.io/<owner>/<repository>/auth-service:v0.1.0
-ghcr.io/<owner>/<repository>/problem-service:v0.1.0
-ghcr.io/<owner>/<repository>/submission-service:v0.1.0
-ghcr.io/<owner>/<repository>/judge-worker:v0.1.0
-ghcr.io/<owner>/<repository>/sandbox:v0.1.0
+# App Node
+/etc/astracode/app-node.override.yml
+/etc/astracode/stack.env
+/etc/astracode/service.env
+/etc/astracode/postgres.env
+/etc/astracode/redis.env
+/etc/astracode/symmetric.json
+
+# Judge Node
+/etc/astracode/judge-node.compose.yml
+/etc/astracode/judge/config.yaml
 ```
 
-Each image also receives `sha-<full-commit>`. No production path relies on
-`latest`. Artifact publication does not deploy automatically.
+No database, Kafka, Redis, MinIO, JWT, SMTP, WireGuard, or sandbox secret is a
+GitHub Actions secret or deployment-bundle file.
 
-## Normal deployment
+## App Node
 
-Preferred: run the **Deploy production** workflow, enter a published `vX.Y.Z`
-or full `sha-<commit>` tag, and approve the `production` Environment gate. The
-workflow uploads the current non-secret Compose/config bundle and runs:
+The App Node owns these services:
 
-```bash
-/opt/astracode/scripts/deploy-production.sh v0.1.0
+```text
+website
+envoy
+gateway
+postgres
+redis
+minio
+kafka
+kafka-init
+auth-service
+problem-service
+submission-service
 ```
 
-The script:
+It does **not** run production `go-judge` or `judge-worker`.
 
-1. validates the immutable tag;
-2. loads `/etc/astracode/stack.env`;
-3. runs `docker compose pull`;
-4. runs `docker compose up -d --remove-orphans` without `down`;
-5. performs bounded Envoy and website smoke checks;
-6. keeps the avatar bucket publicly downloadable while testcase storage stays private;
-7. records the current and previous successful image tags.
+Every App deployment must compose exactly these files:
 
-It never prunes Docker state or deletes volumes. Compose may recreate changed
-containers, so brief interruptions remain possible; this is not zero-downtime
-orchestration.
-
-The equivalent direct operator command is:
-
-```bash
-ASTRACODE_STACK_ENV=/etc/astracode/stack.env \
-  /opt/astracode/scripts/deploy-production.sh v0.1.0
+```text
+/opt/astracode/docker-compose.yml
+/opt/astracode/docker-compose.prod.yml
+/etc/astracode/app-node.override.yml
 ```
+
+The external override keeps Judge-only services behind an opt-in `judge`
+profile and supplies the private network bindings required by the Judge Node:
+
+```text
+Problem gRPC: 10.77.0.1:9092
+Kafka:        10.77.0.1:9094
+MinIO:        10.77.0.1:9000
+```
+
+`scripts/deploy-app-node.sh` validates the complete three-file Compose model,
+pulls and recreates only App services, runs edge smoke checks, preserves the
+public avatar bucket behavior, and records state under:
+
+```text
+/opt/astracode/.deploy/app/current-image-tag
+/opt/astracode/.deploy/app/previous-image-tag
+```
+
+`kafka-init` is one-shot and is intentionally not treated as a permanently
+running health-checked service.
+
+## Judge Node
+
+The private Judge Node runs only:
+
+```text
+judge_sandbox (Compose service: go-judge)
+judge_worker  (Compose service: judge-worker)
+```
+
+It reaches App services through the private network/WireGuard. Its Compose and
+runtime configuration are external and node-owned:
+
+```text
+/etc/astracode/judge-node.compose.yml
+/etc/astracode/judge/config.yaml
+```
+
+`scripts/deploy-judge-node.sh` does not edit either file. For each release it
+creates a secure temporary Compose override containing only these two image
+fields:
+
+```yaml
+services:
+  go-judge:
+    image: ghcr.io/nvawntien/go-judge-system/sandbox:vX.Y.Z
+  judge-worker:
+    image: ghcr.io/nvawntien/go-judge-system/judge-worker:vX.Y.Z
+```
+
+It then composes the node-owned file plus the temporary image override, pulls
+and recreates only `go-judge` and `judge-worker`, verifies both containers,
+checks sandbox HTTP reachability without publishing a port, and confirms the
+Worker listens on the `server.grpc_port` derived from its external config.
+
+Judge state is recorded independently:
+
+```text
+/opt/astracode/.deploy/judge/current-image-tag
+/opt/astracode/.deploy/judge/previous-image-tag
+```
+
+Restarting a Worker can cause a Kafka consumer-group rebalance. The scripts use
+normal Compose recreation and no `kill -9`, global prune, volume deletion, or
+invented queue-draining mechanism.
+
+## GitHub Environment secrets
+
+The `production` Environment requires pinned SSH material for both hosts:
+
+```text
+PROD_APP_HOST
+PROD_APP_PORT
+PROD_APP_USER
+PROD_APP_SSH_KEY
+
+PROD_JUDGE_HOST
+PROD_JUDGE_PORT
+PROD_JUDGE_USER
+PROD_JUDGE_SSH_KEY
+
+PROD_KNOWN_HOSTS
+```
+
+`PROD_KNOWN_HOSTS` must contain pinned host keys for the App Node and the Judge
+Node. The workflow creates an ephemeral SSH configuration with
+`ProxyJump astracode-app`, `BatchMode yes`, `IdentitiesOnly yes`, and strict
+host-key checking. It never disables host verification.
+
+If one key is deliberately authorized on both hosts, its value may be supplied
+to both logical key secrets; the workflow does not assume that arrangement.
+
+## Deployment sequence
+
+The manual **Deploy production** workflow:
+
+1. validates and checks out the requested semantic release tag;
+2. checks that all six GHCR release image manifests exist;
+3. uploads non-secret bundles before mutating either node;
+4. deploys and verifies the Judge Node first;
+5. deploys and verifies the App Node second.
+
+Judge-first ordering ensures the new App release is not made live before its
+compatible Worker/Sandbox release is ready.
 
 ## Rollback
 
-Redeploy any previously published immutable version through the manual workflow,
-or use the previous successful tag recorded by the deployment script:
+Each node can be rolled back independently:
 
 ```bash
-/opt/astracode/scripts/deploy-production.sh --rollback
+# Run on the relevant node.
+/opt/astracode/scripts/deploy-app-node.sh --rollback
+/opt/astracode/scripts/deploy-judge-node.sh --rollback
 ```
 
-On a failed activation or smoke test, the script attempts to reactivate the
-previous successful application image tag. It does not delete or recreate
-persistent data.
+On local activation failure, each script attempts its own previous valid
+semantic release and still exits nonzero to report that the requested release
+failed.
 
-Application rollback is not database rollback. Auth, Problem, and Submission
-currently use GORM `AutoMigrate`; a release that changes schema may not be
-backward compatible with an older application image. Review schema changes and
-take a verified database backup before such a release.
+If Judge deployment fails, the workflow stops before touching App. If Judge
+succeeds but App deployment fails, the App script performs its own rollback and
+the workflow explicitly requests Judge rollback. A failed Judge rollback is a
+visible workflow failure requiring operator intervention.
 
-## Operations and security checklist
+This is orchestration, not a distributed transaction. Review schema and
+protocol compatibility before release; application rollback is not database
+rollback, and GORM `AutoMigrate` can make older application images
+incompatible with newer schema.
 
-Before public use:
+## One-time server preparation
 
-- Back up PostgreSQL and MinIO, document retention, and test restoration.
-- Monitor free disk, container health/restarts, Kafka lag, database capacity,
-  and executor resource consumption.
-- Retain Docker's bounded log rotation and integrate logs with the operator's
-  chosen collection/retention system.
-- Keep Docker, the host kernel, Envoy, KrakenD, data stores, and custom images
-  patched through intentional release testing.
-- Review the privileged `go-judge` container, tmpfs mounts, compiler/runtime
-  toolchain, worker concurrency, CPU/memory limits, and host blast radius.
-- Keep direct container/service ports unreachable from untrusted networks.
-- Rotate credentials on a documented schedule and immediately after suspected
-  disclosure.
-- [ ] Create the SMTP provider account and verify its sending domain.
-- [ ] Configure SPF, DKIM, and DMARC from the provider's DNS instructions.
-- [ ] Install SMTP credentials only in `/etc/astracode/service.env`.
-- [ ] Set a verified `SMTP_FROM` and `SMTP_FROM_NAME`.
-- [ ] Set `APP_FRONTEND_URL` to the HTTPS public frontend origin.
-- [ ] Test registration and confirm its verification email/link works.
-- [ ] Test forgot-password and confirm its reset email/link works.
-- [ ] Confirm MailHog is absent from the production Compose runtime.
+Operators must provision and permission these pre-existing paths before the
+first deployment:
 
-The symmetric JWK was historically tracked in this repository. Replacing the
-working-tree value does not remove it from Git history. Treat every historical
-access secret represented there as compromised and rotate the production JWT
-access/refresh secrets before launch. The ignored local `environment/*.env`
-files were not found in tracked history during this audit, but any values ever
-shared elsewhere still require independent rotation.
-
-## Manual Compose reference
-
-For inspection or controlled operation on the VPS:
-
-```bash
-export ASTRACODE_IMAGE_TAG=v0.1.0
-
-docker compose \
-  --env-file /etc/astracode/stack.env \
-  -f /opt/astracode/docker-compose.yml \
-  -f /opt/astracode/docker-compose.prod.yml \
-  pull
-
-docker compose \
-  --env-file /etc/astracode/stack.env \
-  -f /opt/astracode/docker-compose.yml \
-  -f /opt/astracode/docker-compose.prod.yml \
-  up -d --remove-orphans
+```text
+/opt/astracode
+/opt/astracode/.deploy/app
+/opt/astracode/.deploy/judge
+/etc/astracode/*                 # App Node ownership
+/etc/astracode/judge/*           # Judge Node ownership
 ```
 
-Never use `docker compose down -v`, volume pruning, or filesystem deletion as a
-normal deployment or rollback step.
+The deployment accounts need Docker access, read access to their node-owned
+configuration, write access to `/opt/astracode`, and no broader privileges than
+required. Private network routes and firewall rules must permit only the
+intended Judge-to-App interfaces; do not publish Kafka, Problem gRPC, MinIO,
+Worker gRPC, or Sandbox HTTP to the public Internet.
+
+## Deprecated command
+
+`scripts/deploy-production.sh` intentionally exits without deploying. It is a
+deprecated combined-node entrypoint retained only to prevent accidental use;
+use the node-specific scripts or the GitHub workflow instead.

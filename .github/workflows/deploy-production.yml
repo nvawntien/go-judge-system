@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: Immutable release tag (vX.Y.Z or full sha-<commit>)
+        description: Published semantic release tag (vX.Y.Z)
         required: true
         type: string
 
@@ -14,6 +14,7 @@ concurrency:
 
 permissions:
   contents: read
+  packages: read
 
 jobs:
   deploy:
@@ -21,29 +22,50 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - name: Validate immutable image tag
-        id: release
+      - name: Validate release tag
         env:
           IMAGE_TAG: ${{ inputs.image_tag }}
         run: |
-          if [[ ! "$IMAGE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ && ! "$IMAGE_TAG" =~ ^sha-[0-9a-f]{40}$ ]]; then
-            echo "image_tag must be vX.Y.Z or sha- followed by a full 40-character commit" >&2
+          if [[ ! "$IMAGE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "image_tag must be a semantic release tag such as v1.2.3" >&2
             exit 1
           fi
-          if [[ "$IMAGE_TAG" == sha-* ]]; then
-            printf 'git_ref=%s\n' "${IMAGE_TAG#sha-}" >> "$GITHUB_OUTPUT"
-          else
-            printf 'git_ref=%s\n' "$IMAGE_TAG" >> "$GITHUB_OUTPUT"
-          fi
 
-      - name: Check out matching release configuration
+      - name: Check out exact release configuration
         uses: actions/checkout@v6
         with:
-          ref: ${{ steps.release.outputs.git_ref }}
+          ref: ${{ inputs.image_tag }}
+          fetch-depth: 0
 
-      - name: Assemble non-secret deployment bundle
+      - name: Verify checked-out semantic tag
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
         run: |
-          tar -czf /tmp/astracode-deployment.tgz \
+          git rev-parse --verify "refs/tags/$IMAGE_TAG^{commit}" >/dev/null
+          git tag --points-at HEAD | grep -Fx "$IMAGE_TAG" >/dev/null
+
+      - name: Verify all release images exist in GHCR
+        uses: docker/setup-buildx-action@v4
+
+      - name: Authenticate for GHCR manifest inspection
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Inspect immutable release image manifests
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          images=(website auth-service problem-service submission-service judge-worker sandbox)
+          for image in "${images[@]}"; do
+            docker buildx imagetools inspect "ghcr.io/${GITHUB_REPOSITORY}/${image}:${IMAGE_TAG}" >/dev/null
+          done
+
+      - name: Assemble non-secret node bundles
+        run: |
+          tar -czf /tmp/astracode-app-deployment.tgz \
             docker-compose.yml \
             docker-compose.prod.yml \
             envoy/envoy.prod.yaml \
@@ -55,43 +77,137 @@ jobs:
             services/auth/config \
             services/problem/config \
             services/submission/config \
-            workers/judge/config \
-            scripts/deploy-production.sh
+            scripts/deploy-app-node.sh
 
-      - name: Configure strict SSH host verification
+          tar -czf /tmp/astracode-judge-deployment.tgz \
+            scripts/deploy-judge-node.sh
+
+      - name: Configure strict dual-node SSH
         env:
-          PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+          PROD_APP_HOST: ${{ secrets.PROD_APP_HOST }}
+          PROD_APP_PORT: ${{ secrets.PROD_APP_PORT }}
+          PROD_APP_USER: ${{ secrets.PROD_APP_USER }}
+          PROD_APP_SSH_KEY: ${{ secrets.PROD_APP_SSH_KEY }}
+          PROD_JUDGE_HOST: ${{ secrets.PROD_JUDGE_HOST }}
+          PROD_JUDGE_PORT: ${{ secrets.PROD_JUDGE_PORT }}
+          PROD_JUDGE_USER: ${{ secrets.PROD_JUDGE_USER }}
+          PROD_JUDGE_SSH_KEY: ${{ secrets.PROD_JUDGE_SSH_KEY }}
           PROD_KNOWN_HOSTS: ${{ secrets.PROD_KNOWN_HOSTS }}
         run: |
+          required=(
+            PROD_APP_HOST PROD_APP_PORT PROD_APP_USER PROD_APP_SSH_KEY
+            PROD_JUDGE_HOST PROD_JUDGE_PORT PROD_JUDGE_USER PROD_JUDGE_SSH_KEY
+            PROD_KNOWN_HOSTS
+          )
+          for name in "${required[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing required production Environment secret: $name" >&2
+              exit 1
+            fi
+          done
+
           install -m 0700 -d "$HOME/.ssh"
-          printf '%s\n' "$PROD_SSH_KEY" > "$HOME/.ssh/astracode_deploy"
-          chmod 0600 "$HOME/.ssh/astracode_deploy"
-          printf '%s\n' "$PROD_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
-          chmod 0600 "$HOME/.ssh/known_hosts"
+          printf '%s\n' "$PROD_APP_SSH_KEY" >"$HOME/.ssh/astracode_app"
+          printf '%s\n' "$PROD_JUDGE_SSH_KEY" >"$HOME/.ssh/astracode_judge"
+          printf '%s\n' "$PROD_KNOWN_HOSTS" >"$HOME/.ssh/known_hosts"
+          chmod 0600 "$HOME/.ssh/astracode_app" "$HOME/.ssh/astracode_judge" "$HOME/.ssh/known_hosts"
 
-      - name: Upload deployment bundle
-        env:
-          PROD_HOST: ${{ secrets.PROD_HOST }}
-          PROD_PORT: ${{ secrets.PROD_PORT }}
-          PROD_USER: ${{ secrets.PROD_USER }}
+          cat >"$HOME/.ssh/config" <<EOF
+          Host astracode-app
+            HostName $PROD_APP_HOST
+            Port $PROD_APP_PORT
+            User $PROD_APP_USER
+            IdentityFile $HOME/.ssh/astracode_app
+            IdentitiesOnly yes
+            BatchMode yes
+            StrictHostKeyChecking yes
+            UserKnownHostsFile $HOME/.ssh/known_hosts
+
+          Host astracode-judge
+            HostName $PROD_JUDGE_HOST
+            Port $PROD_JUDGE_PORT
+            User $PROD_JUDGE_USER
+            IdentityFile $HOME/.ssh/astracode_judge
+            IdentitiesOnly yes
+            BatchMode yes
+            StrictHostKeyChecking yes
+            UserKnownHostsFile $HOME/.ssh/known_hosts
+            ProxyJump astracode-app
+          EOF
+          chmod 0600 "$HOME/.ssh/config"
+
+      - name: Upload non-secret bundles before activation
         run: |
-          scp -P "$PROD_PORT" \
-            -i "$HOME/.ssh/astracode_deploy" \
-            -o BatchMode=yes \
-            -o StrictHostKeyChecking=yes \
-            /tmp/astracode-deployment.tgz \
-            "$PROD_USER@$PROD_HOST:/tmp/astracode-deployment-${GITHUB_RUN_ID}.tgz"
+          scp /tmp/astracode-app-deployment.tgz \
+            "astracode-app:/tmp/astracode-app-deployment-${GITHUB_RUN_ID}.tgz"
+          scp /tmp/astracode-judge-deployment.tgz \
+            "astracode-judge:/tmp/astracode-judge-deployment-${GITHUB_RUN_ID}.tgz"
 
-      - name: Activate release on VPS
+      - name: Capture currently active Judge release
+        id: judge_before
+        run: |
+          judge_tag="$(
+            ssh astracode-judge 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+
+          valid_tag() {
+            [[ "$1" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]
+          }
+
+          state_tag=""
+          if [[ -r /opt/astracode/.deploy/judge/current-image-tag ]]; then
+            state_tag="$(tr -d '\r\n' </opt/astracode/.deploy/judge/current-image-tag)"
+          fi
+
+          if valid_tag "$state_tag"; then
+            printf '%s\n' "$state_tag"
+            exit 0
+          fi
+
+          image="$(docker inspect --format '{{.Config.Image}}' judge_worker 2>/dev/null || true)"
+          if [[ "$image" == *:* ]]; then
+            image_tag="${image##*:}"
+          else
+            image_tag=""
+          fi
+
+          if ! valid_tag "$image_tag"; then
+            echo "Unable to determine a valid semantic release tag for the running Judge Worker." >&2
+            exit 1
+          fi
+
+          printf '%s\n' "$image_tag"
+          REMOTE
+          )"
+          printf 'tag=%s\n' "$judge_tag" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy and verify Judge Node first
         env:
-          PROD_HOST: ${{ secrets.PROD_HOST }}
-          PROD_PORT: ${{ secrets.PROD_PORT }}
-          PROD_USER: ${{ secrets.PROD_USER }}
           IMAGE_TAG: ${{ inputs.image_tag }}
         run: |
-          ssh -p "$PROD_PORT" \
-            -i "$HOME/.ssh/astracode_deploy" \
-            -o BatchMode=yes \
-            -o StrictHostKeyChecking=yes \
-            "$PROD_USER@$PROD_HOST" \
-            "mkdir -p /opt/astracode && tar -xzf /tmp/astracode-deployment-${GITHUB_RUN_ID}.tgz -C /opt/astracode && rm -f /tmp/astracode-deployment-${GITHUB_RUN_ID}.tgz && /opt/astracode/scripts/deploy-production.sh '$IMAGE_TAG'"
+          ssh astracode-judge \
+            "mkdir -p /opt/astracode && tar -xzf /tmp/astracode-judge-deployment-${GITHUB_RUN_ID}.tgz -C /opt/astracode && rm -f /tmp/astracode-judge-deployment-${GITHUB_RUN_ID}.tgz && /opt/astracode/scripts/deploy-judge-node.sh '$IMAGE_TAG'"
+
+      - name: Deploy App Node or roll back Judge Node
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+          PREVIOUS_JUDGE_TAG: ${{ steps.judge_before.outputs.tag }}
+        run: |
+          if ssh astracode-app \
+            "mkdir -p /opt/astracode && tar -xzf /tmp/astracode-app-deployment-${GITHUB_RUN_ID}.tgz -C /opt/astracode && rm -f /tmp/astracode-app-deployment-${GITHUB_RUN_ID}.tgz && /opt/astracode/scripts/deploy-app-node.sh '$IMAGE_TAG'"; then
+            exit 0
+          else
+            app_status=$?
+          fi
+
+          if [[ "$PREVIOUS_JUDGE_TAG" == "$IMAGE_TAG" ]]; then
+            echo "App deployment failed; Judge was already running $IMAGE_TAG, so no Judge restoration is needed." >&2
+            exit "$app_status"
+          fi
+
+          echo "App deployment failed; restoring Judge to pre-workflow release $PREVIOUS_JUDGE_TAG." >&2
+          if ! ssh astracode-judge "/opt/astracode/scripts/deploy-judge-node.sh '$PREVIOUS_JUDGE_TAG'"; then
+            echo "Judge restoration also failed; operator intervention is required." >&2
+            exit 1
+          fi
+          exit "$app_status"

@@ -268,16 +268,21 @@ Further technical documentation:
 Production uses immutable GHCR images and includes the standalone Next.js
 website in the Compose topology. Envoy provides same-origin routes for the UI,
 API, SSE, and avatars; only its configurable loopback port is bound by default.
-Normal deployment and rollback use:
+Production has separate App and Judge nodes. Normal deployment and rollback use
+the node-specific commands:
 
 ```bash
-/opt/astracode/scripts/deploy-production.sh v0.1.0
-/opt/astracode/scripts/deploy-production.sh --rollback
+# On the relevant production node only:
+/opt/astracode/scripts/deploy-app-node.sh v0.1.0
+/opt/astracode/scripts/deploy-app-node.sh --rollback
+/opt/astracode/scripts/deploy-judge-node.sh v0.1.0
+/opt/astracode/scripts/deploy-judge-node.sh --rollback
 ```
 
 The dedicated release workflow publishes version and full-commit SHA image tags;
-the separate manual deployment workflow uses the protected GitHub `production`
-Environment. Application secrets stay outside the checkout on the VPS.
+the separate manual deployment workflow accepts only the protected semantic
+release tag and uses the GitHub `production` Environment. Application secrets
+and node-specific Compose/configuration files stay outside the checkout.
 
 Read [Production deployment](docs/DEPLOYMENT.md) before operating the stack. It
 covers first bootstrap, TLS, strict SSH host verification, GHCR, external secret

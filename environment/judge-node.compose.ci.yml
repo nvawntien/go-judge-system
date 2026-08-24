@@ -1,0 +1,7 @@
+# Non-secret CI fixture used only to exercise deploy-judge-node.sh override
+# generation. Production Compose remains node-owned under /etc/astracode.
+services:
+  go-judge:
+    image: example.invalid/sandbox:ci
+  judge-worker:
+    image: example.invalid/judge-worker:ci

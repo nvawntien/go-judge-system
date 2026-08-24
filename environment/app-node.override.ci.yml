@@ -1,0 +1,26 @@
+# Non-secret CI fixture. Production uses the external node-owned override at
+# /etc/astracode/app-node.override.yml instead.
+services:
+  go-judge:
+    profiles:
+      - judge
+
+  judge-worker:
+    profiles:
+      - judge
+
+  kafka:
+    ports: !override
+      - "192.0.2.10:9094:9094"
+    environment:
+      KAFKA_CFG_ADVERTISED_LISTENERS: "INTERNAL://kafka:9092,EXTERNAL://192.0.2.10:9094"
+
+  problem-service:
+    ports: !override
+      - "192.0.2.10:9092:9092"
+    environment:
+      MINIO_ENDPOINT: "192.0.2.10:9000"
+
+  minio:
+    ports: !override
+      - "192.0.2.10:9000:9000"
