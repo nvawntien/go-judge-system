@@ -51,6 +51,12 @@ static_resources:
                     - x-role
                     - x-username
                     - x-token-iat
+                    - x-client-ip
+                  request_headers_to_add:
+                    - header:
+                        key: x-client-ip
+                        value: "%DOWNSTREAM_REMOTE_ADDRESS_WITHOUT_PORT%"
+                      append_action: OVERWRITE_IF_EXISTS_OR_ADD
                   virtual_hosts:
                     - name: edge
                       domains:

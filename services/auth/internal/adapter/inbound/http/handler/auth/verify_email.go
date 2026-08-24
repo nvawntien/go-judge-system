@@ -16,10 +16,5 @@ func NewVerifyEmailHandler(uc inbound.VerifyEmailUseCase) *VerifyEmailHandler {
 }
 
 func (h *VerifyEmailHandler) Handle(c *gin.Context) {
-	response.HandleVoid(
-		c,
-		h.uc.Execute,
-		response.CodeSuccess,
-		"email verified successfully, your account is now active",
-	)
+	response.HandleVoid(c, h.uc.Execute, response.CodeSuccess, "email verified successfully, your account is now active")
 }

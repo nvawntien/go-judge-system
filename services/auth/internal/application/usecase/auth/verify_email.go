@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"go-judge-system/pkg/config"
 
 	"go-judge-system/services/auth/internal/application/dto"
 	"go-judge-system/services/auth/internal/application/port/inbound"
@@ -14,6 +15,11 @@ type verifyEmail struct {
 	tokenGenerator outbound.TokenGenerator
 	tokenRepo      outbound.TokenRepository
 	userRepo       outbound.UserRepository
+	abuse          authAbuse
+}
+
+func NewVerifyEmailUseCaseWithAbuse(tokenGenerator outbound.TokenGenerator, tokenRepo outbound.TokenRepository, userRepo outbound.UserRepository, limiter outbound.AuthAbuseLimiter, policy config.AuthAbuseConfig) inbound.VerifyEmailUseCase {
+	return &verifyEmail{tokenGenerator: tokenGenerator, tokenRepo: tokenRepo, userRepo: userRepo, abuse: authAbuse{limiter: limiter, policy: policy}}
 }
 
 func NewVerifyEmailUseCase(
@@ -29,6 +35,15 @@ func NewVerifyEmailUseCase(
 }
 
 func (uc *verifyEmail) Execute(ctx context.Context, req dto.VerifyEmailRequest) error {
+	if uc.abuse.limiter != nil {
+		clientIP, err := uc.abuse.clientIP(ctx)
+		if err != nil {
+			return err
+		}
+		if _, err := uc.abuse.allow(ctx, "verify-email:ip", clientIP, uc.abuse.policy.TokenIPLimit, uc.abuse.policy.TokenWindow); err != nil {
+			return err
+		}
+	}
 	// Hash the raw token to look up in Redis
 	hashedToken := uc.tokenGenerator.Hash(req.Token)
 

@@ -250,3 +250,47 @@ func TestAdminListRequiresModerator(t *testing.T) {
 		})
 	}
 }
+
+func TestPublishAndHideRequireModeratorInUseCase(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		role    rbac.Role
+		allowed bool
+	}{
+		{role: rbac.RoleUser},
+		{role: rbac.RoleContributor},
+		{role: rbac.RoleModerator, allowed: true},
+		{role: rbac.RoleAdmin, allowed: true},
+	}
+
+	for _, test := range tests {
+		test := test
+		t.Run(string(test.role), func(t *testing.T) {
+			t.Parallel()
+			claims := matrixClaims(test.role, "actor")
+
+			publishRepo := &accessMatrixProblemRepository{problem: matrixProblem("owner", true)}
+			_, publishErr := NewPublishProblemUseCase(publishRepo).Execute(
+				context.Background(), claims, dto.ProblemIDRequest{ID: 42},
+			)
+
+			hideRepo := &accessMatrixProblemRepository{problem: matrixProblem("owner", false)}
+			_, hideErr := NewHiddenProblemUseCase(hideRepo).Execute(
+				context.Background(), claims, dto.ProblemIDRequest{ID: 42},
+			)
+
+			if test.allowed {
+				if publishErr != nil || publishRepo.updated == nil || publishRepo.updated.IsHidden ||
+					hideErr != nil || hideRepo.updated == nil || !hideRepo.updated.IsHidden {
+					t.Fatalf("publish error/problem=%v/%+v; hide error/problem=%v/%+v", publishErr, publishRepo.updated, hideErr, hideRepo.updated)
+				}
+				return
+			}
+
+			if !errors.Is(publishErr, domain.ErrForbidden) || publishRepo.updated != nil ||
+				!errors.Is(hideErr, domain.ErrForbidden) || hideRepo.updated != nil {
+				t.Fatalf("publish error/update=%v/%+v; hide error/update=%v/%+v", publishErr, publishRepo.updated, hideErr, hideRepo.updated)
+			}
+		})
+	}
+}

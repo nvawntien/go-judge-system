@@ -57,6 +57,39 @@ jwt:
   access_ttl: 15m
   refresh_ttl: 168h
 
+# Redis-backed public-auth controls. Mail endpoints keep a generic response
+# when limited so account state and quota state cannot be enumerated.
+auth_abuse:
+  # Failed-login counters only. The broad IP threshold is intentionally high:
+  # one address can represent a university, office, or CGNAT population.
+  login_ip_identifier_limit: 5
+  login_identifier_risk_limit: 5
+  login_identifier_risk_delay: 250ms
+  login_broad_ip_limit: 200
+  login_window: 15m
+  # These broad IP limits are deliberately high: one public address can
+  # represent a university, office, computer lab, or CGNAT population.
+  register_ip_email_limit: 3
+  register_broad_ip_hourly_limit: 100
+  register_broad_ip_daily_limit: 500
+  mail_hourly_window: 1h
+  mail_daily_window: 24h
+  resend_account_hourly_limit: 5
+  resend_account_daily_limit: 12
+  resend_ip_account_limit: 5
+  resend_broad_ip_hourly_limit: 100
+  resend_broad_ip_daily_limit: 500
+  forgot_account_hourly_limit: 3
+  forgot_account_daily_limit: 10
+  forgot_ip_account_limit: 5
+  forgot_broad_ip_hourly_limit: 100
+  forgot_broad_ip_daily_limit: 500
+  email_cooldown: 60s
+  token_ip_limit: 30
+  token_window: 5m
+  refresh_ip_limit: 60
+  refresh_window: 1m
+
 minio:
   endpoint: "minio:9000"
   access_key: ""      # overridden by MINIO_ACCESS_KEY env

@@ -7,7 +7,7 @@ type ChangePasswordRequest struct {
 }
 
 type ForgotPasswordRequest struct {
-	Email   string `json:"email" binding:"required,email"`
+	Email string `json:"email" binding:"required,email"`
 }
 
 type LoginRequest struct {
@@ -42,4 +42,3 @@ type ResetPasswordRequest struct {
 type VerifyEmailRequest struct {
 	Token string `json:"token" binding:"required"`
 }
-

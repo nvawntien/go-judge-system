@@ -22,6 +22,7 @@ import (
 	userhandler "go-judge-system/services/submission/internal/adapter/inbound/http/handler/user"
 	resultconsumer "go-judge-system/services/submission/internal/adapter/inbound/kafka"
 	authreader "go-judge-system/services/submission/internal/adapter/outbound/auth"
+	submissioncooldown "go-judge-system/services/submission/internal/adapter/outbound/cooldown"
 	attemptid "go-judge-system/services/submission/internal/adapter/outbound/id"
 	judgepublisher "go-judge-system/services/submission/internal/adapter/outbound/judge"
 	"go-judge-system/services/submission/internal/adapter/outbound/outbox"
@@ -202,9 +203,10 @@ func ProvideCreateSubmissionUseCase(
 	judgePublisher outbound.JudgePublisher,
 	attemptIDs outbound.AttemptIDGenerator,
 	problemReader outbound.ProblemReader,
+	cooldown outbound.SubmissionCooldown,
 	attemptRepo outbound.SubmissionAttemptRepository,
 ) userinbound.CreateSubmissionUseCase {
-	return userusecase.NewCreateSubmissionUseCase(submissionRepo, txManager, judgePublisher, attemptIDs, problemReader, attemptRepo)
+	return userusecase.NewCreateSubmissionUseCase(submissionRepo, txManager, judgePublisher, attemptIDs, problemReader, cooldown, attemptRepo)
 }
 
 func ProvideAdminHandler(
@@ -254,6 +256,7 @@ var OutboundProviderSet = wire.NewSet(
 	outbox.NewOutboxRelay,
 	resultconsumer.NewDLTPublisher,
 	problemreader.NewGRPCProblemReader,
+	submissioncooldown.NewRedisSubmissionCooldown,
 	authreader.NewGRPCPublicUserResolver,
 	judgepublisher.NewGRPCRunner,
 	streamadapter.NewHMACSubmissionStreamTicketService,

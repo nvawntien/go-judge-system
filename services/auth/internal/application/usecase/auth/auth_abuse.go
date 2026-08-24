@@ -1,0 +1,98 @@
+package auth
+
+import (
+	"context"
+	"strings"
+	"time"
+
+	"go-judge-system/pkg/config"
+	"go-judge-system/pkg/requestctx"
+	"go-judge-system/pkg/response"
+	"go-judge-system/services/auth/internal/application/port/outbound"
+)
+
+type authAbuse struct {
+	limiter   outbound.AuthAbuseLimiter
+	admission outbound.AbuseAdmission
+	policy    config.AuthAbuseConfig
+}
+
+func (a authAbuse) acquire(ctx context.Context, request outbound.AdmissionRequest) (outbound.AdmissionResult, error) {
+	result, err := a.admission.Acquire(ctx, request)
+	if err != nil {
+		return outbound.AdmissionResult{}, response.NewAppError(response.CodeServiceUnavailable, "authentication protection temporarily unavailable", err)
+	}
+	return result, nil
+}
+
+func (a authAbuse) clientIP(ctx context.Context) (string, error) {
+	ip, ok := requestctx.ClientIP(ctx)
+	if !ok {
+		return "", response.NewAppError(response.CodeServiceUnavailable, "authentication protection temporarily unavailable", nil)
+	}
+	return ip, nil
+}
+
+func (a authAbuse) allow(ctx context.Context, purpose, scope string, limit int, window time.Duration) (time.Duration, error) {
+	ok, retry, err := a.limiter.Allow(ctx, purpose, scope, limit, window)
+	if err != nil {
+		return 0, response.NewAppError(response.CodeServiceUnavailable, "authentication protection temporarily unavailable", err)
+	}
+	if !ok {
+		return retry, response.NewRateLimitError("too many requests, please try again later", retry)
+	}
+	return 0, nil
+}
+
+func (a authAbuse) checkFailureLimit(ctx context.Context, purpose, scope string, limit int) error {
+	count, retry, err := a.limiter.Count(ctx, purpose, scope)
+	if err != nil {
+		return response.NewAppError(response.CodeServiceUnavailable, "authentication protection temporarily unavailable", err)
+	}
+	if count >= int64(limit) {
+		return response.NewRateLimitError("too many requests, please try again later", retry)
+	}
+	return nil
+}
+
+// recordFailure uses the existing atomic fixed-window Lua increment without
+// imposing a threshold here; hard decisions are made only by pre-checks.
+func (a authAbuse) recordFailure(ctx context.Context, purpose, scope string, limit int, window time.Duration) (bool, time.Duration, error) {
+	allowed, retry, err := a.limiter.Allow(ctx, purpose, scope, limit, window)
+	if err != nil {
+		return false, 0, response.NewAppError(response.CodeServiceUnavailable, "authentication protection temporarily unavailable", err)
+	}
+	return !allowed, retry, nil
+}
+
+func (a authAbuse) delayForIdentifierRisk(ctx context.Context, identifier string) error {
+	count, _, err := a.limiter.Count(ctx, "login:identifier", identifier)
+	if err != nil {
+		return response.NewAppError(response.CodeServiceUnavailable, "authentication protection temporarily unavailable", err)
+	}
+	if count < int64(a.policy.LoginIdentifierRiskLimit) || a.policy.LoginIdentifierRiskDelay <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(a.policy.LoginIdentifierRiskDelay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+func loginIPIdentifierScope(clientIP, identifier string) string {
+	return clientIP + "\x00" + identifier
+}
+func ipTargetScope(clientIP, target string) string { return clientIP + "\x00" + target }
+func normalizedIdentifier(value string) string     { return strings.ToLower(strings.TrimSpace(value)) }
+
+func emailRequestScopes(prefix, clientIP, target string, pairLimit, broadHourlyLimit, broadDailyLimit int, hourlyWindow, dailyWindow time.Duration) []outbound.AdmissionScope {
+	return []outbound.AdmissionScope{
+		{Purpose: prefix + ":ip-account", Scope: ipTargetScope(clientIP, target), Limit: pairLimit, Window: hourlyWindow},
+		{Purpose: prefix + ":ip-hour", Scope: clientIP, Limit: broadHourlyLimit, Window: hourlyWindow},
+		{Purpose: prefix + ":ip-day", Scope: clientIP, Limit: broadDailyLimit, Window: dailyWindow},
+	}
+}

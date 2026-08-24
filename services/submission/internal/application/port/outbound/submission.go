@@ -116,6 +116,17 @@ type AttemptIDGenerator interface {
 	NewAttemptID() string
 }
 
+// SubmissionCooldown atomically admits one official submission for a user and
+// problem pair. A denied acquisition must not create judge workload.
+type SubmissionCooldown interface {
+	Acquire(ctx context.Context, userID string, problemID int64) (SubmissionCooldownResult, error)
+}
+
+type SubmissionCooldownResult struct {
+	Allowed    bool
+	RetryAfter time.Duration
+}
+
 type SubmissionStreamTicketService interface {
 	Issue(userID string, submissionID int64) (ticket string, expiresAt time.Time, err error)
 	Verify(ticket string) (entity.SubmissionStreamTicketClaims, error)

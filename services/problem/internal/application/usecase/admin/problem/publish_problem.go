@@ -3,6 +3,8 @@ package problem
 import (
 	"context"
 	"errors"
+	"go-judge-system/pkg/auth"
+	"go-judge-system/pkg/rbac"
 	"go-judge-system/services/problem/internal/application/dto"
 	inbound "go-judge-system/services/problem/internal/application/port/inbound/admin"
 	"go-judge-system/services/problem/internal/application/port/outbound"
@@ -18,7 +20,11 @@ func NewPublishProblemUseCase(problemRepo outbound.ProblemRepository) inbound.Pu
 	return &publishProblemUseCase{problemRepo: problemRepo}
 }
 
-func (uc *publishProblemUseCase) Execute(ctx context.Context, params dto.ProblemIDRequest) (dto.ProblemDetailResponse, error) {
+func (uc *publishProblemUseCase) Execute(ctx context.Context, claims auth.Claims, params dto.ProblemIDRequest) (dto.ProblemDetailResponse, error) {
+	if !claims.Role.AtLeast(rbac.RoleModerator) {
+		return dto.ProblemDetailResponse{}, domain.ErrForbidden
+	}
+
 	problem, err := uc.problemRepo.GetByID(ctx, params.ID)
 	if err != nil {
 		if errors.Is(err, domain.ErrProblemNotFound) {

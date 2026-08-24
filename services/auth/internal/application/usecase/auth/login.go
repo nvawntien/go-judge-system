@@ -4,11 +4,14 @@ import (
 	"context"
 	"errors"
 	pkgauth "go-judge-system/pkg/auth"
+	"go-judge-system/pkg/config"
+	"go-judge-system/pkg/response"
 	"go-judge-system/services/auth/internal/application/dto"
 	"go-judge-system/services/auth/internal/application/port/inbound"
 	"go-judge-system/services/auth/internal/application/port/outbound"
 	"go-judge-system/services/auth/internal/domain"
 	"go-judge-system/services/auth/internal/domain/entity"
+	"math"
 	"strings"
 )
 
@@ -17,16 +20,42 @@ type loginUseCase struct {
 	passwordEncoder outbound.PasswordEncoder
 	jwtProvider     outbound.JWTProvider
 	logoutAllStore  pkgauth.LogoutAllIATStore
+	abuse           authAbuse
 }
 
 func NewLoginUseCase(userRepo outbound.UserRepository, passwordEncoder outbound.PasswordEncoder, jwtProvider outbound.JWTProvider, logoutAllStore pkgauth.LogoutAllIATStore) inbound.LoginUseCase {
 	return &loginUseCase{userRepo: userRepo, passwordEncoder: passwordEncoder, jwtProvider: jwtProvider, logoutAllStore: logoutAllStore}
 }
 
+func NewLoginUseCaseWithAbuse(userRepo outbound.UserRepository, passwordEncoder outbound.PasswordEncoder, jwtProvider outbound.JWTProvider, logoutAllStore pkgauth.LogoutAllIATStore, limiter outbound.AuthAbuseLimiter, policy config.AuthAbuseConfig) inbound.LoginUseCase {
+	return &loginUseCase{userRepo: userRepo, passwordEncoder: passwordEncoder, jwtProvider: jwtProvider, logoutAllStore: logoutAllStore, abuse: authAbuse{limiter: limiter, policy: policy}}
+}
+
 func (uc *loginUseCase) Execute(ctx context.Context, req dto.LoginRequest) (*dto.LoginResponse, error) {
-	user, err := uc.resolveUser(ctx, req.Identifier)
+	identifier := normalizedIdentifier(req.Identifier)
+	var clientIP string
+	if uc.abuse.limiter != nil {
+		var err error
+		clientIP, err = uc.abuse.clientIP(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if err := uc.abuse.checkFailureLimit(ctx, "login:ip-identifier", loginIPIdentifierScope(clientIP, identifier), uc.abuse.policy.LoginIPIdentifierLimit); err != nil {
+			return nil, err
+		}
+		if err := uc.abuse.checkFailureLimit(ctx, "login:ip", clientIP, uc.abuse.policy.LoginBroadIPLimit); err != nil {
+			return nil, err
+		}
+		if err := uc.abuse.delayForIdentifierRisk(ctx, identifier); err != nil {
+			return nil, err
+		}
+	}
+	user, err := uc.resolveUser(ctx, identifier)
 	if err != nil {
 		if errors.Is(err, domain.ErrUserNotFound) {
+			if err := uc.recordLoginFailure(ctx, clientIP, identifier); err != nil {
+				return nil, err
+			}
 			return nil, domain.ErrInvalidCredentials
 		}
 		return nil, domain.ErrInternalServer.Wrap(err)
@@ -40,7 +69,14 @@ func (uc *loginUseCase) Execute(ctx context.Context, req dto.LoginRequest) (*dto
 	}
 
 	if check := uc.passwordEncoder.ComparePasswords(user.Password, []byte(req.Password)); !check {
+		if err := uc.recordLoginFailure(ctx, clientIP, identifier); err != nil {
+			return nil, err
+		}
 		return nil, domain.ErrInvalidCredentials
+	}
+	if uc.abuse.limiter != nil {
+		_ = uc.abuse.limiter.Reset(ctx, "login:ip-identifier", loginIPIdentifierScope(clientIP, identifier))
+		_ = uc.abuse.limiter.Reset(ctx, "login:identifier", identifier)
 	}
 
 	waited, err := waitForTokenIssuedAfterInvalidation(ctx, uc.logoutAllStore, user.ID)
@@ -77,6 +113,31 @@ func (uc *loginUseCase) Execute(ctx context.Context, req dto.LoginRequest) (*dto
 		RefreshExpire: refreshExpire,
 	}, nil
 
+}
+
+func (uc *loginUseCase) recordLoginFailure(ctx context.Context, clientIP, identifier string) error {
+	if uc.abuse.limiter == nil {
+		return nil
+	}
+	pairExceeded, pairRetry, err := uc.abuse.recordFailure(ctx, "login:ip-identifier", loginIPIdentifierScope(clientIP, identifier), uc.abuse.policy.LoginIPIdentifierLimit, uc.abuse.policy.LoginWindow)
+	if err != nil {
+		return err
+	}
+	_, _, err = uc.abuse.recordFailure(ctx, "login:identifier", identifier, math.MaxInt, uc.abuse.policy.LoginWindow)
+	if err != nil {
+		return err
+	}
+	broadExceeded, broadRetry, err := uc.abuse.recordFailure(ctx, "login:ip", clientIP, uc.abuse.policy.LoginBroadIPLimit, uc.abuse.policy.LoginWindow)
+	if err != nil {
+		return err
+	}
+	if pairExceeded {
+		return response.NewRateLimitError("too many requests, please try again later", pairRetry)
+	}
+	if broadExceeded {
+		return response.NewRateLimitError("too many requests, please try again later", broadRetry)
+	}
+	return nil
 }
 
 func (uc *loginUseCase) resolveUser(ctx context.Context, identifier string) (*entity.User, error) {

@@ -16,5 +16,5 @@ func NewHiddenProblemHandler(uc inbound.HiddenProblemUseCase) *HiddenProblemHand
 }
 
 func (h *HiddenProblemHandler) Handle(c *gin.Context) {
-	response.HandleWithParams(c, h.uc.Execute, response.CodeSuccess)
+	response.HandleWithParamsAndClaims(c, h.uc.Execute, response.CodeSuccess)
 }

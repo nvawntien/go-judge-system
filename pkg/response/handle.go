@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"go-judge-system/pkg/auth"
+	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -187,6 +189,35 @@ func HandleVoidWithParamsAndClaims[Req any](c *gin.Context, fn func(context.Cont
 	}
 
 	if err := fn(c.Request.Context(), claims, req); err != nil {
+		HandleError(c, err)
+		return
+	}
+
+	SuccessWithMessage(c, successCode, successMsg, nil)
+}
+
+// HandleVoidWithClaimsParamsAndBody binds authenticated claims, URI params, and
+// a JSON body for a void response.
+func HandleVoidWithClaimsParamsAndBody[P any, B any](c *gin.Context, fn func(context.Context, auth.Claims, P, B) error, successCode int, successMsg string) {
+	claims, ok := auth.GetClaims(c)
+	if !ok {
+		HandleError(c, NewAppError(CodeUnauthorized, "unauthorized", nil))
+		return
+	}
+
+	var params P
+	if err := c.ShouldBindUri(&params); err != nil {
+		HandleError(c, NewAppError(CodeParamInvalid, "invalid uri params", err))
+		return
+	}
+
+	var body B
+	if err := c.ShouldBindJSON(&body); err != nil {
+		HandleError(c, NewAppError(CodeBadRequest, "invalid request payload", err))
+		return
+	}
+
+	if err := fn(c.Request.Context(), claims, params, body); err != nil {
 		HandleError(c, err)
 		return
 	}
@@ -415,6 +446,13 @@ func HandleError(c *gin.Context, err error) {
 
 	var appErr *AppError
 	if errors.As(err, &appErr) {
+		if appErr.RetryAfter > 0 {
+			seconds := int(appErr.RetryAfter.Round(time.Second) / time.Second)
+			if seconds < 1 {
+				seconds = 1
+			}
+			c.Header("Retry-After", strconv.Itoa(seconds))
+		}
 		Error(c, appErr.Code, appErr.Message)
 		return
 	}

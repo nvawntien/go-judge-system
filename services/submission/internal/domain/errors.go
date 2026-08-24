@@ -30,6 +30,7 @@ var (
 	ErrInvalidStatusTransition     = response.NewAppError(response.CodeConflict, "invalid submission status transition", nil)
 	ErrSubmissionRejudgeConflict   = response.NewAppError(response.CodeConflict, "submission cannot be rejudged in its current state", nil)
 	ErrSubmissionTestCaseRequired  = response.NewAppError(response.CodeConflict, "active testcase dataset is required before rejudge", nil)
+	ErrSubmissionCooldownUnavailable = response.NewAppError(response.CodeServiceUnavailable, "submission protection is temporarily unavailable", nil)
 	ErrInvalidStreamTicket         = response.NewAppError(response.CodeUnauthorized, "invalid submission stream ticket", nil)
 	ErrExpiredStreamTicket         = response.NewAppError(response.CodeUnauthorized, "expired submission stream ticket", nil)
 	ErrSubmissionStreamUnsupported = response.NewAppError(response.CodeInternalServer, "submission stream unsupported", nil)

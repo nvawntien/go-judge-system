@@ -3,14 +3,17 @@ package user
 import (
 	"context"
 	"errors"
+	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"go-judge-system/pkg/auth"
 	pkgjudge "go-judge-system/pkg/judge"
 	"go-judge-system/pkg/rbac"
 	"go-judge-system/pkg/response"
 	"go-judge-system/services/submission/internal/application/dto"
+	inbound "go-judge-system/services/submission/internal/application/port/inbound/user"
 	"go-judge-system/services/submission/internal/application/port/outbound"
 	"go-judge-system/services/submission/internal/domain"
 	"go-judge-system/services/submission/internal/domain/entity"
@@ -25,6 +28,7 @@ type transactionState struct {
 
 type fakeTransactionManager struct {
 	called              bool
+	calls               int
 	committedSubmission *entity.Submission
 	committedOutbox     bool
 	rolledBack          bool
@@ -33,6 +37,7 @@ type fakeTransactionManager struct {
 
 func (m *fakeTransactionManager) ExecuteInTx(ctx context.Context, fn func(context.Context) error) error {
 	m.called = true
+	m.calls++
 	if m.order != nil {
 		*m.order = append(*m.order, "transaction")
 	}
@@ -48,11 +53,13 @@ func (m *fakeTransactionManager) ExecuteInTx(ctx context.Context, fn func(contex
 }
 
 type fakeSubmissionRepository struct {
-	createErr error
-	created   *entity.Submission
+	createErr   error
+	created     *entity.Submission
+	createCalls int
 }
 
 func (r *fakeSubmissionRepository) Create(ctx context.Context, submission *entity.Submission) error {
+	r.createCalls++
 	if r.createErr != nil {
 		return r.createErr
 	}
@@ -87,6 +94,7 @@ func (r *fakeSubmissionRepository) ResultSummaries(
 type fakeJudgePublisher struct {
 	publishErr error
 	called     bool
+	calls      int
 	published  pkgjudge.JobMessage
 }
 
@@ -95,6 +103,7 @@ func (p *fakeJudgePublisher) Publish(
 	job pkgjudge.JobMessage,
 ) error {
 	p.called = true
+	p.calls++
 	if p.publishErr != nil {
 		return p.publishErr
 	}
@@ -112,6 +121,34 @@ func (g fakeAttemptIDGenerator) NewAttemptID() string {
 		return "attempt-test-1"
 	}
 	return g.next
+}
+
+type cooldownCall struct {
+	userID    string
+	problemID int64
+}
+
+type fakeSubmissionCooldown struct {
+	results []outbound.SubmissionCooldownResult
+	err     error
+	calls   []cooldownCall
+	order   *[]string
+}
+
+func (c *fakeSubmissionCooldown) Acquire(_ context.Context, userID string, problemID int64) (outbound.SubmissionCooldownResult, error) {
+	c.calls = append(c.calls, cooldownCall{userID: userID, problemID: problemID})
+	if c.order != nil {
+		*c.order = append(*c.order, "cooldown")
+	}
+	if c.err != nil {
+		return outbound.SubmissionCooldownResult{}, c.err
+	}
+	if len(c.results) == 0 {
+		return outbound.SubmissionCooldownResult{Allowed: true}, nil
+	}
+	result := c.results[0]
+	c.results = c.results[1:]
+	return result, nil
 }
 
 type fakeProblemReader struct {
@@ -157,7 +194,7 @@ func executeSubmission(
 	publisher *fakeJudgePublisher,
 ) (dto.CreateSubmissionResponse, error) {
 	t.Helper()
-	uc := NewCreateSubmissionUseCase(repo, tx, publisher, fakeAttemptIDGenerator{}, validProblemReader(req.ProblemID))
+	uc := NewCreateSubmissionUseCase(repo, tx, publisher, fakeAttemptIDGenerator{}, validProblemReader(req.ProblemID), &fakeSubmissionCooldown{})
 	return uc.Execute(context.Background(), auth.Claims{UserID: "user-1", Username: "alice", Role: rbac.RoleUser}, req)
 }
 
@@ -232,7 +269,7 @@ func TestCreateSubmission_Validation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tx := &fakeTransactionManager{}
 			problemReader := validProblemReader(tt.req.ProblemID)
-			uc := NewCreateSubmissionUseCase(&fakeSubmissionRepository{}, tx, &fakeJudgePublisher{}, fakeAttemptIDGenerator{}, problemReader)
+			uc := NewCreateSubmissionUseCase(&fakeSubmissionRepository{}, tx, &fakeJudgePublisher{}, fakeAttemptIDGenerator{}, problemReader, &fakeSubmissionCooldown{})
 			_, err := uc.Execute(context.Background(), tt.claims, tt.req)
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("Execute() error = %v, want %v", err, tt.wantErr)
@@ -254,7 +291,8 @@ func TestCreateSubmissionValidatesProblemBeforeTransaction(t *testing.T) {
 	tx := &fakeTransactionManager{order: &order}
 	repo := &fakeSubmissionRepository{}
 	publisher := &fakeJudgePublisher{}
-	uc := NewCreateSubmissionUseCase(repo, tx, publisher, fakeAttemptIDGenerator{next: "attempt-before-tx"}, problemReader)
+	cooldown := &fakeSubmissionCooldown{order: &order}
+	uc := NewCreateSubmissionUseCase(repo, tx, publisher, fakeAttemptIDGenerator{next: "attempt-before-tx"}, problemReader, cooldown)
 
 	got, err := uc.Execute(
 		context.Background(),
@@ -270,8 +308,11 @@ func TestCreateSubmissionValidatesProblemBeforeTransaction(t *testing.T) {
 	if problemReader.problemID != 42 || problemReader.actor.UserID != "trusted-user" || problemReader.actor.Role != rbac.RoleModerator {
 		t.Fatalf("ProblemReader problem/actor = %d/%+v", problemReader.problemID, problemReader.actor)
 	}
-	if len(order) != 2 || order[0] != "problem" || order[1] != "transaction" {
-		t.Fatalf("call order = %v, want [problem transaction]", order)
+	if len(order) != 3 || order[0] != "problem" || order[1] != "cooldown" || order[2] != "transaction" {
+		t.Fatalf("call order = %v, want [problem cooldown transaction]", order)
+	}
+	if len(cooldown.calls) != 1 || cooldown.calls[0] != (cooldownCall{userID: "trusted-user", problemID: 84}) {
+		t.Fatalf("cooldown calls = %+v", cooldown.calls)
 	}
 	if got.ProblemID != 84 || repo.created.ProblemID != 84 {
 		t.Fatalf("canonical problem ID response/stored = %d/%d, want 84", got.ProblemID, repo.created.ProblemID)
@@ -306,7 +347,7 @@ func TestCreateSubmissionProblemValidationFailureStartsNoTransaction(t *testing.
 			tx := &fakeTransactionManager{}
 			repo := &fakeSubmissionRepository{}
 			publisher := &fakeJudgePublisher{}
-			uc := NewCreateSubmissionUseCase(repo, tx, publisher, fakeAttemptIDGenerator{}, problemReader)
+			uc := NewCreateSubmissionUseCase(repo, tx, publisher, fakeAttemptIDGenerator{}, problemReader, &fakeSubmissionCooldown{})
 
 			_, err := uc.Execute(
 				context.Background(),
@@ -320,6 +361,112 @@ func TestCreateSubmissionProblemValidationFailureStartsNoTransaction(t *testing.
 				t.Fatalf("calls: problem=%d transaction=%t repository=%t publisher=%t", problemReader.calls, tx.called, repo.created != nil, publisher.called)
 			}
 		})
+	}
+}
+
+func TestCreateSubmissionCooldownDenialPreventsAllSideEffects(t *testing.T) {
+	repo := &fakeSubmissionRepository{}
+	tx := &fakeTransactionManager{}
+	publisher := &fakeJudgePublisher{}
+	cooldown := &fakeSubmissionCooldown{results: []outbound.SubmissionCooldownResult{
+		{Allowed: true},
+		{RetryAfter: 2 * time.Second},
+	}}
+	uc := NewCreateSubmissionUseCase(repo, tx, publisher, fakeAttemptIDGenerator{}, validProblemReader(42), cooldown)
+	claims := auth.Claims{UserID: "user-a", Username: "alice", Role: rbac.RoleUser}
+	req := dto.CreateSubmissionRequest{ProblemID: 42, Language: "GO", SourceCode: "package main"}
+
+	if _, err := uc.Execute(context.Background(), claims, req); err != nil {
+		t.Fatalf("first submission error = %v", err)
+	}
+	if repo.createCalls != 1 || tx.calls != 1 || publisher.calls != 1 {
+		t.Fatalf("first side effects create/tx/publish = %d/%d/%d", repo.createCalls, tx.calls, publisher.calls)
+	}
+
+	_, err := uc.Execute(context.Background(), claims, req)
+	var appErr *response.AppError
+	if !errors.As(err, &appErr) || appErr.Code != response.CodeRateLimitExceeded || appErr.RetryAfter != 2*time.Second {
+		t.Fatalf("cooldown error = %#v", err)
+	}
+	if status := response.GetHTTPStatus(appErr.Code); status != http.StatusTooManyRequests {
+		t.Fatalf("status = %d, want %d", status, http.StatusTooManyRequests)
+	}
+	if repo.createCalls != 1 || tx.calls != 1 || publisher.calls != 1 {
+		t.Fatalf("denied side effects create/tx/publish = %d/%d/%d, want 1/1/1", repo.createCalls, tx.calls, publisher.calls)
+	}
+}
+
+func TestCreateSubmissionCooldownIsScopedToUserAndCanonicalProblem(t *testing.T) {
+	cooldown := &fakeSubmissionCooldown{}
+	newUseCase := func(problemID int64) inbound.CreateSubmissionUseCase {
+		return NewCreateSubmissionUseCase(
+			&fakeSubmissionRepository{},
+			&fakeTransactionManager{},
+			&fakeJudgePublisher{},
+			fakeAttemptIDGenerator{},
+			validProblemReader(problemID),
+			cooldown,
+		)
+	}
+	problemOneUseCase := newUseCase(100)
+	problemTwoUseCase := newUseCase(200)
+
+	requests := []struct {
+		useCase inbound.CreateSubmissionUseCase
+		claims  auth.Claims
+	}{
+		{problemOneUseCase, auth.Claims{UserID: "user-a", Username: "alice", Role: rbac.RoleUser}},
+		{problemTwoUseCase, auth.Claims{UserID: "user-a", Username: "alice", Role: rbac.RoleUser}},
+		{problemOneUseCase, auth.Claims{UserID: "user-b", Username: "bob", Role: rbac.RoleUser}},
+	}
+	for _, request := range requests {
+		if _, err := request.useCase.Execute(context.Background(), request.claims, dto.CreateSubmissionRequest{ProblemID: 1, Language: "GO", SourceCode: "package main"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	want := []cooldownCall{
+		{userID: "user-a", problemID: 100},
+		{userID: "user-a", problemID: 200},
+		{userID: "user-b", problemID: 100},
+	}
+	if len(cooldown.calls) != len(want) {
+		t.Fatalf("calls = %+v", cooldown.calls)
+	}
+	for i := range want {
+		if cooldown.calls[i] != want[i] {
+			t.Fatalf("call %d = %+v, want %+v", i, cooldown.calls[i], want[i])
+		}
+	}
+}
+
+func TestCreateSubmissionCooldownFailurePreventsAllSideEffects(t *testing.T) {
+	repo := &fakeSubmissionRepository{}
+	tx := &fakeTransactionManager{}
+	publisher := &fakeJudgePublisher{}
+	uc := NewCreateSubmissionUseCase(
+		repo,
+		tx,
+		publisher,
+		fakeAttemptIDGenerator{},
+		validProblemReader(42),
+		&fakeSubmissionCooldown{err: errors.New("redis unavailable")},
+	)
+
+	_, err := uc.Execute(
+		context.Background(),
+		auth.Claims{UserID: "user-a", Username: "alice", Role: rbac.RoleUser},
+		dto.CreateSubmissionRequest{ProblemID: 42, Language: "GO", SourceCode: "package main"},
+	)
+	if !errors.Is(err, domain.ErrSubmissionCooldownUnavailable) {
+		t.Fatalf("error = %v", err)
+	}
+	var appErr *response.AppError
+	if !errors.As(err, &appErr) || response.GetHTTPStatus(appErr.Code) != http.StatusServiceUnavailable {
+		t.Fatalf("error = %#v", err)
+	}
+	if repo.createCalls != 0 || tx.calls != 0 || publisher.calls != 0 {
+		t.Fatalf("failure side effects create/tx/publish = %d/%d/%d", repo.createCalls, tx.calls, publisher.calls)
 	}
 }
 
@@ -342,6 +489,7 @@ func TestCreateSubmissionPropagatesActorRoleForHiddenProblemAccess(t *testing.T)
 				&fakeJudgePublisher{},
 				fakeAttemptIDGenerator{},
 				problemReader,
+				&fakeSubmissionCooldown{},
 			)
 			_, err := uc.Execute(
 				context.Background(),

@@ -8,7 +8,7 @@ import (
 )
 
 type AssignRoleUseCase interface {
-	Execute(ctx context.Context, params dto.UserIDRequest, body dto.AssignRoleRequest) error
+	Execute(ctx context.Context, claims auth.Claims, params dto.UserIDRequest, body dto.AssignRoleRequest) error
 }
 
 type AdminUsersUseCase interface {
