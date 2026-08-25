@@ -1,19 +1,33 @@
-# AstraCode
+<p align="center">
+  <img src="docs/assets/astracode-logo.svg" alt="AstraCode connected-node logo" width="96" />
+</p>
 
-[![Release](https://img.shields.io/badge/release-v0.1.0-6b46c1)](https://github.com/nvawntien/go-judge-system)
-[![Go](https://img.shields.io/badge/Go-1.25.8-00ADD8?logo=go&logoColor=white)](https://go.dev/)
-[![Next.js](https://img.shields.io/badge/Next.js-15.5.21-000000?logo=nextdotjs&logoColor=white)](https://nextjs.org/)
-[![Docker Compose](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-2ea44f)](LICENSE)
+<h1 align="center">AstraCode</h1>
+
+<p align="center">
+  <a href="https://github.com/nvawntien/go-judge-system/releases/latest"><img src="https://img.shields.io/github/v/release/nvawntien/go-judge-system?display_name=tag&amp;sort=semver" alt="Latest release" /></a>
+  <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.25.8-00ADD8?logo=go&amp;logoColor=white" alt="Go 1.25.8" /></a>
+  <a href="https://nextjs.org/"><img src="https://img.shields.io/badge/Next.js-15.5.21-000000?logo=nextdotjs&amp;logoColor=white" alt="Next.js 15.5.21" /></a>
+  <a href="https://www.docker.com/"><img src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&amp;logoColor=white" alt="Docker Compose" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2ea44f" alt="MIT License" /></a>
+</p>
 
 AstraCode is a self-hosted, event-driven Online Judge built with Go services,
 a modern Next.js workspace, and isolated program execution. It covers the core
 competitive-programming lifecycle: author a problem, moderate it, solve it,
 run code, submit against official testcases, and review results and statistics.
 
-> **v0.1.0** is the first public release of the core AstraCode judge platform.
-> It is production-oriented in architecture, but operators must complete the
-> deployment and security work described below before exposing it publicly.
+> **Current verified production release: v0.1.4.** It is deployed from an
+> immutable semantic release across six GHCR images and separate App and Judge
+> nodes.
+
+The v0.1.4 production milestone verified node-specific deployment and health
+gates, Run Code end to end, and the official asynchronous Submit/Judge path. It
+also includes App rollback, automatic restoration of Judge when a later App
+activation fails, a stable Docker Compose project identity, and GitHub
+`production` Environment deployment tracking. This is a verified operating
+baseline, not a claim of zero downtime, high availability, or horizontal Judge
+scaling.
 
 ## Highlights
 
@@ -63,6 +77,20 @@ flowchart TB
   results --> submission
   submission -->|SSE updates| browser
 ```
+
+### Production topology
+
+The diagram above describes the logical runtime relationships. The verified
+production deployment separates those components across two physical roles:
+
+- **App Node** — runs `website`, `auth-service`, `problem-service`,
+  `submission-service`, Envoy, KrakenD, PostgreSQL, Redis, Kafka, and MinIO. It
+  does not run Judge Worker or the go-judge executor.
+- **Judge Node** — runs `judge-worker` and the go-judge sandbox/executor.
+
+Official submissions travel asynchronously from Submission Service to Judge
+Worker through Kafka. Interactive Run Code requests use the direct internal
+Judge Worker gRPC path and do not enter the official-submission queue.
 
 ### Official judging lifecycle
 
@@ -268,21 +296,49 @@ Further technical documentation:
 Production uses immutable GHCR images and includes the standalone Next.js
 website in the Compose topology. Envoy provides same-origin routes for the UI,
 API, SSE, and avatars; only its configurable loopback port is bound by default.
-Production has separate App and Judge nodes. Normal deployment and rollback use
-the node-specific commands:
+Production has separate App and Judge nodes. The release path is:
+
+```text
+develop
+  ↓
+main
+  ↓
+immutable vX.Y.Z tag
+  ↓
+Release container images workflow
+  ↓
+six GHCR images
+  ↓
+manual Deploy production workflow
+  ↓
+Judge Node → App Node → health verification
+```
+
+The deployment workflow checks out the exact immutable tag and verifies that
+all six release image manifests exist before connecting to either node. Judge
+is deployed and verified first, followed by App. If App activation fails after
+Judge has moved forward, the workflow restores Judge to its pre-workflow
+release; the App script independently supports rollback and uses an explicit,
+fail-safe health gate. The App Compose project identity remains
+`go-judge-system`, and node-owned configuration under `/etc/astracode` stays
+outside deployment bundles.
+
+Normal node-specific activation and emergency rollback commands use semantic
+release tags:
 
 ```bash
 # On the relevant production node only:
-/opt/astracode/scripts/deploy-app-node.sh v0.1.0
+/opt/astracode/scripts/deploy-app-node.sh vX.Y.Z
 /opt/astracode/scripts/deploy-app-node.sh --rollback
-/opt/astracode/scripts/deploy-judge-node.sh v0.1.0
+/opt/astracode/scripts/deploy-judge-node.sh vX.Y.Z
 /opt/astracode/scripts/deploy-judge-node.sh --rollback
 ```
 
 The dedicated release workflow publishes version and full-commit SHA image tags;
 the separate manual deployment workflow accepts only the protected semantic
-release tag and uses the GitHub `production` Environment. Application secrets
-and node-specific Compose/configuration files stay outside the checkout.
+release tag and records the deployment through the GitHub `production`
+Environment. Application secrets and node-specific Compose/configuration files
+stay outside the checkout.
 
 Read [Production deployment](docs/DEPLOYMENT.md) before operating the stack. It
 covers first bootstrap, TLS, strict SSH host verification, GHCR, external secret
@@ -309,15 +365,33 @@ before a multi-replica or public deployment.
 
 ## Roadmap
 
-v0.1.0 focuses on:
+### Delivered
 
-```text
-problem authoring → moderation → solving → sandboxed judging → submissions and statistics
-```
+- Problem authoring and moderation.
+- Solving, sandboxed execution, asynchronous judging, submissions, and statistics.
+- Accounts, profiles, and the Admin Console.
+- Dual-node production deployment and an immutable release pipeline.
 
-Planned areas include editorial/solution workflows, discussions, contest
-orchestration, standings, and rating. They are not presented as released
-features.
+### Next engineering work
+
+- Judge throughput benchmarking and capacity planning.
+- Evidence-based concurrency tuning.
+- Horizontal Judge fleet and scaling design.
+
+### Longer-term product work
+
+- Contests, standings, and rating.
+- Editorials and solution workflows.
+- Discussions.
+
+These items are plans, not released features.
+
+## Contributing and security
+
+- Read [Contributing](CONTRIBUTING.md) before proposing a change.
+- Participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md).
+- Follow the [Security Policy](SECURITY.md) for private vulnerability reports;
+  do not disclose an unpatched vulnerability in a public issue.
 
 ## License
 

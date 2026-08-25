@@ -1,0 +1,112 @@
+name: Bug report
+description: Report a reproducible problem in AstraCode
+title: "[Bug]: "
+labels: []
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve AstraCode.
+
+        **Do not report security vulnerabilities through this public form.** Follow the private reporting instructions in [SECURITY.md](https://github.com/nvawntien/go-judge-system/security/policy). Never paste secrets, credentials, private keys, or private infrastructure details.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Briefly describe the problem and its impact.
+      placeholder: What went wrong, and who or what does it affect?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected component
+      description: Select the area most directly affected.
+      options:
+        - website
+        - auth-service
+        - problem-service
+        - submission-service
+        - judge-worker
+        - sandbox / go-judge
+        - gateway
+        - envoy
+        - Docker / production deployment
+        - documentation
+        - other
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Provide a minimal, repeatable sequence using non-sensitive test data.
+      placeholder: |
+        1. Configure ...
+        2. Run ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include relevant OS, browser, Go/Node/Docker versions, and deployment mode.
+      placeholder: Local Compose, browser and version, operating system, and relevant tool versions
+    validations:
+      required: true
+
+  - type: input
+    id: release
+    attributes:
+      label: Release or commit
+      description: Provide the AstraCode release tag or commit SHA where the issue occurs.
+      placeholder: vX.Y.Z or full commit SHA
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Paste only the smallest useful, redacted excerpt. Do not include secrets or private data.
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: Additional context
+      description: Add screenshots, links, or other non-sensitive context that may help.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: sensitive_data
+    attributes:
+      label: Sensitive-data check
+      options:
+        - label: I confirm this public issue contains no secrets, credentials, private keys, private testcase data, or undisclosed vulnerability details.
+          required: true

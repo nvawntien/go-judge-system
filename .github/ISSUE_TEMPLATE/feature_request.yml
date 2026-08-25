@@ -1,0 +1,61 @@
+name: Feature request
+description: Suggest a focused improvement for AstraCode
+title: "[Feature]: "
+labels: []
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for proposing an improvement. Keep the request focused on the user or operator problem it should solve.
+
+        Security vulnerabilities belong in the private process described by [SECURITY.md](https://github.com/nvawntien/go-judge-system/security/policy), not in a public feature request.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What need, limitation, or workflow should this change address?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the outcome you would like, without requiring a particular implementation.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Briefly note workarounds or other approaches you considered.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - Solver experience / website
+        - Accounts and profiles
+        - Problem authoring and moderation
+        - Submissions and results
+        - Judge and sandbox
+        - API / service contracts
+        - Deployment and operations
+        - Documentation and community
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: Additional context
+      description: Add non-sensitive examples, sketches, or references that clarify the request.
+    validations:
+      required: false
