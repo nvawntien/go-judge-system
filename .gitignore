@@ -11,3 +11,7 @@ logs/
 .idea
 
 api-tests/
+
+# Local benchmark artifacts and pre-issued session cookies.
+/bench-results/
+/tools/benchmark/judge/users.local.json
