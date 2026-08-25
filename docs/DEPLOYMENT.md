@@ -110,6 +110,13 @@ public avatar bucket behavior, and records state under:
 `kafka-init` is one-shot and is intentionally not treated as a permanently
 running health-checked service.
 
+Kafka runs with a fixed 512 MiB JVM heap below its 1 GiB container memory
+limit. Its recurring Docker healthcheck is a lightweight local TCP probe;
+`kafka-init` separately performs bounded Kafka protocol-readiness retries before
+the idempotent topic-creation commands. App activation starts Kafka, forcibly
+recreates and runs the `kafka-init` Compose service to successful completion,
+and only then activates the complete App service set.
+
 ## Judge Node
 
 The private Judge Node runs only:
@@ -207,6 +214,12 @@ Each node can be rolled back independently:
 On local activation failure, each script attempts its own previous valid
 semantic release and still exits nonzero to report that the requested release
 failed.
+
+App rollback changes the AstraCode application image tag while reusing the
+currently deployed Compose bundle and node-owned override. It does not restore
+an earlier base Compose infrastructure configuration, including prior Kafka
+heap, resource-limit, or healthcheck settings; those require an explicit bundle
+rollback by an operator when necessary.
 
 If Judge deployment fails, the workflow stops before touching App. If Judge
 succeeds but App deployment fails, the App script performs its own rollback and

@@ -128,6 +128,13 @@ jobs:
             .name == "go-judge-system" and
             (.services | has("go-judge") | not) and
             (.services | has("judge-worker") | not) and
+            (.services.kafka.environment.KAFKA_HEAP_OPTS == "-Xms512m -Xmx512m") and
+            (.services.kafka.deploy.resources.limits.memory == "1073741824") and
+            (.services.kafka.deploy.resources.limits.cpus == 1) and
+            (.services.kafka.healthcheck.test == ["CMD", "bash", "-ec", "exec 3<>/dev/tcp/127.0.0.1/9092"]) and
+            ((.services.kafka.healthcheck.test | join(" ") | contains("kafka-topics.sh")) | not) and
+            ((.services.kafka.healthcheck.test | join(" ") | contains("kafka-broker-api-versions.sh")) | not) and
+            ((.services.kafka.healthcheck.test | join(" ") | contains("java")) | not) and
             (.services.kafka.ports | any(.[]; .host_ip == "192.0.2.10" and .published == "9094" and .target == 9094)) and
             (.services["problem-service"].ports | any(.[]; .host_ip == "192.0.2.10" and .published == "9092" and .target == 9092)) and
             (.services.minio.ports | any(.[]; .host_ip == "192.0.2.10" and .published == "9000" and .target == 9000))
@@ -142,16 +149,26 @@ jobs:
         with:
           ref: ${{ inputs.git_ref || github.sha }}
 
-      - name: Validate shell syntax and Judge image override generation
+      - name: Validate deployment and Kafka initialization scripts
         run: |
           bash -n scripts/deploy-app-node.sh
           bash -n scripts/deploy-judge-node.sh
           bash -n scripts/deploy-production.sh
+          bash -n infra/kafka/kafka-init.sh
+
+          grep -Fqx 'readonly KAFKA_READY_MAX_ATTEMPTS=30' infra/kafka/kafka-init.sh
+          grep -Fqx 'readonly KAFKA_READY_RETRY_SECONDS=2' infra/kafka/kafka-init.sh
+          grep -Fq 'for ((attempt = 1; attempt <= KAFKA_READY_MAX_ATTEMPTS; attempt++)); do' infra/kafka/kafka-init.sh
+          grep -Fq '"$KAFKA_TOPICS_COMMAND" --bootstrap-server "$KAFKA_BOOTSTRAP_SERVER" --list' infra/kafka/kafka-init.sh
+          grep -Fq 'Kafka did not become protocol-ready' infra/kafka/kafka-init.sh
+          grep -Fqx 'wait_for_kafka_protocol || exit 1' infra/kafka/kafka-init.sh
 
           activation="$(sed -n '/^activate() {/,/^}/p' scripts/deploy-app-node.sh)"
           required_activation_guards=(
             '  compose config --quiet || return 1'
             '  compose pull "${APP_RELEASE_SERVICES[@]}" || return 1'
+            '  compose up -d --pull never --timeout "${COMPOSE_STOP_TIMEOUT:-30}" kafka || return 1'
+            '  compose up --no-deps --force-recreate --pull never --timeout "${COMPOSE_STOP_TIMEOUT:-30}" --exit-code-from kafka-init kafka-init || return 1'
             '  compose up -d --pull never --timeout "${COMPOSE_STOP_TIMEOUT:-30}" "${APP_SERVICES[@]}" || return 1'
             '  compose ps || return 1'
             '  smoke_test || return 1'
@@ -161,6 +178,67 @@ jobs:
           for guard in "${required_activation_guards[@]}"; do
             grep -Fqx "$guard" <<<"$activation"
           done
+
+          {
+            cat <<'EOF'
+          set -Eeuo pipefail
+          APP_RELEASE_SERVICES=(website)
+          APP_SERVICES=(website)
+          compose_calls=()
+          compose() {
+            compose_calls+=("$*")
+            return 0
+          }
+          smoke_test() { return 0; }
+          wait_for_services() { return 0; }
+          configure_avatar_bucket() { return 0; }
+          EOF
+            printf '%s\n' "$activation"
+            cat <<'EOF'
+          activate
+          expected_calls=(
+            'config --quiet'
+            'pull website'
+            'up -d --pull never --timeout 30 kafka'
+            'up --no-deps --force-recreate --pull never --timeout 30 --exit-code-from kafka-init kafka-init'
+            'up -d --pull never --timeout 30 website'
+            'ps'
+          )
+          [[ "${compose_calls[*]}" == "${expected_calls[*]}" ]]
+          EOF
+          } | bash
+
+          {
+            cat <<'EOF'
+          set -Eeuo pipefail
+          APP_RELEASE_SERVICES=(website)
+          APP_SERVICES=(website)
+          init_invoked=0
+          remaining_app_started=0
+          compose() {
+            if [[ "$*" == 'up --no-deps --force-recreate --pull never --timeout 30 --exit-code-from kafka-init kafka-init' ]]; then
+              init_invoked=1
+              return 1
+            fi
+            if [[ "$*" == 'up -d --pull never --timeout 30 website' ]]; then
+              remaining_app_started=1
+            fi
+            return 0
+          }
+          smoke_test() { return 0; }
+          wait_for_services() { return 0; }
+          configure_avatar_bucket() { return 0; }
+          EOF
+            printf '%s\n' "$activation"
+            cat <<'EOF'
+          if activate; then
+            echo 'failed kafka-init was accepted by App activation' >&2
+            exit 1
+          fi
+          [[ "$init_invoked" -eq 1 ]]
+          [[ "$remaining_app_started" -eq 0 ]]
+          EOF
+          } | bash
 
           {
             cat <<'EOF'

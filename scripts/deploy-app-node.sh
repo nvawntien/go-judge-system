@@ -256,6 +256,12 @@ configure_avatar_bucket() {
 activate() {
   compose config --quiet || return 1
   compose pull "${APP_RELEASE_SERVICES[@]}" || return 1
+  compose up -d --pull never --timeout "${COMPOSE_STOP_TIMEOUT:-30}" kafka || return 1
+  # Force a fresh foreground execution of the actual Compose service. Keeping
+  # the exited-successfully service container lets service_completed_successfully
+  # gate the remaining App startup; --no-deps prevents exit-code handling from
+  # stopping the Kafka container that was started above.
+  compose up --no-deps --force-recreate --pull never --timeout "${COMPOSE_STOP_TIMEOUT:-30}" --exit-code-from kafka-init kafka-init || return 1
   # No --profile judge is passed. go-judge and judge-worker stay disabled by
   # the required external App Node override.
   # Images for upstream/stateful services are intentionally not pulled as part

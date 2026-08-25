@@ -160,6 +160,7 @@ services:
       - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=INTERNAL
       - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=false
       - KAFKA_CFG_NUM_PARTITIONS=3
+      - KAFKA_HEAP_OPTS=-Xms512m -Xmx512m
       - ALLOW_PLAINTEXT_LISTENER=yes
     volumes:
       - kafka_data:/bitnami/kafka
@@ -168,13 +169,13 @@ services:
     logging: *default-logging
     healthcheck:
       <<: *healthcheck-defaults
-      test: [ "CMD", "bash", "-lc", "/opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list > /dev/null 2>&1" ]
+      test: [ "CMD", "bash", "-ec", "exec 3<>/dev/tcp/127.0.0.1/9092" ]
       interval: 10s
     deploy:
       resources:
         limits:
           cpus: "1.00"
-          memory: 768M
+          memory: 1G
 
   kafka-init:
     container_name: judge_kafka_init
