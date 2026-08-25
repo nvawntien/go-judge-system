@@ -1,0 +1,122 @@
+package scheduler
+
+import (
+	"math/big"
+	"testing"
+	"time"
+)
+
+func TestFixedOffsetsAreOriginBased(t *testing.T) {
+	rate, _ := new(big.Rat).SetString("0.3")
+	offsets, err := FixedOffsets(rate, 10*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(offsets) != 3 || offsets[0] != 0 || offsets[1] != 3333333333*time.Nanosecond || offsets[2] != 6666666666*time.Nanosecond {
+		t.Fatalf("offsets=%v", offsets)
+	}
+}
+
+func TestFixedOffsetsFractionalRatesUseOriginalOrigin(t *testing.T) {
+	for _, raw := range []string{"0.1", "0.3", "1.5", "7.25"} {
+		rate, _ := new(big.Rat).SetString(raw)
+		offsets, err := FixedOffsets(rate, 30*time.Second)
+		if err != nil || len(offsets) == 0 || offsets[0] != 0 {
+			t.Fatalf("rate=%s offsets=%v err=%v", raw, offsets, err)
+		}
+		for index, offset := range offsets {
+			if want := offsetFor(rate, index); offset != want {
+				t.Fatalf("rate=%s index=%d offset=%s want=%s", raw, index, offset, want)
+			}
+		}
+	}
+}
+
+func TestArrivalCountUsesHalfOpenLoadWindow(t *testing.T) {
+	cases := []struct {
+		rate string
+		want int
+	}{
+		{rate: "0.1", want: 3},
+		{rate: "0.3", want: 9},
+		{rate: "1.5", want: 45},
+		{rate: "7.25", want: 218},
+	}
+	for _, test := range cases {
+		rate, _ := new(big.Rat).SetString(test.rate)
+		got, err := ArrivalCount(rate, 30*time.Second)
+		if err != nil || got != test.want {
+			t.Fatalf("rate=%s count=%d err=%v want=%d", test.rate, got, err, test.want)
+		}
+		if final := offsetFor(rate, got-1); final >= 30*time.Second {
+			t.Fatalf("rate=%s final offset %s escaped [0,duration)", test.rate, final)
+		}
+		if next := offsetFor(rate, got); next < 30*time.Second {
+			t.Fatalf("rate=%s next offset %s remained in [0,duration)", test.rate, next)
+		}
+	}
+}
+
+func TestPoolDoesNotDelayUnavailableArrival(t *testing.T) {
+	pool, err := NewPool([]string{"a"}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	user, ok := pool.Lease(now)
+	if !ok || user.Alias != "a" {
+		t.Fatal("first lease failed")
+	}
+	if err := pool.Accepted("a", now, time.Second, 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := pool.Lease(now.Add(500 * time.Millisecond)); ok {
+		t.Fatal("cooldown user was reused")
+	}
+	if _, ok := pool.Lease(now.Add(time.Second)); !ok {
+		t.Fatal("expired cooldown user unavailable")
+	}
+}
+
+func TestDisabledUserIsNeverReused(t *testing.T) {
+	pool, err := NewPool([]string{"a"}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.Disable("a"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := pool.Lease(time.Now().Add(time.Hour)); ok {
+		t.Fatal("disabled authentication-failure user was reused")
+	}
+}
+
+func TestRequiredUsersIncludesHeadroom(t *testing.T) {
+	rate, _ := new(big.Rat).SetString("0.3")
+	got, err := RequiredUsers(rate, 3*time.Second, 100*time.Millisecond, 500*time.Millisecond, 25)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != 3 {
+		t.Fatalf("required users=%d, want 3", got)
+	}
+}
+
+func TestBurstPlanIsDeterministicAndDistinct(t *testing.T) {
+	aliases := []string{"a", "b", "c"}
+	first, err := BurstPlan(aliases, 3, 9, time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, _ := BurstPlan(aliases, 3, 9, time.Millisecond)
+	seen := map[string]bool{}
+	for i := range first {
+		if first[i] != second[i] {
+			t.Fatalf("plan not deterministic: %#v != %#v", first, second)
+		}
+		if seen[first[i].Alias] {
+			t.Fatal("duplicate burst user")
+		}
+		seen[first[i].Alias] = true
+	}
+}
