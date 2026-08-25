@@ -148,6 +148,42 @@ jobs:
           bash -n scripts/deploy-judge-node.sh
           bash -n scripts/deploy-production.sh
 
+          activation="$(sed -n '/^activate() {/,/^}/p' scripts/deploy-app-node.sh)"
+          required_activation_guards=(
+            '  compose config --quiet || return 1'
+            '  compose pull "${APP_RELEASE_SERVICES[@]}" || return 1'
+            '  compose up -d --pull never --timeout "${COMPOSE_STOP_TIMEOUT:-30}" "${APP_SERVICES[@]}" || return 1'
+            '  compose ps || return 1'
+            '  smoke_test || return 1'
+            '  wait_for_services || return 1'
+            '  configure_avatar_bucket || return 1'
+          )
+          for guard in "${required_activation_guards[@]}"; do
+            grep -Fqx "$guard" <<<"$activation"
+          done
+
+          {
+            cat <<'EOF'
+          set -Eeuo pipefail
+          APP_RELEASE_SERVICES=(website)
+          APP_SERVICES=(website)
+          compose() { return 0; }
+          smoke_test() { return 0; }
+          wait_for_services() { return 1; }
+          configure_avatar_bucket() {
+            echo 'post-deployment configuration must not run after a failed health gate' >&2
+            return 0
+          }
+          EOF
+            printf '%s\n' "$activation"
+            cat <<'EOF'
+          if activate; then
+            echo 'failed health gate was masked by a later successful command' >&2
+            exit 1
+          fi
+          EOF
+          } | bash
+
           rendered="$(
             ASTRACODE_JUDGE_DEPLOY_DRY_RUN=1 \
             ASTRACODE_JUDGE_COMPOSE=./environment/judge-node.compose.ci.yml \
