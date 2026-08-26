@@ -17,6 +17,36 @@ database, change Redis, or retry a submission POST.
 - The tool never writes tokens, cookies, source text, real user IDs, or SSE
   tickets to its result artifacts.
 
+## Local session bootstrap
+
+`judge-bench` remains password-free. A separate local operator executable can
+prepare its pre-issued cookie input through the normal public Login API:
+
+```text
+benchmark password -> bootstrap-sessions -> users.local.json -> judge-bench
+```
+
+It supports only `benchmark_judge_001` through `benchmark_judge_100`, logs in
+sequentially, validates each cookie session with `/api/v1/me`, and writes the
+file only if the full requested range succeeds. `users.local.json` contains
+live credentials: keep it mode `0600`, do not share or upload it, and remove or
+regenerate it after the benchmark window. Bootstrap sessions before warmup, not
+during a measured run.
+
+For a remote target, require HTTPS and explicitly confirm its host:
+
+```bash
+go run ./cmd/bootstrap-sessions \
+  --base-url https://<public-host> --allow-remote \
+  --confirm-target-host <public-host> --start 1 --count 50 \
+  --output ./users.local.json
+```
+
+The command prompts once for the shared password without echoing it. It never
+accepts a password argument or environment variable. An optional password file
+must be a local, regular, group/other-inaccessible file; interactive TTY input
+is the recommended operator workflow.
+
 ## Commands
 
 ```bash
