@@ -64,10 +64,10 @@ func preflight(ctx context.Context, args []string, stdout, stderr io.Writer) err
 	if cfg.Mode != config.ModeBurst && cfg.Mode != config.ModeSustained {
 		return errors.New("--mode must be burst or sustained")
 	}
-	if err := finalize(&cfg); err != nil {
+	if err := finalize(cfg); err != nil {
 		return err
 	}
-	prepared, err := runner.Preflight(ctx, cfg)
+	prepared, err := runner.Preflight(ctx, *cfg)
 	if err != nil {
 		return err
 	}
@@ -80,10 +80,10 @@ func benchmark(ctx context.Context, mode config.Mode, args []string, stdout, std
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if err := finalize(&cfg); err != nil {
+	if err := finalize(cfg); err != nil {
 		return err
 	}
-	prepared, err := runner.Preflight(ctx, cfg)
+	prepared, err := runner.Preflight(ctx, *cfg)
 	if err != nil {
 		return err
 	}
@@ -94,12 +94,12 @@ func benchmark(ctx context.Context, mode config.Mode, args []string, stdout, std
 	return err
 }
 
-func newFlagSet(name string, mode config.Mode, stderr io.Writer) (*flag.FlagSet, config.Config) {
+func newFlagSet(name string, mode config.Mode, stderr io.Writer) (*flag.FlagSet, *config.Config) {
 	cfg := config.Defaults(mode)
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	config.Bind(fs, &cfg)
-	return fs, cfg
+	return fs, &cfg
 }
 
 func finalize(cfg *config.Config) error {
