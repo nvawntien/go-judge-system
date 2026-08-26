@@ -6,6 +6,15 @@ import (
 	"log"
 )
 
+// Build metadata is set by the Auth image build for release traceability.
+// The server does not expose it yet, but keeping these symbols aligned with
+// the provisioning command ensures both binaries carry the same identity.
+var (
+	version   = "dev"
+	buildTime = "unknown"
+	commitSHA = "unknown"
+)
+
 func main() {
 	cfg, err := config.LoadConfig("/app/config")
 	if err != nil {
