@@ -149,9 +149,51 @@ docker compose --project-name go-judge-system <same-app-compose-arguments> \
   --config-dir /app/config --start 1 --count 50 --apply --confirm '<printed phrase>'
 ```
 
-The command is idempotent: canonical existing benchmark accounts are skipped
-only when their stored hash matches the supplied password. It never resets,
-deletes, or changes existing accounts; conflicts stop the operation safely.
+Normal provisioning is idempotent: canonical existing benchmark accounts are
+skipped only when their stored hash matches the supplied password. Normal mode
+never resets, deletes, or changes existing accounts; conflicts stop it safely.
+
+### Benchmark password rotation
+
+Rotation is a separate, explicit fixture-only operation for an already-created
+canonical range. It never creates users, accepts no interactive password, and
+updates only passwords in one transaction after validating the entire range.
+
+1. Create one temporary local file containing the **new benchmark password**;
+   run `chmod 600` on it. Do not place the password itself in documentation,
+   command examples, shell history, logs, commits, or chat.
+2. Copy that same owner-only file to the App Node using a secure operator
+   transfer such as `scp`; ensure the container `appuser` can read the mounted
+   file without weakening its permissions.
+3. Run the explicit rotation dry-run and copy its printed `ROTATE PASSWORD ...`
+   confirmation phrase.
+4. Run apply with `--password-file` and that exact phrase.
+5. Optionally verify one benchmark account with the same file, then use the
+   original file with `bootstrap-sessions` to create fresh local sessions.
+6. Delete temporary plaintext password files after bootstrap succeeds.
+
+```bash
+# This makes no changes and prints a target/range-bound ROTATE PASSWORD phrase.
+docker compose --project-name go-judge-system <same-app-compose-arguments> \
+  run --rm --no-deps -it --entrypoint /app/provision-benchmark-users auth-service \
+  --config-dir /app/config --start 51 --count 50 --rotate-password --dry-run
+
+# Use the same exact immutable Auth image tag as the running service. The
+# password itself is never placed in the command line or environment.
+docker compose --project-name go-judge-system <same-app-compose-arguments> \
+  run --rm --no-deps -it --entrypoint /app/provision-benchmark-users auth-service \
+  --config-dir /app/config --start 51 --count 50 --rotate-password --apply \
+  --password-file /secure-mounted/new-benchmark-password \
+  --confirm 'ROTATE PASSWORD benchmark_judge_051..benchmark_judge_100 ON <printed-target>'
+```
+
+Do not use this rotation mode for normal accounts. A missing, inactive,
+suspended, role-changed, or otherwise noncanonical fixture makes the full range
+fail before any password update is committed.
+
+Rotation does **not** revoke already-issued sessions. Existing access and
+refresh sessions can remain valid according to the normal Auth/session
+lifecycle; bootstrap fresh benchmark sessions after rotation.
 
 ## Judge Node
 
