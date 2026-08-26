@@ -39,13 +39,21 @@ var (
 )
 
 type options struct {
-	configDir    string
-	start        int
-	count        int
-	apply        bool
-	confirm      string
-	passwordFile string
-	showVersion  bool
+	configDir      string
+	start          int
+	count          int
+	apply          bool
+	confirm        string
+	passwordFile   string
+	rotatePassword bool
+	dryRun         bool
+	showVersion    bool
+}
+
+type commandRuntime struct {
+	target      string
+	provisioner *benchmark.Provisioner
+	close       func()
 }
 
 func main() {
@@ -58,6 +66,10 @@ func main() {
 }
 
 func run(ctx context.Context, args []string, stdin *os.File, stdout, stderr io.Writer) error {
+	return runWithRuntime(ctx, args, stdin, stdout, stderr, openCommandRuntime)
+}
+
+func runWithRuntime(ctx context.Context, args []string, stdin *os.File, stdout, stderr io.Writer, openRuntime func(string) (commandRuntime, error)) error {
 	opts, err := parseOptions(args, stderr)
 	if err != nil {
 		return err
@@ -70,43 +82,27 @@ func run(ctx context.Context, args []string, stdin *os.File, stdout, stderr io.W
 	if err != nil {
 		return err
 	}
-	cfg, err := config.LoadConfig(opts.configDir)
-	if err != nil {
-		return errors.New("load Auth configuration")
-	}
-	target, err := sanitizedTarget(cfg.Database.Host, cfg.Database.Port, cfg.Database.DBName)
+	runtime, err := openRuntime(opts.configDir)
 	if err != nil {
 		return err
 	}
-	confirmation := confirmationPhrase(identities, target)
-
-	db, err := database.ConnectDatabase(cfg.Database)
-	if err != nil {
-		return errors.New("connect configured Auth database")
-	}
-	sqlDB, err := db.DB()
-	if err != nil {
-		return errors.New("access configured Auth database")
-	}
-	defer sqlDB.Close()
-
-	provisioner := benchmark.NewProvisioner(postgres.NewUserRepositoryForManagedSchema(db), security.NewBcryptHasher())
+	defer runtime.close()
+	confirmation := confirmationPhrase(identities, runtime.target, opts.rotatePassword)
 	started := time.Now()
-	plan, err := provisioner.Plan(ctx, opts.start, opts.count)
+	plan, err := planForMode(runtime.provisioner, ctx, opts)
 	if err != nil {
 		return err
 	}
 	if !opts.apply {
-		printResult(stdout, false, target, identities, confirmation, plan, time.Since(started))
+		printResult(stdout, false, opts.rotatePassword, runtime.target, identities, confirmation, plan, time.Since(started))
 		return nil
 	}
 	if plan.Conflicts != 0 {
-		printResult(stdout, true, target, identities, confirmation, plan, time.Since(started))
+		printResult(stdout, true, opts.rotatePassword, runtime.target, identities, confirmation, plan, time.Since(started))
 		return benchmark.ErrConflicts
 	}
-	if opts.confirm != confirmation {
-		fmt.Fprintf(stderr, "expected confirmation: %s\n", confirmation)
-		return errors.New("apply confirmation does not match target and range")
+	if err := validateApplyConfirmation(opts, confirmation, stderr); err != nil {
+		return err
 	}
 
 	password, err := acquirePassword(ctx, stdin, stderr, opts.passwordFile)
@@ -114,12 +110,43 @@ func run(ctx context.Context, args []string, stdin *os.File, stdout, stderr io.W
 		return err
 	}
 	defer clear(password)
-	result, executeErr := provisioner.Execute(ctx, benchmark.Request{Start: opts.start, Count: opts.count, Apply: true, Password: password})
-	printResult(stdout, true, target, identities, confirmation, result, time.Since(started))
+	req := benchmark.Request{Start: opts.start, Count: opts.count, Apply: true, Password: password}
+	var result benchmark.Result
+	var executeErr error
+	if opts.rotatePassword {
+		result, executeErr = runtime.provisioner.RotatePassword(ctx, req)
+	} else {
+		result, executeErr = runtime.provisioner.Execute(ctx, req)
+	}
+	printResult(stdout, true, opts.rotatePassword, runtime.target, identities, confirmation, result, time.Since(started))
 	if executeErr != nil {
 		return executeErr
 	}
 	return nil
+}
+
+func openCommandRuntime(configDir string) (commandRuntime, error) {
+	cfg, err := config.LoadConfig(configDir)
+	if err != nil {
+		return commandRuntime{}, errors.New("load Auth configuration")
+	}
+	target, err := sanitizedTarget(cfg.Database.Host, cfg.Database.Port, cfg.Database.DBName)
+	if err != nil {
+		return commandRuntime{}, err
+	}
+	db, err := database.ConnectDatabase(cfg.Database)
+	if err != nil {
+		return commandRuntime{}, errors.New("connect configured Auth database")
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		return commandRuntime{}, errors.New("access configured Auth database")
+	}
+	return commandRuntime{
+		target:      target,
+		provisioner: benchmark.NewProvisioner(postgres.NewUserRepositoryForManagedSchema(db), security.NewBcryptHasher()),
+		close:       func() { _ = sqlDB.Close() },
+	}, nil
 }
 
 func parseOptions(args []string, stderr io.Writer) (options, error) {
@@ -132,6 +159,8 @@ func parseOptions(args []string, stderr io.Writer) (options, error) {
 	flags.BoolVar(&opts.apply, "apply", false, "create missing accounts after confirmation")
 	flags.StringVar(&opts.confirm, "confirm", "", "exact confirmation phrase printed by dry-run")
 	flags.StringVar(&opts.passwordFile, "password-file", "", "secure file containing one benchmark password")
+	flags.BoolVar(&opts.rotatePassword, "rotate-password", false, "atomically rotate an existing canonical benchmark range password")
+	flags.BoolVar(&opts.dryRun, "dry-run", false, "explicit non-mutating rotation plan (rotation mode only)")
 	flags.BoolVar(&opts.showVersion, "version", false, "print build identity")
 	if err := flags.Parse(args); err != nil {
 		return options{}, err
@@ -142,7 +171,37 @@ func parseOptions(args []string, stderr io.Writer) (options, error) {
 	if !opts.apply && (opts.confirm != "" || opts.passwordFile != "") {
 		return options{}, errors.New("--confirm and --password-file require --apply")
 	}
+	if opts.dryRun && !opts.rotatePassword {
+		return options{}, errors.New("--dry-run is supported only with --rotate-password")
+	}
+	if opts.rotatePassword && !opts.apply && !opts.dryRun {
+		return options{}, errors.New("--rotate-password requires --apply, or explicit --dry-run")
+	}
+	if opts.rotatePassword && opts.apply && opts.dryRun {
+		return options{}, errors.New("--apply and --dry-run cannot be combined")
+	}
+	if opts.rotatePassword && opts.apply && opts.passwordFile == "" {
+		return options{}, errors.New("--rotate-password requires --password-file; interactive input is not allowed")
+	}
+	if opts.rotatePassword && opts.apply && opts.confirm == "" {
+		return options{}, errors.New("--rotate-password requires --confirm")
+	}
 	return opts, nil
+}
+
+func planForMode(provisioner *benchmark.Provisioner, ctx context.Context, opts options) (benchmark.Result, error) {
+	if opts.rotatePassword {
+		return provisioner.PlanRotation(ctx, opts.start, opts.count)
+	}
+	return provisioner.Plan(ctx, opts.start, opts.count)
+}
+
+func validateApplyConfirmation(opts options, confirmation string, stderr io.Writer) error {
+	if opts.confirm == confirmation {
+		return nil
+	}
+	fmt.Fprintf(stderr, "expected confirmation: %s\n", confirmation)
+	return errors.New("apply confirmation does not match target and range")
 }
 
 func acquirePassword(ctx context.Context, stdin *os.File, stderr io.Writer, passwordFile string) ([]byte, error) {
@@ -268,8 +327,12 @@ func sanitizedTarget(host string, port int, database string) (string, error) {
 	return net.JoinHostPort(host, fmt.Sprintf("%d", port)) + "/" + database, nil
 }
 
-func confirmationPhrase(identities []benchmark.Identity, target string) string {
-	return fmt.Sprintf("CREATE %s..%s ON %s", identities[0].Username, identities[len(identities)-1].Username, target)
+func confirmationPhrase(identities []benchmark.Identity, target string, rotatePassword bool) string {
+	verb := "CREATE"
+	if rotatePassword {
+		verb = "ROTATE PASSWORD"
+	}
+	return fmt.Sprintf("%s %s..%s ON %s", verb, identities[0].Username, identities[len(identities)-1].Username, target)
 }
 
 func safeTargetPart(value string, rejectSlash bool) bool {
@@ -284,14 +347,31 @@ func safeTargetPart(value string, rejectSlash bool) bool {
 	return true
 }
 
-func printResult(w io.Writer, apply bool, target string, identities []benchmark.Identity, confirmation string, result benchmark.Result, elapsed time.Duration) {
+func printResult(w io.Writer, apply, rotatePassword bool, target string, identities []benchmark.Identity, confirmation string, result benchmark.Result, elapsed time.Duration) {
 	mode := "dry-run"
+	if rotatePassword {
+		mode = "rotate-password dry-run"
+	}
 	if apply {
 		mode = "apply"
+		if rotatePassword {
+			mode = "rotate-password"
+		}
 	}
 	fmt.Fprintf(w, "Mode: %s\nTarget: %s\nRange: %s..%s\n\n", mode, target, identities[0].Username, identities[len(identities)-1].Username)
-	if apply {
+	if apply && rotatePassword {
+		fmt.Fprintf(w, "Rotated: %d\nConflicts: %d\n", result.Rotated, result.Conflicts)
+	} else if apply {
 		fmt.Fprintf(w, "Created: %d\nSkipped: %d\nConflicts: %d\n", result.Created, result.Skipped, result.Conflicts)
+	} else if rotatePassword {
+		wouldRotate := 0
+		for _, entry := range result.Entries {
+			if entry.Status == benchmark.StatusWouldRotate {
+				wouldRotate++
+			}
+		}
+		fmt.Fprintf(w, "Would rotate: %d\nConflicts: %d\nNo changes applied.\n", wouldRotate, result.Conflicts)
+		fmt.Fprintf(w, "Apply confirmation: %s\n", confirmation)
 	} else {
 		wouldCreate := 0
 		for _, entry := range result.Entries {
@@ -316,6 +396,8 @@ func safeError(err error) string {
 		return "one or more benchmark identities conflict; no new users were created"
 	case errors.Is(err, benchmark.ErrApplyStopped):
 		return "provisioning stopped after a safe verification failure"
+	case errors.Is(err, benchmark.ErrRotateStopped):
+		return "password rotation stopped safely; no password changes were committed"
 	case errors.Is(err, context.Canceled):
 		return "provisioning cancelled"
 	case errors.Is(err, errInteractivePasswordTTY):

@@ -61,3 +61,19 @@ type UserRepository interface {
 	UpdateAvatar(ctx context.Context, userID string, avatarURL string, avatarObjectKey string, updatedAt time.Time) error
 	DeleteUser(ctx context.Context, id string) error
 }
+
+// BenchmarkPasswordUpdate is intentionally narrow: the fixture rotation path
+// may change only a canonical benchmark user's password column.
+type BenchmarkPasswordUpdate struct {
+	UserID       string
+	Username     string
+	Email        string
+	FullName     string
+	PasswordHash string
+}
+
+// BenchmarkPasswordRotator is implemented only by persistence adapters that
+// can atomically update a fully validated range of benchmark fixtures.
+type BenchmarkPasswordRotator interface {
+	RotateBenchmarkPasswords(ctx context.Context, updates []BenchmarkPasswordUpdate) error
+}

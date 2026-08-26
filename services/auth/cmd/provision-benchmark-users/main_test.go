@@ -9,8 +9,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"go-judge-system/pkg/rbac"
+	"go-judge-system/services/auth/internal/application/port/outbound"
 	benchmark "go-judge-system/services/auth/internal/application/usecase/benchmark"
+	"go-judge-system/services/auth/internal/domain"
+	"go-judge-system/services/auth/internal/domain/entity"
 )
 
 func TestParseOptionsDryRunRejectsPasswordInputs(t *testing.T) {
@@ -19,6 +24,25 @@ func TestParseOptionsDryRunRejectsPasswordInputs(t *testing.T) {
 	}
 	if _, err := parseOptions([]string{"--apply", "--password-file", "secret"}, os.Stderr); err != nil {
 		t.Fatalf("apply password-file: %v", err)
+	}
+}
+
+func TestParseOptionsRotationRequiresExplicitSafeMode(t *testing.T) {
+	for _, args := range [][]string{
+		{"--rotate-password"},
+		{"--rotate-password", "--apply"},
+		{"--rotate-password", "--apply", "--password-file", "secret"},
+		{"--rotate-password", "--dry-run", "--password-file", "secret"},
+	} {
+		if _, err := parseOptions(args, os.Stderr); err == nil {
+			t.Fatalf("expected rotation rejection for %v", args)
+		}
+	}
+	if _, err := parseOptions([]string{"--rotate-password", "--dry-run"}, os.Stderr); err != nil {
+		t.Fatalf("explicit rotation dry-run: %v", err)
+	}
+	if _, err := parseOptions([]string{"--rotate-password", "--apply", "--password-file", "secret", "--confirm", "ROTATE PASSWORD example"}, os.Stderr); err != nil {
+		t.Fatalf("rotation apply: %v", err)
 	}
 }
 
@@ -112,14 +136,68 @@ func TestConfirmationBindsExactTargetAndRange(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := confirmationPhrase(identities, "postgres:5432/auth_db")
+	got := confirmationPhrase(identities, "postgres:5432/auth_db", false)
 	const want = "CREATE benchmark_judge_001..benchmark_judge_050 ON postgres:5432/auth_db"
 	if got != want {
 		t.Fatalf("confirmation=%q", got)
 	}
 	other, _ := benchmark.Identities(2, 49)
-	if confirmationPhrase(other, "postgres:5432/auth_db") == got || confirmationPhrase(identities, "postgres:5432/other") == got {
+	if confirmationPhrase(other, "postgres:5432/auth_db", false) == got || confirmationPhrase(identities, "postgres:5432/other", false) == got {
 		t.Fatal("confirmation must bind both range and target")
+	}
+	rotate := confirmationPhrase(identities, "postgres:5432/auth_db", true)
+	const wantRotate = "ROTATE PASSWORD benchmark_judge_001..benchmark_judge_050 ON postgres:5432/auth_db"
+	if rotate != wantRotate || rotate == got {
+		t.Fatalf("rotation confirmation=%q", rotate)
+	}
+}
+
+func TestRotationCreateConfirmationCannotAuthorizePasswordRotation(t *testing.T) {
+	identities, err := benchmark.Identities(51, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := "postgres:5432/auth_db"
+	createConfirmation := confirmationPhrase(identities, target, false)
+	rotateConfirmation := confirmationPhrase(identities, target, true)
+	repo := &commandTestRepository{user: &entity.User{ID: "id-051", Username: identities[0].Username, Email: identities[0].Email, FullName: identities[0].FullName, Role: rbac.RoleUser, IsActive: true}}
+	var stdout, stderr bytes.Buffer
+	err = runWithRuntime(t.Context(), []string{
+		"--rotate-password", "--apply", "--start", "51", "--count", "1",
+		"--password-file", filepath.Join(t.TempDir(), "must-not-be-read"),
+		"--confirm", createConfirmation,
+	}, os.Stdin, &stdout, &stderr, func(string) (commandRuntime, error) {
+		return commandRuntime{
+			target:      target,
+			provisioner: benchmark.NewProvisioner(repo, nil),
+			close:       func() {},
+		}, nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "confirmation") {
+		t.Fatalf("CREATE confirmation authorized password rotation: %v", err)
+	}
+	if !strings.Contains(stderr.String(), rotateConfirmation) || strings.Contains(stderr.String(), createConfirmation) {
+		t.Fatalf("unexpected confirmation output: %q", stderr.String())
+	}
+	if repo.rotations != 0 {
+		t.Fatalf("rotation ran despite rejected confirmation: %d", repo.rotations)
+	}
+	if strings.Contains(err.Error(), "password file") {
+		t.Fatalf("password acquisition ran before confirmation rejection: %v", err)
+	}
+}
+
+func TestRotationDryRunOutputUsesDistinctConfirmationAndNeverPassword(t *testing.T) {
+	identities, err := benchmark.Identities(51, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	confirmation := confirmationPhrase(identities, "postgres:5432/auth_db", true)
+	var output bytes.Buffer
+	printResult(&output, false, true, "postgres:5432/auth_db", identities, confirmation, benchmark.Result{Entries: []benchmark.Entry{{Identity: identities[0], Status: benchmark.StatusWouldRotate}, {Identity: identities[1], Status: benchmark.StatusWouldRotate}}}, time.Millisecond)
+	text := output.String()
+	if !strings.Contains(text, "Mode: rotate-password dry-run") || !strings.Contains(text, "Would rotate: 2") || !strings.Contains(text, confirmation) || strings.Contains(text, "sentinel-password") {
+		t.Fatalf("unexpected rotation output: %q", text)
 	}
 }
 
@@ -150,3 +228,28 @@ func TestInteractivePasswordRejectsNonTTYExplicitly(t *testing.T) {
 type secretError struct{ secret string }
 
 func (e *secretError) Error() string { return e.secret }
+
+type commandTestRepository struct {
+	outbound.UserRepository
+	user      *entity.User
+	rotations int
+}
+
+func (r *commandTestRepository) GetUserByUsername(_ context.Context, username string) (*entity.User, error) {
+	if r.user != nil && r.user.Username == username {
+		return r.user, nil
+	}
+	return nil, domain.ErrUserNotFound
+}
+
+func (r *commandTestRepository) GetUserByEmail(_ context.Context, email string) (*entity.User, error) {
+	if r.user != nil && r.user.Email == email {
+		return r.user, nil
+	}
+	return nil, domain.ErrUserNotFound
+}
+
+func (r *commandTestRepository) RotateBenchmarkPasswords(context.Context, []outbound.BenchmarkPasswordUpdate) error {
+	r.rotations++
+	return nil
+}
