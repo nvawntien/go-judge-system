@@ -90,5 +90,41 @@ tools/benchmark/judge/scripts/collect-kafka-lag.sh --help
 go run ./tools/benchmark/judge analyze --run-dir bench-results/RUN-ID
 ```
 
+## Data collection and analysis
+
+Raw Go artifacts are immutable canonical measurements. The offline Python
+pipeline turns them into `analysis/metrics.json`, CSV summaries, presentation
+charts, and `analysis/report.html` without reading credentials, source files, or
+secrets. It remains optional: normal benchmark execution does not require
+Python.
+
+```bash
+cd tools/benchmark/judge/analysis
+python -m venv /tmp/judge-analysis-venv
+source /tmp/judge-analysis-venv/bin/activate
+pip install -r requirements.txt
+
+python -m judge_analysis analyze --run-dir ../../bench-results/RUN-ID \
+  --container-stats /safe/path/container-stats.csv \
+  --kafka-lag /safe/path/kafka-lag.csv
+
+python -m judge_analysis compare \
+  --results-root ../../bench-results --match 'pool1-rate*' \
+  --output ../../bench-results/analysis-comparison-pool1
+```
+
+The collector scripts are run separately before the benchmark and stopped after
+it. Missing collector files are shown as unavailable, never as zero. Their UTC
+timestamps align resource/lag samples with benchmark windows; client-monotonic
+latency remains authoritative.
+
+Capacity work is a scientific workflow: define a hypothesis, control variables,
+collect sustained measurements, repeat configurations, calculate statistics,
+visualize, compare, then conclude. Repeat each rate/configuration before
+claiming stability. One run is evidence about that run—not demonstrated capacity.
+The comparison report separates the Go harness classification from conservative
+analytical assessment and reports tested stable/saturating intervals rather than
+fake precise capacity values.
+
 Do not use this harness against production until benchmark accounts, a change
 window, target confirmation, and an explicit submission budget are approved.

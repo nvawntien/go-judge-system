@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "astracode-judge-analysis"
+version = "0.1.0"
+description = "Offline analytics for AstraCode Judge benchmark artifacts"
+requires-python = ">=3.11"
+dependencies = ["pandas>=2.2,<3", "numpy>=2.0,<3", "matplotlib>=3.9,<4", "scipy>=1.14,<2"]
+
+[project.scripts]
+judge-analysis = "judge_analysis.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
