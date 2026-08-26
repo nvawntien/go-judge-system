@@ -117,6 +117,42 @@ the idempotent topic-creation commands. App activation starts Kafka, forcibly
 recreates and runs the `kafka-init` Compose service to successful completion,
 and only then activates the complete App service set.
 
+### One-time benchmark account provisioning
+
+The Auth image contains `/app/provision-benchmark-users` for the fixed
+`benchmark_judge_001` through `benchmark_judge_100` fixture pool. It does not
+create sessions, tokens, mail, or verification artifacts. Operators must use
+the exact immutable Auth image tag already deployed to the App Node, first run
+a dry-run, review its sanitized target/range and exact confirmation phrase,
+then run the same command with `--apply --confirm '<printed phrase>'`.
+Verify that deployed immutable Auth tag before either invocation; never run a
+local, `develop`, or `latest` image against the production Auth database.
+
+Use an interactive TTY so the command can request the shared benchmark password
+without echoing it; do not put a password in a command line or environment.
+For example, with the same App Compose files, project name, and image tag used
+by the deployed stack, run the Auth service as a one-shot no-dependency command
+with its entrypoint overridden to `/app/provision-benchmark-users`. This does
+not restart the running Auth service. A password-file alternative is accepted
+only when it is a regular, non-symlink owner-only file readable by the runtime
+`appuser`; verify bind-mount ownership before relying on it.
+
+```bash
+# First run dry-run and review the printed target/range confirmation phrase.
+docker compose --project-name go-judge-system <same-app-compose-arguments> \
+  run --rm --no-deps -it --entrypoint /app/provision-benchmark-users auth-service \
+  --config-dir /app/config --start 1 --count 50
+
+# Then use the exact phrase printed above; the password is prompted without echo.
+docker compose --project-name go-judge-system <same-app-compose-arguments> \
+  run --rm --no-deps -it --entrypoint /app/provision-benchmark-users auth-service \
+  --config-dir /app/config --start 1 --count 50 --apply --confirm '<printed phrase>'
+```
+
+The command is idempotent: canonical existing benchmark accounts are skipped
+only when their stored hash matches the supplied password. It never resets,
+deletes, or changes existing accounts; conflicts stop the operation safely.
+
 ## Judge Node
 
 The private Judge Node runs only:

@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "users": [
+    {
+      "alias": "bench-001",
+      "cookies": {
+        "access_token": "replace-with-a-pre-issued-access-cookie",
+        "refresh_token": "optional-pre-issued-refresh-cookie"
+      }
+    }
+  ]
+}

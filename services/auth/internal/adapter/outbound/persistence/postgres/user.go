@@ -47,6 +47,17 @@ type userRepository struct {
 
 func NewUserRepository(db *gorm.DB) outbound.UserRepository {
 	db.AutoMigrate(&UserDAO{})
+	return newUserRepository(db)
+}
+
+// NewUserRepositoryForManagedSchema constructs the normal user repository
+// without changing the database schema. Operator commands use it after the
+// deployed Auth service has already managed the schema.
+func NewUserRepositoryForManagedSchema(db *gorm.DB) outbound.UserRepository {
+	return newUserRepository(db)
+}
+
+func newUserRepository(db *gorm.DB) outbound.UserRepository {
 	return &userRepository{db: db}
 }
 

@@ -29,7 +29,14 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
         -X main.version=${VERSION} \
         -X main.buildTime=${BUILD_TIME} \
         -X main.commitSHA=${COMMIT_SHA}" \
-      -o /workspace/auth-service ./cmd/server
+      -o /workspace/auth-service ./cmd/server && \
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+      -trimpath \
+      -ldflags="-s -w \
+        -X main.version=${VERSION} \
+        -X main.buildTime=${BUILD_TIME} \
+        -X main.commitSHA=${COMMIT_SHA}" \
+      -o /workspace/provision-benchmark-users ./cmd/provision-benchmark-users
 
 FROM alpine:3.21 AS runtime
 
@@ -44,6 +51,7 @@ WORKDIR /app
 RUN mkdir -p /app/logs && chown -R appuser:appgroup /app
 
 COPY --from=builder --chown=appuser:appgroup /workspace/auth-service ./app
+COPY --from=builder --chown=appuser:appgroup /workspace/provision-benchmark-users ./provision-benchmark-users
 
 USER appuser
 
