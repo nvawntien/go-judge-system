@@ -19,9 +19,10 @@ const (
 )
 
 var (
-	ErrInvalidRange = errors.New("invalid benchmark user range")
-	ErrConflicts    = errors.New("benchmark user plan contains conflicts")
-	ErrApplyStopped = errors.New("benchmark user provisioning stopped safely")
+	ErrInvalidRange  = errors.New("invalid benchmark user range")
+	ErrConflicts     = errors.New("benchmark user plan contains conflicts")
+	ErrApplyStopped  = errors.New("benchmark user provisioning stopped safely")
+	ErrRotateStopped = errors.New("benchmark password rotation stopped safely")
 )
 
 type Identity struct {
@@ -39,6 +40,8 @@ const (
 	StatusCreated     Status = "created"
 	StatusSkipped     Status = "skipped"
 	StatusConflict    Status = "conflict"
+	StatusWouldRotate Status = "would_rotate"
+	StatusRotated     Status = "rotated"
 )
 
 type Entry struct {
@@ -61,6 +64,7 @@ type Result struct {
 	Existing  int
 	Conflicts int
 	StoppedAt *Identity
+	Rotated   int
 }
 
 type Provisioner struct {
@@ -107,6 +111,87 @@ func (p *Provisioner) Plan(ctx context.Context, start, count int) (Result, error
 			return result, err
 		}
 		result.Entries = append(result.Entries, entry)
+	}
+	result.recount()
+	return result, nil
+}
+
+// PlanRotation validates that every requested fixture already exists and is
+// canonical. Unlike normal provisioning, a missing identity is a conflict.
+func (p *Provisioner) PlanRotation(ctx context.Context, start, count int) (Result, error) {
+	identities, err := Identities(start, count)
+	if err != nil {
+		return Result{}, err
+	}
+	result := Result{Entries: make([]Entry, 0, len(identities))}
+	for _, identity := range identities {
+		if err := ctx.Err(); err != nil {
+			return result, err
+		}
+		entry, _, err := p.inspect(ctx, identity)
+		if err != nil {
+			return result, err
+		}
+		if entry.Status == StatusWouldCreate {
+			entry.Status, entry.Reason = StatusConflict, "benchmark identity is missing"
+		} else if entry.Status == StatusExisting {
+			entry.Status = StatusWouldRotate
+		}
+		result.Entries = append(result.Entries, entry)
+	}
+	result.recount()
+	return result, nil
+}
+
+// RotatePassword hashes the new password per account, then delegates the
+// entire narrow update set to one adapter transaction. Existing password hashes
+// are deliberately irrelevant in rotation mode.
+func (p *Provisioner) RotatePassword(ctx context.Context, req Request) (Result, error) {
+	if !req.Apply {
+		return p.PlanRotation(ctx, req.Start, req.Count)
+	}
+	if len(req.Password) == 0 {
+		return Result{}, errors.New("benchmark password is required for rotation")
+	}
+	if err := valueobject.ValidatePlainPassword(string(req.Password)); err != nil {
+		return Result{}, err
+	}
+	result, err := p.PlanRotation(ctx, req.Start, req.Count)
+	if err != nil {
+		return result, err
+	}
+	if result.Conflicts != 0 {
+		return result, ErrConflicts
+	}
+	rotator, ok := p.users.(outbound.BenchmarkPasswordRotator)
+	if !ok {
+		return result, ErrRotateStopped
+	}
+	updates := make([]outbound.BenchmarkPasswordUpdate, 0, len(result.Entries))
+	for index := range result.Entries {
+		if err := ctx.Err(); err != nil {
+			result.StoppedAt = &result.Entries[index].Identity
+			return result, err
+		}
+		entry := &result.Entries[index]
+		fresh, user, err := p.inspect(ctx, entry.Identity)
+		if err != nil || fresh.Status != StatusExisting || user == nil {
+			entry.Status, entry.Reason, result.StoppedAt = StatusConflict, "benchmark identity changed before rotation", &entry.Identity
+			result.recount()
+			return result, ErrRotateStopped
+		}
+		hash, err := p.passwords.HashAndSalt(req.Password)
+		if err != nil || ctx.Err() != nil {
+			result.StoppedAt = &entry.Identity
+			return result, ErrRotateStopped
+		}
+		updates = append(updates, outbound.BenchmarkPasswordUpdate{UserID: user.ID, Username: entry.Username, Email: entry.Email, FullName: entry.FullName, PasswordHash: hash})
+	}
+	if err := rotator.RotateBenchmarkPasswords(ctx, updates); err != nil {
+		return result, ErrRotateStopped
+	}
+	for index := range result.Entries {
+		result.Entries[index].Status = StatusRotated
 	}
 	result.recount()
 	return result, nil
@@ -261,7 +346,7 @@ func isCanonical(user *entity.User, identity Identity) bool {
 }
 
 func (r *Result) recount() {
-	r.Created, r.Skipped, r.Existing, r.Conflicts = 0, 0, 0, 0
+	r.Created, r.Skipped, r.Existing, r.Conflicts, r.Rotated = 0, 0, 0, 0, 0
 	for _, entry := range r.Entries {
 		switch entry.Status {
 		case StatusCreated:
@@ -272,6 +357,8 @@ func (r *Result) recount() {
 			r.Existing++
 		case StatusConflict:
 			r.Conflicts++
+		case StatusRotated:
+			r.Rotated++
 		}
 	}
 }

@@ -181,6 +181,77 @@ func TestCancellationPreventsCreates(t *testing.T) {
 	}
 }
 
+func TestPlanRotationRequiresEntireCanonicalExistingRange(t *testing.T) {
+	repo := newFakeRepo()
+	repo.put(canonicalUser(1, "old"))
+	result, err := NewProvisioner(repo, &fakeEncoder{}).PlanRotation(context.Background(), 1, 2)
+	if err != nil || result.Entries[0].Status != StatusWouldRotate || result.Entries[1].Status != StatusConflict || result.Conflicts != 1 || repo.rotates != 0 {
+		t.Fatalf("result=%+v err=%v rotates=%d", result, err, repo.rotates)
+	}
+}
+
+func TestPlanRotationRejectsNoncanonicalStatesBeforeMutation(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		mutate func(*entity.User)
+	}{
+		{"wrong role", func(user *entity.User) { user.Role = rbac.RoleAdmin }},
+		{"inactive", func(user *entity.User) { user.IsActive = false }},
+		{"suspended", func(user *entity.User) { user.IsSuspended = true }},
+		{"wrong full name", func(user *entity.User) { user.FullName = "Other" }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			repo := newFakeRepo()
+			user := canonicalUser(1, "old")
+			test.mutate(user)
+			repo.put(user)
+			result, err := NewProvisioner(repo, &fakeEncoder{}).RotatePassword(context.Background(), Request{Start: 1, Count: 1, Apply: true, Password: []byte("new-password")})
+			if !errors.Is(err, ErrConflicts) || result.Conflicts != 1 || repo.rotates != 0 || user.Password != "old" {
+				t.Fatalf("result=%+v err=%v", result, err)
+			}
+		})
+	}
+}
+
+func TestRotatePasswordUpdatesCanonicalRangeAtomically(t *testing.T) {
+	repo := newFakeRepo()
+	first, second := canonicalUser(1, "old"), canonicalUser(2, "old")
+	first.Rating, second.Rating = 1700, 1800
+	repo.put(first)
+	repo.put(second)
+	encoder := &fakeEncoder{}
+	result, err := NewProvisioner(repo, encoder).RotatePassword(context.Background(), Request{Start: 1, Count: 2, Apply: true, Password: []byte("new-password")})
+	if err != nil || result.Rotated != 2 || repo.rotates != 1 || encoder.hashes != 2 || !encoder.ComparePasswords(first.Password, []byte("new-password")) || encoder.ComparePasswords(first.Password, []byte("old")) {
+		t.Fatalf("result=%+v err=%v rotates=%d hashes=%d", result, err, repo.rotates, encoder.hashes)
+	}
+	if first.Rating != 1700 || second.Rating != 1800 || first.Username != "benchmark_judge_001" || first.IsSuspended {
+		t.Fatalf("unrelated fields changed: %+v", first)
+	}
+}
+
+func TestRotatePasswordVisibleConflictMakesZeroMutations(t *testing.T) {
+	repo := newFakeRepo()
+	repo.put(canonicalUser(1, "old"))
+	bad := canonicalUser(2, "old")
+	bad.Role = rbac.RoleAdmin
+	repo.put(bad)
+	result, err := NewProvisioner(repo, &fakeEncoder{}).RotatePassword(context.Background(), Request{Start: 1, Count: 2, Apply: true, Password: []byte("new-password")})
+	if !errors.Is(err, ErrConflicts) || result.Conflicts != 1 || repo.rotates != 0 || repo.usersByUsername["benchmark_judge_001"].Password != "old" {
+		t.Fatalf("result=%+v err=%v rotates=%d", result, err, repo.rotates)
+	}
+}
+
+func TestRotatePasswordAdapterFailureLeavesAllPasswordsUnchanged(t *testing.T) {
+	repo := newFakeRepo()
+	repo.put(canonicalUser(1, "old-one"))
+	repo.put(canonicalUser(2, "old-two"))
+	repo.rotateErr = errors.New("transaction failed")
+	result, err := NewProvisioner(repo, &fakeEncoder{}).RotatePassword(context.Background(), Request{Start: 1, Count: 2, Apply: true, Password: []byte("new-password")})
+	if !errors.Is(err, ErrRotateStopped) || result.Rotated != 0 || repo.rotates != 1 || repo.usersByUsername["benchmark_judge_001"].Password != "old-one" || repo.usersByUsername["benchmark_judge_002"].Password != "old-two" {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+}
+
 type fakeEncoder struct {
 	expected string
 	hashes   int
@@ -204,6 +275,8 @@ type fakeRepo struct {
 	failCreateAt    int
 	createErr       error
 	onCreateError   func(*entity.User)
+	rotates         int
+	rotateErr       error
 }
 
 func newFakeRepo() *fakeRepo {
@@ -255,6 +328,24 @@ func (r *fakeRepo) UpdateUser(context.Context, *entity.User) error {
 }
 func (r *fakeRepo) UpdatePassword(context.Context, string, string, time.Time) error {
 	return errors.New("unexpected password update")
+}
+func (r *fakeRepo) RotateBenchmarkPasswords(_ context.Context, updates []outbound.BenchmarkPasswordUpdate) error {
+	r.rotates++
+	if r.rotateErr != nil {
+		return r.rotateErr
+	}
+	// Stage all checks before changing the in-memory state, matching the
+	// PostgreSQL adapter's all-or-nothing transaction contract.
+	for _, update := range updates {
+		user, ok := r.usersByUsername[update.Username]
+		if !ok || user.ID != update.UserID || !isCanonical(user, Identity{Username: update.Username, Email: update.Email, FullName: update.FullName}) {
+			return errors.New("noncanonical")
+		}
+	}
+	for _, update := range updates {
+		r.usersByUsername[update.Username].Password = update.PasswordHash
+	}
+	return nil
 }
 func (r *fakeRepo) UpdateProfile(context.Context, string, outbound.ProfileUpdates) error {
 	return errors.New("unexpected profile update")

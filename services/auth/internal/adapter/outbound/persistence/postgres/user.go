@@ -205,6 +205,35 @@ func (r *userRepository) UpdatePassword(ctx context.Context, userID string, pass
 		}).Error
 }
 
+// RotateBenchmarkPasswords updates only the password column in one
+// transaction. Each update repeats the canonical fixture predicates so a
+// concurrent role/status/identity change rolls back the entire rotation.
+func (r *userRepository) RotateBenchmarkPasswords(ctx context.Context, updates []outbound.BenchmarkPasswordUpdate) error {
+	if len(updates) == 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, update := range updates {
+			result := tx.Model(&UserDAO{}).
+				Where("id = ?", update.UserID).
+				Where("username = ?", update.Username).
+				Where("email = ?", update.Email).
+				Where("full_name = ?", update.FullName).
+				Where("role = ?", rbac.RoleUser).
+				Where("is_active = ?", true).
+				Where("is_suspended = ?", false).
+				UpdateColumn("password", update.PasswordHash)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected != 1 {
+				return errors.New("canonical benchmark identity changed during password rotation")
+			}
+		}
+		return nil
+	})
+}
+
 func (r *userRepository) UpdateProfile(ctx context.Context, userID string, updates outbound.ProfileUpdates) error {
 	values := map[string]interface{}{"updated_at": updates.UpdatedAt}
 	if updates.FullName != nil {
