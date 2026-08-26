@@ -17,6 +17,36 @@ database, change Redis, or retry a submission POST.
 - The tool never writes tokens, cookies, source text, real user IDs, or SSE
   tickets to its result artifacts.
 
+## Local session bootstrap
+
+`judge-bench` remains password-free. A separate local operator executable can
+prepare its pre-issued cookie input through the normal public Login API:
+
+```text
+benchmark password -> bootstrap-sessions -> users.local.json -> judge-bench
+```
+
+It supports only `benchmark_judge_001` through `benchmark_judge_100`, logs in
+sequentially, validates each cookie session with `/api/v1/me`, and writes the
+file only if the full requested range succeeds. `users.local.json` contains
+live credentials: keep it mode `0600`, do not share or upload it, and remove or
+regenerate it after the benchmark window. Bootstrap sessions before warmup, not
+during a measured run.
+
+For a remote target, require HTTPS and explicitly confirm its host:
+
+```bash
+go run ./cmd/bootstrap-sessions \
+  --base-url https://<public-host> --allow-remote \
+  --confirm-target-host <public-host> --start 1 --count 50 \
+  --output ./users.local.json
+```
+
+The command prompts once for the shared password without echoing it. It never
+accepts a password argument or environment variable. An optional password file
+must be a local, regular, group/other-inaccessible file; interactive TTY input
+is the recommended operator workflow.
+
 ## Commands
 
 ```bash
@@ -59,6 +89,42 @@ tools/benchmark/judge/scripts/collect-container-stats.sh --help
 tools/benchmark/judge/scripts/collect-kafka-lag.sh --help
 go run ./tools/benchmark/judge analyze --run-dir bench-results/RUN-ID
 ```
+
+## Data collection and analysis
+
+Raw Go artifacts are immutable canonical measurements. The offline Python
+pipeline turns them into `analysis/metrics.json`, CSV summaries, presentation
+charts, and `analysis/report.html` without reading credentials, source files, or
+secrets. It remains optional: normal benchmark execution does not require
+Python.
+
+```bash
+cd tools/benchmark/judge/analysis
+python -m venv /tmp/judge-analysis-venv
+source /tmp/judge-analysis-venv/bin/activate
+pip install -r requirements.txt
+
+python -m judge_analysis analyze --run-dir ../../bench-results/RUN-ID \
+  --container-stats /safe/path/container-stats.csv \
+  --kafka-lag /safe/path/kafka-lag.csv
+
+python -m judge_analysis compare \
+  --results-root ../../bench-results --match 'pool1-rate*' \
+  --output ../../bench-results/analysis-comparison-pool1
+```
+
+The collector scripts are run separately before the benchmark and stopped after
+it. Missing collector files are shown as unavailable, never as zero. Their UTC
+timestamps align resource/lag samples with benchmark windows; client-monotonic
+latency remains authoritative.
+
+Capacity work is a scientific workflow: define a hypothesis, control variables,
+collect sustained measurements, repeat configurations, calculate statistics,
+visualize, compare, then conclude. Repeat each rate/configuration before
+claiming stability. One run is evidence about that run—not demonstrated capacity.
+The comparison report separates the Go harness classification from conservative
+analytical assessment and reports tested stable/saturating intervals rather than
+fake precise capacity values.
 
 Do not use this harness against production until benchmark accounts, a change
 window, target confirmation, and an explicit submission budget are approved.
