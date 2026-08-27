@@ -17,17 +17,8 @@ a modern Next.js workspace, and isolated program execution. It covers the core
 competitive-programming lifecycle: author a problem, moderate it, solve it,
 run code, submit against official testcases, and review results and statistics.
 
-> **Current verified production release: v0.1.4.** It is deployed from an
-> immutable semantic release across six GHCR images and separate App and Judge
-> nodes.
-
-The v0.1.4 production milestone verified node-specific deployment and health
-gates, Run Code end to end, and the official asynchronous Submit/Judge path. It
-also includes App rollback, automatic restoration of Judge when a later App
-activation fails, a stable Docker Compose project identity, and GitHub
-`production` Environment deployment tracking. This is a verified operating
-baseline, not a claim of zero downtime, high availability, or horizontal Judge
-scaling.
+See [GitHub Releases](https://github.com/nvawntien/go-judge-system/releases)
+for version history and release notes.
 
 ## Highlights
 
