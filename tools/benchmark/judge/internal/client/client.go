@@ -243,14 +243,17 @@ func (a *API) resolve(path string) *url.URL {
 func readEnvelope(response *http.Response) (Envelope, error) {
 	data, err := io.ReadAll(io.LimitReader(response.Body, maxResponseBytes+1))
 	if err != nil {
-		return Envelope{}, err
+		return Envelope{}, fmt.Errorf("read HTTP %d API response", response.StatusCode)
 	}
 	if len(data) > maxResponseBytes {
-		return Envelope{}, errors.New("API response exceeds size limit")
+		return Envelope{}, fmt.Errorf("HTTP %d API response exceeds size limit", response.StatusCode)
+	}
+	if len(data) == 0 {
+		return Envelope{}, fmt.Errorf("HTTP %d API response is empty", response.StatusCode)
 	}
 	var envelope Envelope
 	if err := json.Unmarshal(data, &envelope); err != nil {
-		return Envelope{}, fmt.Errorf("decode API envelope: %w", err)
+		return Envelope{}, fmt.Errorf("HTTP %d API response contains invalid JSON", response.StatusCode)
 	}
 	return envelope, nil
 }

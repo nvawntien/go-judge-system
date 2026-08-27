@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/nvawntien/go-judge-system/tools/benchmark/judge/internal/model"
 )
 
 type Mode string
@@ -41,6 +43,7 @@ type Objective string
 const (
 	ObjectiveJudgeCapacity    Objective = "judge-capacity"
 	ObjectiveAdmissionControl Objective = "admission-control"
+	ObjectiveMassiveBurst     Objective = "massive-burst"
 )
 
 type Config struct {
@@ -69,6 +72,9 @@ type Config struct {
 	Window                  time.Duration
 	MaxSubmissions          int
 	MaxInFlight             int
+	UserCount               int
+	PreflightConcurrency    int
+	BurstStartTimeout       time.Duration
 	ErrorPolicy             ErrorPolicy
 	Objective               Objective
 	SSEConnectTimeout       time.Duration
@@ -88,22 +94,29 @@ type Config struct {
 	Rate                    *big.Rat
 	RateRaw                 string
 	Duration                time.Duration
+	TotalSubmissions        int
+	SystemConfigFile        string
+	SystemConfig            *model.SystemConfig
 }
 
 func Defaults(mode Mode) Config {
 	return Config{
-		Mode:                    mode,
-		ResultRoot:              "bench-results",
-		Repetition:              1,
-		WarmupTimeout:           2 * time.Minute,
-		CooldownGuard:           100 * time.Millisecond,
-		SubmitLatencyBudget:     500 * time.Millisecond,
-		PoolHeadroomPercent:     25,
-		APITimeout:              5 * time.Second,
-		SubmissionTimeout:       5 * time.Minute,
-		DrainTimeout:            5 * time.Minute,
-		Window:                  30 * time.Second,
-		MaxInFlight:             100,
+		Mode:                mode,
+		ResultRoot:          "bench-results",
+		Repetition:          1,
+		WarmupTimeout:       2 * time.Minute,
+		CooldownGuard:       100 * time.Millisecond,
+		SubmitLatencyBudget: 500 * time.Millisecond,
+		PoolHeadroomPercent: 25,
+		APITimeout:          5 * time.Second,
+		SubmissionTimeout:   5 * time.Minute,
+		DrainTimeout:        5 * time.Minute,
+		Window:              30 * time.Second,
+		MaxInFlight:         100,
+		// Session validation is bounded, but a 10k pool must complete its
+		// authenticated preflight before short-lived access sessions age out.
+		PreflightConcurrency:    256,
+		BurstStartTimeout:       2 * time.Minute,
 		ErrorPolicy:             ErrorPolicyStop,
 		Objective:               ObjectiveJudgeCapacity,
 		SSEConnectTimeout:       10 * time.Second,
@@ -145,8 +158,11 @@ func Bind(fs *flag.FlagSet, cfg *Config) {
 	fs.DurationVar(&cfg.Window, "window", cfg.Window, "statistics window duration")
 	fs.IntVar(&cfg.MaxSubmissions, "max-submissions", 0, "hard cap for all submissions including warmup")
 	fs.IntVar(&cfg.MaxInFlight, "max-in-flight", cfg.MaxInFlight, "accepted unresolved submission cap")
+	fs.IntVar(&cfg.UserCount, "user-count", 0, "select first N canonical benchmark sessions; required for massive burst")
+	fs.IntVar(&cfg.PreflightConcurrency, "preflight-concurrency", cfg.PreflightConcurrency, "bounded concurrent session validation/refresh work")
+	fs.DurationVar(&cfg.BurstStartTimeout, "burst-start-timeout", cfg.BurstStartTimeout, "burst launch and event-ticket acquisition lifetime horizon")
 	fs.Var(enumValue{get: func() string { return string(cfg.ErrorPolicy) }, set: func(value string) { cfg.ErrorPolicy = ErrorPolicy(value) }}, "submit-error-policy", "stop or continue")
-	fs.Var(enumValue{get: func() string { return string(cfg.Objective) }, set: func(value string) { cfg.Objective = Objective(value) }}, "benchmark-objective", "judge-capacity or admission-control")
+	fs.Var(enumValue{get: func() string { return string(cfg.Objective) }, set: func(value string) { cfg.Objective = Objective(value) }}, "benchmark-objective", "judge-capacity, admission-control, or massive-burst")
 	fs.DurationVar(&cfg.SSEConnectTimeout, "sse-connect-timeout", cfg.SSEConnectTimeout, "SSE connection timeout")
 	fs.DurationVar(&cfg.SSEIdleTimeout, "sse-idle-timeout", cfg.SSEIdleTimeout, "SSE idle timeout")
 	fs.IntVar(&cfg.SSEMaxReconnects, "sse-max-reconnects", cfg.SSEMaxReconnects, "bounded SSE reconnects")
@@ -163,6 +179,8 @@ func Bind(fs *flag.FlagSet, cfg *Config) {
 	fs.DurationVar(&cfg.ScheduleDelayP95Budget, "schedule-delay-p95-budget", cfg.ScheduleDelayP95Budget, "burst p95 scheduling budget")
 	fs.StringVar(&cfg.RateRaw, "rate", "", "sustained constant arrival rate per second")
 	fs.DurationVar(&cfg.Duration, "duration", 0, "sustained arrival duration")
+	fs.IntVar(&cfg.TotalSubmissions, "total-submissions", 0, "exact measured submissions in sustained mode; excludes warmup")
+	fs.StringVar(&cfg.SystemConfigFile, "system-config", "", "safe system-under-test JSON metadata")
 
 }
 
@@ -221,11 +239,55 @@ func (c Config) Validate() error {
 			return errors.New("non-loopback targets require --max-submissions")
 		}
 	}
-	if c.Mode == ModeBurst && c.BurstSize <= 0 {
-		return errors.New("--burst-size must be positive for burst mode")
+	if c.TotalSubmissions < 0 {
+		return errors.New("--total-submissions must not be negative")
 	}
-	if c.Mode == ModeSustained && (c.Rate == nil || c.Duration <= 0) {
-		return errors.New("sustained mode requires positive --rate and --duration")
+	if c.Mode == ModeBurst {
+		if c.BurstSize <= 0 {
+			return errors.New("--burst-size must be positive for burst mode")
+		}
+		if c.TotalSubmissions != 0 {
+			return errors.New("--total-submissions is only valid for sustained mode")
+		}
+		if c.Objective == ObjectiveMassiveBurst {
+			if c.UserCount <= 0 || c.UserCount != c.BurstSize {
+				return errors.New("massive burst requires --user-count equal to --burst-size")
+			}
+			if c.WarmupCount != 0 {
+				return errors.New("massive burst requires --warmup-count=0 to preserve one submission per user")
+			}
+			if c.Jitter != 0 {
+				return errors.New("massive burst requires --jitter=0 for one common release origin")
+			}
+			if c.ErrorPolicy != ErrorPolicyContinue {
+				return errors.New("massive burst requires --submit-error-policy=continue so every planned logical submission is released")
+			}
+			if c.MaxInFlight < c.BurstSize {
+				return errors.New("massive burst requires --max-in-flight at least --burst-size")
+			}
+			// Full observation is SSE-first. A periodic GET for every one of
+			// thousands of accepted submissions would turn a submission burst into
+			// an artificial Gateway/Postgres read burst. Reconnect-triggered GET
+			// reconciliation remains bounded by ReconcileMaxQPS; require the
+			// operator to explicitly disable periodic safety reconciliation here.
+			if c.SafetyReconcileInterval != 0 {
+				return errors.New("massive burst requires --safety-reconcile-interval=0 to avoid a periodic reconciliation storm")
+			}
+		}
+	}
+	if c.Mode == ModeSustained {
+		if c.Rate == nil {
+			return errors.New("sustained mode requires positive --rate")
+		}
+		if c.Duration < 0 {
+			return errors.New("--duration must not be negative")
+		}
+		if c.Duration > 0 && c.TotalSubmissions > 0 {
+			return errors.New("sustained mode accepts either --duration or --total-submissions, not both")
+		}
+		if c.Duration == 0 && c.TotalSubmissions == 0 {
+			return errors.New("sustained mode requires --duration or --total-submissions")
+		}
 	}
 	if c.MaxSubmissions <= 0 {
 		return errors.New("--max-submissions must be positive")
@@ -255,10 +317,10 @@ func validateRequired(c Config) error {
 	if c.SubmitCooldown <= 0 || c.CooldownGuard < 0 || c.SubmitLatencyBudget < 0 {
 		return errors.New("cooldown values must be non-negative and --submit-cooldown must be positive")
 	}
-	if c.WarmupCount < 0 || c.Repetition <= 0 || c.MaxInFlight <= 0 || c.PoolHeadroomPercent < 0 {
+	if c.WarmupCount < 0 || c.Repetition <= 0 || c.MaxInFlight <= 0 || c.UserCount < 0 || c.UserCount > 10000 || c.PreflightConcurrency <= 0 || c.PreflightConcurrency > 512 || c.PoolHeadroomPercent < 0 {
 		return errors.New("counts and pool headroom are invalid")
 	}
-	if c.APITimeout <= 0 || c.SubmissionTimeout <= 0 || c.DrainTimeout <= 0 || c.Window <= 0 || c.WarmupTimeout <= 0 {
+	if c.APITimeout <= 0 || c.SubmissionTimeout <= 0 || c.DrainTimeout <= 0 || c.Window <= 0 || c.WarmupTimeout <= 0 || c.BurstStartTimeout <= 0 {
 		return errors.New("timeouts and --window must be positive")
 	}
 	if c.SSEConnectTimeout <= 0 || c.SSEIdleTimeout <= 0 || c.SSEMaxReconnects < 0 || c.SSEBackoffBase <= 0 || c.SSEBackoffMax < c.SSEBackoffBase {
@@ -270,8 +332,8 @@ func validateRequired(c Config) error {
 	if c.ErrorPolicy != ErrorPolicyStop && c.ErrorPolicy != ErrorPolicyContinue {
 		return errors.New("--submit-error-policy must be stop or continue")
 	}
-	if c.Objective != ObjectiveJudgeCapacity && c.Objective != ObjectiveAdmissionControl {
-		return errors.New("--benchmark-objective must be judge-capacity or admission-control")
+	if c.Objective != ObjectiveJudgeCapacity && c.Objective != ObjectiveAdmissionControl && c.Objective != ObjectiveMassiveBurst {
+		return errors.New("--benchmark-objective must be judge-capacity, admission-control, or massive-burst")
 	}
 	if c.ResultRoot == "" || filepath.IsAbs(c.RunID) {
 		return errors.New("result root/run ID is invalid")
@@ -300,36 +362,31 @@ func isLoopbackHost(host string) bool {
 // cap: Validate rejects a requested plan that exceeds the cap.
 func (c Config) PlannedSubmissions() int {
 	planned := c.WarmupCount
+	maxInt := int(^uint(0) >> 1)
 	switch c.Mode {
 	case ModeBurst:
+		if c.BurstSize > maxInt-planned {
+			return maxInt
+		}
 		planned += c.BurstSize
 	case ModeSustained:
+		if c.TotalSubmissions > 0 {
+			if c.TotalSubmissions > maxInt-planned {
+				return maxInt
+			}
+			planned += c.TotalSubmissions
+			return planned
+		}
 		if c.Rate == nil || c.Duration <= 0 {
 			return planned
 		}
 		count := ceilRat(new(big.Rat).Mul(c.Rate, big.NewRat(int64(c.Duration), int64(time.Second))))
-		maxInt := int(^uint(0) >> 1)
 		if count > maxInt-planned {
 			return maxInt
 		}
 		planned += count
 	}
 	return planned
-}
-
-// OffsetFor derives each arrival from its original origin. It deliberately
-// avoids repeatedly adding a rounded duration.
-func OffsetFor(rate *big.Rat, index int) time.Duration {
-	if rate == nil || index < 0 {
-		return 0
-	}
-	seconds := new(big.Rat).Quo(big.NewRat(int64(index), 1), rate)
-	nanoseconds := new(big.Rat).Mul(seconds, big.NewRat(int64(time.Second), 1))
-	value := new(big.Int).Quo(nanoseconds.Num(), nanoseconds.Denom())
-	if !value.IsInt64() || value.Int64() > int64(^uint(0)>>1) {
-		return time.Duration(int64(^uint(0) >> 1))
-	}
-	return time.Duration(value.Int64())
 }
 
 func ceilRat(value *big.Rat) int {
@@ -349,7 +406,12 @@ type enumValue struct {
 	set func(string)
 }
 
-func (v enumValue) String() string { return v.get() }
+func (v enumValue) String() string {
+	if v.get == nil {
+		return ""
+	}
+	return v.get()
+}
 func (v enumValue) Set(value string) error {
 	v.set(value)
 	return nil
@@ -357,5 +419,10 @@ func (v enumValue) Set(value string) error {
 
 type urlValue struct{ cfg *Config }
 
-func (v urlValue) String() string         { return v.cfg.BaseURLRaw }
+func (v urlValue) String() string {
+	if v.cfg == nil {
+		return ""
+	}
+	return v.cfg.BaseURLRaw
+}
 func (v urlValue) Set(value string) error { return v.cfg.SetBaseURL(value) }

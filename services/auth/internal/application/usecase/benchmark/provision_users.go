@@ -15,7 +15,10 @@ import (
 
 const (
 	MinSequence = 1
-	MaxSequence = 100
+	// MaxSequence deliberately bounds this operator-only fixture namespace. The
+	// %03d identity format remains stable for 001..100 and naturally extends to
+	// 1000..10000 without renaming existing users.
+	MaxSequence = 10000
 )
 
 var (
@@ -55,6 +58,9 @@ type Request struct {
 	Count    int
 	Apply    bool
 	Password []byte
+	// Progress is an optional process-local callback. It receives only counts
+	// and is deliberately not persisted or used by the domain/repository.
+	Progress func(completed, total int)
 }
 
 type Result struct {
@@ -186,6 +192,7 @@ func (p *Provisioner) RotatePassword(ctx context.Context, req Request) (Result, 
 			return result, ErrRotateStopped
 		}
 		updates = append(updates, outbound.BenchmarkPasswordUpdate{UserID: user.ID, Username: entry.Username, Email: entry.Email, FullName: entry.FullName, PasswordHash: hash})
+		reportProgress(req, index+1)
 	}
 	if err := rotator.RotateBenchmarkPasswords(ctx, updates); err != nil {
 		return result, ErrRotateStopped
@@ -242,6 +249,7 @@ func (p *Provisioner) Execute(ctx context.Context, req Request) (Result, error) 
 		entry := &result.Entries[index]
 		if entry.Status == StatusExisting {
 			entry.Status = StatusSkipped
+			reportProgress(req, index+1)
 			continue
 		}
 
@@ -288,6 +296,7 @@ func (p *Provisioner) Execute(ctx context.Context, req Request) (Result, error) 
 		user.Activate()
 		if err := p.users.CreateUser(ctx, user); err == nil {
 			entry.Status = StatusCreated
+			reportProgress(req, index+1)
 			continue
 		}
 
@@ -296,6 +305,7 @@ func (p *Provisioner) Execute(ctx context.Context, req Request) (Result, error) 
 		reread, racedUser, rereadErr := p.inspect(ctx, entry.Identity)
 		if rereadErr == nil && reread.Status == StatusExisting && p.passwords.ComparePasswords(racedUser.Password, req.Password) {
 			entry.Status = StatusSkipped
+			reportProgress(req, index+1)
 			continue
 		}
 		entry.Status = StatusConflict
@@ -307,6 +317,12 @@ func (p *Provisioner) Execute(ctx context.Context, req Request) (Result, error) 
 
 	result.recount()
 	return result, nil
+}
+
+func reportProgress(req Request, completed int) {
+	if req.Progress != nil {
+		req.Progress(completed, req.Count)
+	}
 }
 
 func (p *Provisioner) inspect(ctx context.Context, identity Identity) (Entry, *entity.User, error) {

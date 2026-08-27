@@ -26,6 +26,36 @@ def _resource_metrics(containers: pd.DataFrame | None) -> dict:
     return {"available": True, "containers": result}
 
 
+def _system_config(run: dict) -> dict:
+    value = run.get("system_config")
+    required = {
+        "label", "release", "app", "judge",
+    }
+    if not isinstance(value, dict) or not required.issubset(value):
+        return {"available": False, "reason": "safe system configuration metadata unavailable"}
+    # Copy only the strict allowlist emitted by judge-bench. This avoids ever
+    # rendering arbitrary run.json data in a report.
+    app, judge = value.get("app"), value.get("judge")
+    if not isinstance(app, dict) or not isinstance(judge, dict):
+        return {"available": False, "reason": "safe system configuration metadata invalid"}
+    fields = {
+        "app": ("nodes", "cpu_cores_per_node", "memory_mib_per_node"),
+        "judge": ("nodes", "cpu_cores_per_node", "memory_mib_per_node", "worker_pool_size", "worker_memory_limit_mib", "sandbox_memory_limit_mib"),
+    }
+    try:
+        clean = {"available": True, "label": str(value["label"]), "release": str(value["release"])}
+        for section, names in fields.items():
+            source = app if section == "app" else judge
+            clean[section] = {name: int(source[name]) for name in names}
+            if any(number <= 0 for number in clean[section].values()):
+                raise ValueError
+        if not clean["label"] or not clean["release"]:
+            raise ValueError
+        return clean
+    except (KeyError, TypeError, ValueError):
+        return {"available": False, "reason": "safe system configuration metadata invalid"}
+
+
 def align_to_run(frame: pd.DataFrame | None, run: dict) -> pd.DataFrame | None:
     """Use UTC overlap only; never infer latency from collector wall clocks."""
     if frame is None:
@@ -73,12 +103,12 @@ def _quality(data: RunData) -> dict:
     if not len(windows):
         reasons.append("no benchmark windows")
     if reasons:
-        state = "INVALID"
+        state = "INSUFFICIENT_DATA"
     elif data.kafka is None or data.containers is None:
         state = "PARTIAL"
         reasons.append("one or more optional collectors unavailable")
     else:
-        state = "GOOD"
+        state = "COMPLETE"
     def coverage(frame):
         if frame is None or not len(frame): return {"available": False}
         timestamps = frame.timestamp.sort_values()
@@ -94,12 +124,37 @@ def _quality(data: RunData) -> dict:
             "collector_coverage": {"container_statistics": coverage(data.containers), "kafka_lag": coverage(data.kafka)}}
 
 
+def _intake(values: pd.Series) -> dict:
+    timestamps = pd.to_datetime(values.dropna(), utc=True, errors="coerce").dropna().sort_values()
+    if len(timestamps) < 2:
+        return {"count": int(len(timestamps)), "interval_ms": None, "throughput_per_sec": None}
+    interval = (timestamps.iloc[-1] - timestamps.iloc[0]).total_seconds()
+    if interval <= 0:
+        return {"count": int(len(timestamps)), "interval_ms": None, "throughput_per_sec": None}
+    return {"count": int(len(timestamps)), "interval_ms": interval * 1000, "throughput_per_sec": float(len(timestamps) / interval)}
+
+
+def _burst_metrics(submissions: pd.DataFrame, summary: dict | None) -> dict:
+    """Use actual POST/HTTP timestamps, never a synthetic zero load window."""
+    measured = submissions[submissions.phase.eq("load")]
+    attempted = _intake(measured.loc[measured.attempted.astype(bool), "post_started_at"])
+    accepted = _intake(measured.loc[measured.accepted.astype(bool), "post_completed_at"])
+    terminal = _intake(measured.loc[measured.terminal_status.fillna("").ne(""), "terminal_observed_at"])
+    if summary:
+        raw = summary.get("burst")
+        if isinstance(raw, dict):
+            return {"available": True, "attempted": attempted, "accepted": accepted, "terminal": terminal, "raw": raw,
+                    "peak_logical_in_flight": raw.get("peak_logical_in_flight"), "peak_active_observers": raw.get("peak_active_observers")}
+    return {"available": True, "attempted": attempted, "accepted": accepted, "terminal": terminal, "raw": {},
+            "peak_logical_in_flight": None, "peak_active_observers": None}
+
+
 def analytical_assessment(data: RunData, metrics: dict) -> dict:
     """Conservative analysis-only heuristic; harness classification remains canonical."""
     if data.run.get("mode") != "sustained":
         return {"state": "INSUFFICIENT_DATA", "reasons": ["burst mode has no sustained-capacity assessment"]}
     quality = metrics["data_quality"]
-    if quality["state"] == "INVALID":
+    if quality["state"] == "INSUFFICIENT_DATA":
         return {"state": "INSUFFICIENT_DATA", "reasons": ["invalid raw dataset"]}
     errors = metrics["correctness"]["errors"]
     if errors["rate_limited"] or errors["server_errors"] or errors["transport_failures"] or errors["completion_timeouts"]:
@@ -137,24 +192,35 @@ def calculate(data: RunData) -> tuple[dict, pd.DataFrame, pd.DataFrame]:
               "http_errors": int(((submissions.http_status.notna()) & ~submissions.http_status.isin([200, 201])).sum())}
     load_duration = float(load.window_duration_ms.sum() / 1000) if len(load) else 0.0
     containers, kafka = align_to_run(data.containers, data.run), align_to_run(data.kafka, data.run)
+    outstanding_slope = None
+    if len(load) >= 2:
+        elapsed = (load.window_start - load.window_start.iloc[0]).dt.total_seconds().to_numpy()
+        if elapsed[-1] > 0:
+            outstanding_slope = float(np.polyfit(elapsed, load.client_outstanding.to_numpy(), 1)[0] * 60)
+    burst = _burst_metrics(submissions, data.summary) if data.run.get("mode") == "burst" else None
+    accepted_rate = float(len(accepted) / load_duration) if load_duration else None
+    if burst is not None:
+        accepted_rate = burst["accepted"]["throughput_per_sec"]
     metrics = {"analysis_schema_version": "judge-analysis/v1", "generated_at_utc": datetime.now(timezone.utc).isoformat(),
                "run_id": data.run.get("run_id"), "harness_classification": (data.summary or {}).get("classification"),
                "input_hashes": {name: __import__("hashlib").sha256((data.path / name).read_bytes()).hexdigest() for name in ["run.json", "submissions.csv", "windows.csv"]},
                "statistical_methods": {"percentiles": "numpy linear interpolation", "confidence_intervals": "Student-t across repetitions"},
                "load": {"intended": int(submissions.intended_at.notna().sum()), "attempted": int(submissions.attempted.astype(bool).sum()), "accepted": int(len(accepted)),
-                        "accepted_arrival_rate_per_sec": (float(len(accepted) / load_duration) if load_duration else None)},
+                        "accepted_arrival_rate_per_sec": accepted_rate},
                "completion": {"completed": int(len(completed)), "completion_throughput_per_sec": (float(load.completed.sum() / load_duration) if load_duration else None),
                               "completion_ratio": (float(len(completed) / len(accepted)) if len(accepted) else None)},
                "latency_ms": {"submit": distribution(submissions.submit_latency_ms), "end_to_end": distribution(submissions.end_to_end_latency_ms), "accepted_to_terminal": distribution(submissions.accepted_to_terminal_ms)},
+               "system_config": _system_config(data.run),
                "queue": {"max_client_outstanding": int(windows.client_outstanding_peak.max()) if len(windows) else 0,
                          "ending_client_outstanding": int(windows.client_outstanding.iloc[-1]) if len(windows) else 0,
                          "time_to_peak_seconds": (float(timeseries.loc[timeseries.client_outstanding_peak.idxmax(), "elapsed_seconds"]) if len(timeseries) and not pd.isna(start) else None),
-                         "drain_duration_ms": (data.summary or {}).get("drain", {}).get("duration_ms")},
+                         "drain_duration_ms": (data.summary or {}).get("drain", {}).get("duration_ms"),
+                         "outstanding_slope_per_minute": outstanding_slope},
                "correctness": {"verdicts": dict(zip(verdicts["verdict"], verdicts["count"])), "accepted_ratio": (float((completed.terminal_status == "ACCEPTED").mean()) if len(completed) else None),
                                "system_error_count": int((completed.terminal_status == "SYSTEM_ERROR").sum()), "errors": errors},
                "observation": {"sse_completions": int(submissions.completion_source.fillna("").str.startswith("sse_").sum()),
                                "reconciliation_completions": int(submissions.completion_source.fillna("").str.startswith("get_").sum()),
                                "sse_failures": int(submissions.sse_failures.fillna(0).sum())},
-               "kafka": _kafka_metrics(kafka, data.run), "resources": _resource_metrics(containers), "data_quality": _quality(data)}
+               "kafka": _kafka_metrics(kafka, data.run), "resources": _resource_metrics(containers), "data_quality": _quality(data), "burst": burst}
     metrics["analytical_assessment"] = analytical_assessment(data, metrics)
     return metrics, timeseries, verdicts

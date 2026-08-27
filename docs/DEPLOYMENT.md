@@ -120,7 +120,7 @@ and only then activates the complete App service set.
 ### One-time benchmark account provisioning
 
 The Auth image contains `/app/provision-benchmark-users` for the fixed
-`benchmark_judge_001` through `benchmark_judge_100` fixture pool. It does not
+`benchmark_judge_001` through `benchmark_judge_10000` fixture pool. It does not
 create sessions, tokens, mail, or verification artifacts. Operators must use
 the exact immutable Auth image tag already deployed to the App Node, first run
 a dry-run, review its sanitized target/range and exact confirmation phrase,
@@ -152,6 +152,12 @@ docker compose --project-name go-judge-system <same-app-compose-arguments> \
 Normal provisioning is idempotent: canonical existing benchmark accounts are
 skipped only when their stored hash matches the supplied password. Normal mode
 never resets, deletes, or changes existing accounts; conflicts stop it safely.
+The fixed range is `1..10000`; `%03d` keeps `001..100` unchanged and naturally
+extends the deterministic namespace through `10000`. For a 10K fixture build,
+plan the complete range first (`--start 1 --count 10000`), then apply only the
+printed exact confirmation. The command reuses one database pool, processes
+accounts sequentially with the production password encoder, and prints only
+count-based progress every 500 accounts—never passwords or hashes.
 
 ### Benchmark password rotation
 

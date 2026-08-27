@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/nvawntien/go-judge-system/tools/benchmark/judge/internal/credentials"
 )
@@ -20,7 +21,7 @@ import (
 const testPassword = "bootstrap-password-sentinel"
 
 func TestIdentitiesUseFixedNamespaceAndSafeRange(t *testing.T) {
-	identities, err := Identities(1, 100)
+	identities, err := Identities(1, 10000)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,13 +33,16 @@ func TestIdentitiesUseFixedNamespaceAndSafeRange(t *testing.T) {
 		{0, "benchmark_judge_001", "bench-001"},
 		{49, "benchmark_judge_050", "bench-050"},
 		{99, "benchmark_judge_100", "bench-100"},
+		{998, "benchmark_judge_999", "bench-999"},
+		{999, "benchmark_judge_1000", "bench-1000"},
+		{9999, "benchmark_judge_10000", "bench-10000"},
 	} {
 		got := identities[want.index]
 		if got.Username != want.username || got.Alias != want.alias {
 			t.Fatalf("identity %d = %#v", want.index, got)
 		}
 	}
-	for _, test := range [][2]int{{0, 1}, {1, 0}, {101, 1}, {100, 2}, {1, int(^uint(0) >> 1)}} {
+	for _, test := range [][2]int{{0, 1}, {1, 0}, {10001, 1}, {10000, 2}, {1, int(^uint(0) >> 1)}} {
 		if _, err := Identities(test[0], test[1]); !errors.Is(err, ErrInvalidRange) {
 			t.Fatalf("Identities(%d, %d) error = %v", test[0], test[1], err)
 		}
@@ -165,6 +169,68 @@ func TestRunStopsAfterFirstFailureAndLeavesNoOutput(t *testing.T) {
 	}
 }
 
+func TestRunFailureNeverReplacesPriorCredentialOutput(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/auth/login" {
+			w.WriteHeader(http.StatusUnauthorized)
+		}
+	}))
+	defer server.Close()
+	output := filepath.Join(t.TempDir(), "users.local.json")
+	const prior = "previous-valid-credential-file"
+	if err := os.WriteFile(output, []byte(prior), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	options := testOptions(t, server.URL, output, 1, 1)
+	options.Replace = true
+	if _, err := Run(context.Background(), options); err == nil {
+		t.Fatal("failed bootstrap replaced an existing output")
+	}
+	actual, err := os.ReadFile(output)
+	if err != nil || string(actual) != prior {
+		t.Fatalf("existing output changed: %q err=%v", actual, err)
+	}
+}
+
+func TestRunBoundsConcurrencyAndWritesDeterministicOrder(t *testing.T) {
+	var active, peak int
+	var mutex sync.Mutex
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/auth/login":
+			mutex.Lock()
+			active++
+			if active > peak {
+				peak = active
+			}
+			mutex.Unlock()
+			defer func() { mutex.Lock(); active--; mutex.Unlock() }()
+			var request struct {
+				Identifier string `json:"identifier"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&request)
+			time.Sleep(5 * time.Millisecond)
+			http.SetCookie(w, &http.Cookie{Name: "access_token", Value: "access-" + request.Identifier, Path: "/"})
+			http.SetCookie(w, &http.Cookie{Name: "refresh_token", Value: "refresh-" + request.Identifier, Path: "/"})
+		case "/api/v1/me":
+			cookie, _ := r.Cookie("access_token")
+			_ = json.NewEncoder(w).Encode(meResponse(strings.TrimPrefix(cookie.Value, "access-")))
+		}
+	}))
+	defer server.Close()
+	options := testOptions(t, server.URL, filepath.Join(t.TempDir(), "users.local.json"), 1, 20)
+	options.Concurrency, options.LoginDelay = 4, 0
+	file, err := Run(context.Background(), options)
+	if err != nil || peak > 4 || len(file.Users) != 20 {
+		t.Fatalf("err=%v peak=%d users=%d", err, peak, len(file.Users))
+	}
+	for index, user := range file.Users {
+		if user.Alias != "bench-"+pad(index+1) {
+			t.Fatalf("unordered output at %d: %q", index, user.Alias)
+		}
+	}
+}
+
 func TestRunRejectsRedirectAndNeverFollowsIt(t *testing.T) {
 	var redirected bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -231,7 +297,7 @@ func testOptions(t *testing.T, rawURL, output string, start, count int) Options 
 	if err != nil {
 		t.Fatal(err)
 	}
-	return Options{BaseURL: base, Start: start, Count: count, Password: []byte(testPassword), Output: output}
+	return Options{BaseURL: base, Start: start, Count: count, Password: []byte(testPassword), Output: output, Concurrency: 1}
 }
 
 func sessionServer(t *testing.T, loginOverride func(http.ResponseWriter, string) bool) (*httptest.Server, *[]string) {

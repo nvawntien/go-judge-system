@@ -9,6 +9,8 @@ from .loaders import DataError, load_run
 from .metrics import align_to_run, calculate
 from .plots import single_run
 from .report import render_run
+from .api import compare_api
+from .unified import capacity_report
 
 
 def analyze(args) -> int:
@@ -23,7 +25,7 @@ def analyze(args) -> int:
     import pandas as pd
     pd.DataFrame([{"name": key, "value": value} for key, value in _flatten(metrics)]).to_csv(output / "metrics.csv", index=False)
     timeseries.to_csv(output / "timeseries.csv", index=False); verdicts.to_csv(output / "verdicts.csv", index=False)
-    render_run(output / "report.html", metrics, charts)
+    render_run(output / "report.html", metrics, charts, data.run)
     print(f"Analysis complete\nRun: {metrics['run_id']}\nReport: {output / 'report.html'}\nData quality: {metrics['data_quality']['state']}\nHarness classification: {metrics.get('harness_classification')}\nAnalytical assessment: {metrics['analytical_assessment']['state']}")
     return 0
 
@@ -52,11 +54,17 @@ def main(argv=None) -> int:
     commands = parser.add_subparsers(dest="command", required=True)
     single = commands.add_parser("analyze"); single.add_argument("--run-dir", required=True); single.add_argument("--container-stats"); single.add_argument("--kafka-lag")
     multiple = commands.add_parser("compare"); multiple.add_argument("--run-dir", action="append", default=[]); multiple.add_argument("--results-root"); multiple.add_argument("--match", default="*"); multiple.add_argument("--output", required=True)
+    api = commands.add_parser("api-compare"); api.add_argument("--run-dir", action="append", default=[]); api.add_argument("--results-root"); api.add_argument("--match", default="*"); api.add_argument("--output", required=True)
+    capacity = commands.add_parser("capacity-report"); capacity.add_argument("--judge-comparison"); capacity.add_argument("--api-comparison"); capacity.add_argument("--output", required=True)
     args = parser.parse_args(argv)
     try:
         if args.command == "analyze": return analyze(args)
+        if args.command == "capacity-report":
+            capacity_report(args.output, args.judge_comparison, args.api_comparison)
+            print(f"Capacity report complete\nReport: {Path(args.output) / 'capacity-report.html'}")
+            return 0
         output = Path(args.output)
-        frame = compare(collect_runs(args), output)
+        frame = compare_api(collect_runs(args), output) if args.command == "api-compare" else compare(collect_runs(args), output)
         print(f"Comparison complete\nExperiments: {len(frame)}\nReport: {output / 'comparison.html'}")
         return 0
     except DataError as error:

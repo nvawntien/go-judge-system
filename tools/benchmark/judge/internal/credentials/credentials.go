@@ -14,11 +14,33 @@ import (
 	"os"
 	"regexp"
 	"runtime"
+	"strconv"
+	"time"
 )
 
 const SchemaVersion = 1
 
+// NewBenchmarkTransport returns the shared, explicitly bounded connection
+// transport used by all isolated cookie-jar clients in one benchmark process.
+// Cookie jars remain per-user; only TCP connection reuse is shared.
+func NewBenchmarkTransport(maxConnsPerHost int) *http.Transport {
+	if maxConnsPerHost < 1 {
+		maxConnsPerHost = 1
+	}
+	maxIdle := maxConnsPerHost
+	if maxIdle > 4096 {
+		maxIdle = 4096
+	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.MaxIdleConns = maxIdle
+	transport.MaxIdleConnsPerHost = maxIdle
+	transport.MaxConnsPerHost = maxConnsPerHost
+	transport.IdleConnTimeout = 90 * time.Second
+	return transport
+}
+
 var aliasPattern = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
+var canonicalAliasPattern = regexp.MustCompile(`^bench-([0-9]+)$`)
 
 type File struct {
 	SchemaVersion int    `json:"schema_version"`
@@ -104,6 +126,42 @@ func Validate(file File) error {
 		tokens[user.Cookies.AccessToken] = struct{}{}
 	}
 	return nil
+}
+
+// SelectCanonical returns the first count canonical benchmark aliases in
+// numeric order. It deliberately rejects gaps and non-canonical aliases so a
+// massive burst cannot accidentally select an arbitrary real-user session.
+func SelectCanonical(file File, count int) (File, error) {
+	if err := Validate(file); err != nil {
+		return File{}, err
+	}
+	if count < 1 || count > 10000 {
+		return File{}, errors.New("canonical benchmark user count must be within 1..10000")
+	}
+	bySequence := make(map[int]User, len(file.Users))
+	for _, user := range file.Users {
+		match := canonicalAliasPattern.FindStringSubmatch(user.Alias)
+		if len(match) != 2 {
+			return File{}, fmt.Errorf("benchmark session alias %q is not canonical", user.Alias)
+		}
+		sequence, err := strconv.Atoi(match[1])
+		if err != nil || sequence < 1 || sequence > 10000 || user.Alias != fmt.Sprintf("bench-%03d", sequence) {
+			return File{}, fmt.Errorf("benchmark session alias %q is not canonical", user.Alias)
+		}
+		if _, exists := bySequence[sequence]; exists {
+			return File{}, fmt.Errorf("duplicate canonical benchmark alias %q", user.Alias)
+		}
+		bySequence[sequence] = user
+	}
+	selected := make([]User, 0, count)
+	for sequence := 1; sequence <= count; sequence++ {
+		user, ok := bySequence[sequence]
+		if !ok {
+			return File{}, fmt.Errorf("canonical benchmark session bench-%03d is missing", sequence)
+		}
+		selected = append(selected, user)
+	}
+	return File{SchemaVersion: SchemaVersion, Users: selected}, nil
 }
 
 func NewSessions(file File, base *url.URL, transport http.RoundTripper) ([]*Session, error) {

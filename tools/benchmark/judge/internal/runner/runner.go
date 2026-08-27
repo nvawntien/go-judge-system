@@ -13,6 +13,7 @@ import (
 	"math/big"
 	"os"
 	"os/exec"
+	"runtime"
 	"sort"
 	"sync"
 	"time"
@@ -23,36 +24,61 @@ import (
 	"github.com/nvawntien/go-judge-system/tools/benchmark/judge/internal/model"
 	"github.com/nvawntien/go-judge-system/tools/benchmark/judge/internal/observer"
 	"github.com/nvawntien/go-judge-system/tools/benchmark/judge/internal/report"
+	"github.com/nvawntien/go-judge-system/tools/benchmark/judge/internal/resources"
 	"github.com/nvawntien/go-judge-system/tools/benchmark/judge/internal/result"
 	"github.com/nvawntien/go-judge-system/tools/benchmark/judge/internal/scheduler"
 	"github.com/nvawntien/go-judge-system/tools/benchmark/judge/internal/stats"
+	"github.com/nvawntien/go-judge-system/tools/benchmark/judge/internal/systemconfig"
 )
 
 type Prepared struct {
-	Config        config.Config
-	Sessions      []*credentials.Session
-	Clients       map[string]*client.API
-	Source        []byte
-	SourceSHA256  string
-	Subjects      map[string]string // alias -> real ID; memory-only
-	RequiredUsers int
+	Config          config.Config
+	Sessions        []*credentials.Session
+	Clients         map[string]*client.API
+	Source          []byte
+	SourceSHA256    string
+	Subjects        map[string]string // alias -> real ID; memory-only
+	RequiredUsers   int
+	ConfiguredUsers int
+	NoFile          resources.NoFileStatus
+	closeTransport  func()
 }
 
 // maxSourceBytes mirrors the public submission contract (256 KiB) without
 // importing a production service internal package.
 const maxSourceBytes = 256 * 1024
 
-// Preflight performs only filesystem checks and GET requests. It never creates
-// a submission, ticket, refresh, Redis key, or server-side configuration state.
+// Preflight performs filesystem checks, authenticated GETs, and at most one
+// normal Auth refresh per session when the configured refresh policy requires
+// it before identity validation. It never creates a submission or ticket.
 func Preflight(ctx context.Context, cfg config.Config) (*Prepared, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
+	}
+	if cfg.SystemConfigFile != "" {
+		value, err := systemconfig.Load(cfg.SystemConfigFile)
+		if err != nil {
+			return nil, err
+		}
+		cfg.SystemConfig = value
 	}
 	file, err := credentials.Load(cfg.UsersFile)
 	if err != nil {
 		return nil, err
 	}
-	sessions, err := credentials.NewSessions(file, cfg.BaseURL, nil)
+	configuredUsers := len(file.Users)
+	if cfg.UserCount > 0 {
+		file, err = credentials.SelectCanonical(file, cfg.UserCount)
+		if err != nil {
+			return nil, err
+		}
+	}
+	noFile, err := resources.CheckNoFile(cfg.MaxInFlight)
+	if err != nil {
+		return nil, err
+	}
+	transport := credentials.NewBenchmarkTransport(int(noFile.Required))
+	sessions, err := credentials.NewSessions(file, cfg.BaseURL, transport)
 	if err != nil {
 		return nil, err
 	}
@@ -68,42 +94,47 @@ func Preflight(ctx context.Context, cfg config.Config) (*Prepared, error) {
 		return nil, fmt.Errorf("read source file: %w", err)
 	}
 	hash := sha256.Sum256(source)
-	prepared := &Prepared{Config: cfg, Sessions: sessions, Clients: make(map[string]*client.API, len(sessions)), Source: source, SourceSHA256: fmt.Sprintf("%x", hash[:]), Subjects: make(map[string]string, len(sessions))}
-	subjects := map[string]string{}
+	prepared := &Prepared{Config: cfg, Sessions: sessions, Clients: make(map[string]*client.API, len(sessions)), Source: source, SourceSHA256: fmt.Sprintf("%x", hash[:]), Subjects: make(map[string]string, len(sessions)), ConfiguredUsers: configuredUsers, NoFile: noFile, closeTransport: transport.CloseIdleConnections}
+	keepTransport := false
+	defer func() {
+		if !keepTransport && prepared.closeTransport != nil {
+			prepared.closeTransport()
+		}
+	}()
 	for _, session := range sessions {
 		api, err := client.New(cfg.BaseURL, session)
 		if err != nil {
 			return nil, err
 		}
-		me, err := meWithTimeout(ctx, api, cfg.APITimeout)
-		if err != nil {
-			return nil, fmt.Errorf("preflight session %q: %w", session.Alias, err)
-		}
-		if me.ID == "" || !me.IsActive || me.Role != "user" {
-			return nil, fmt.Errorf("benchmark session %q is not an active normal user", session.Alias)
-		}
-		if _, duplicate := subjects[me.ID]; duplicate {
-			return nil, errors.New("benchmark sessions resolve to duplicate authenticated identities")
-		}
-		subjects[me.ID] = session.Alias
-		session.Subject = me.ID
-		prepared.Subjects[session.Alias] = me.ID
 		prepared.Clients[session.Alias] = api
+	}
+	subjects, err := validatePreflightSessions(ctx, prepared)
+	if err != nil {
+		return nil, err
+	}
+	for index, subject := range subjects {
+		session := sessions[index]
+		session.Subject = subject
+		prepared.Subjects[session.Alias] = subject
 	}
 	problem, err := publicProblemWithTimeout(ctx, prepared.Clients[sessions[0].Alias], cfg.APITimeout, cfg.ProblemSlug)
 	if err != nil {
+		prepared.closeTransport()
 		return nil, fmt.Errorf("preflight public problem: %w", err)
 	}
 	if problem.ID != cfg.ProblemID {
+		prepared.closeTransport()
 		return nil, fmt.Errorf("problem slug resolved to ID %d, want %d", problem.ID, cfg.ProblemID)
 	}
 	if cfg.Mode == config.ModeSustained {
 		required, err := scheduler.RequiredUsers(cfg.Rate, cfg.SubmitCooldown, cfg.CooldownGuard, cfg.SubmitLatencyBudget, cfg.PoolHeadroomPercent)
 		if err != nil {
+			prepared.closeTransport()
 			return nil, err
 		}
 		prepared.RequiredUsers = required
 		if len(sessions) < required {
+			prepared.closeTransport()
 			return nil, fmt.Errorf("benchmark user pool has %d users, need at least %d", len(sessions), required)
 		}
 	} else if len(sessions) < cfg.BurstSize {
@@ -112,42 +143,118 @@ func Preflight(ctx context.Context, cfg config.Config) (*Prepared, error) {
 	if err := checkResultRoot(cfg.ResultRoot); err != nil {
 		return nil, err
 	}
+	keepTransport = true
 	return prepared, nil
 }
 
-// PrepareSessions may refresh only before warmup. It does not write rotated
-// cookies to disk and requires the post-refresh access token to cover the run.
+// PrepareSessions makes one final bounded refresh/lifetime decision and
+// revalidates the preflight-authenticated identity immediately before warmup.
+// It remains before measured load/drain and never writes refreshed cookies to
+// users.local.json. This second pass matters for a large pool whose initial
+// preflight itself consumed meaningful access-token lifetime.
 func PrepareSessions(ctx context.Context, prepared *Prepared) error {
 	cfg := prepared.Config
-	for _, session := range prepared.Sessions {
+	return parallelSessions(ctx, prepared.Sessions, cfg.PreflightConcurrency, func(index int, session *credentials.Session) error {
 		api := prepared.Clients[session.Alias]
-		switch cfg.RefreshMode {
-		case config.RefreshRequired:
-			if !session.HasRefresh(cfg.BaseURL) {
-				return fmt.Errorf("session %q has no refresh token", session.Alias)
-			}
-			if err := refreshWithTimeout(ctx, api, cfg.APITimeout); err != nil {
-				return fmt.Errorf("refresh session %q: %w", session.Alias, err)
-			}
-		case config.RefreshAuto:
-			if session.HasRefresh(cfg.BaseURL) {
-				if err := refreshWithTimeout(ctx, api, cfg.APITimeout); err != nil {
-					return fmt.Errorf("refresh session %q: %w", session.Alias, err)
-				}
-			}
-		case config.RefreshOff:
-			// Explicitly frozen access session.
+		if err := prepareAccessSessionFinalFor(ctx, cfg, len(prepared.Sessions), session, api); err != nil {
+			return fmt.Errorf("prepared session %q: %w", session.Alias, err)
 		}
 		me, err := meWithTimeout(ctx, api, cfg.APITimeout)
 		if err != nil || me.ID != prepared.Subjects[session.Alias] || !me.IsActive || me.Role != "user" {
 			return fmt.Errorf("prepared session %q no longer has the preflight identity", session.Alias)
 		}
-		expiresAt, ok := tokenExpiry(session.AccessToken(cfg.BaseURL))
-		if !ok || time.Until(expiresAt) < requiredSessionHorizon(cfg) {
-			return fmt.Errorf("session %q access lifetime cannot cover warmup, load, drain, and margin", session.Alias)
+		return nil
+	})
+}
+
+func validatePreflightSessions(ctx context.Context, prepared *Prepared) ([]string, error) {
+	subjects := make([]string, len(prepared.Sessions))
+	err := parallelSessions(ctx, prepared.Sessions, prepared.Config.PreflightConcurrency, func(index int, session *credentials.Session) error {
+		api := prepared.Clients[session.Alias]
+		if err := prepareAccessSessionFor(ctx, prepared.Config, len(prepared.Sessions), session, api); err != nil {
+			return fmt.Errorf("preflight session %q: %w", session.Alias, err)
+		}
+		me, err := meWithTimeout(ctx, api, prepared.Config.APITimeout)
+		if err != nil {
+			return fmt.Errorf("preflight session %q: %w", session.Alias, err)
+		}
+		if me.ID == "" || !me.IsActive || me.Role != "user" {
+			return fmt.Errorf("benchmark session %q is not an active normal user", session.Alias)
+		}
+		subjects[index] = me.ID
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	seen := make(map[string]struct{}, len(subjects))
+	for _, subject := range subjects {
+		if _, duplicate := seen[subject]; duplicate {
+			return nil, errors.New("benchmark sessions resolve to duplicate authenticated identities")
+		}
+		seen[subject] = struct{}{}
+	}
+	return subjects, nil
+}
+
+func parallelSessions(ctx context.Context, sessions []*credentials.Session, concurrency int, work func(int, *credentials.Session) error) error {
+	if concurrency < 1 {
+		return errors.New("preflight concurrency must be positive")
+	}
+	if concurrency > len(sessions) {
+		concurrency = len(sessions)
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	jobs := make(chan int)
+	errCh := make(chan error, 1)
+	var workers sync.WaitGroup
+	for range concurrency {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case index, ok := <-jobs:
+					if !ok {
+						return
+					}
+					if err := work(index, sessions[index]); err != nil {
+						select {
+						case errCh <- err:
+							cancel()
+						default:
+						}
+						return
+					}
+				}
+			}
+		}()
+	}
+	for index := range sessions {
+		select {
+		case <-ctx.Done():
+			close(jobs)
+			workers.Wait()
+			select {
+			case err := <-errCh:
+				return err
+			default:
+				return ctx.Err()
+			}
+		case jobs <- index:
 		}
 	}
-	return nil
+	close(jobs)
+	workers.Wait()
+	select {
+	case err := <-errCh:
+		return err
+	default:
+		return ctx.Err()
+	}
 }
 
 type RunResult struct {
@@ -156,6 +263,9 @@ type RunResult struct {
 }
 
 func Run(ctx context.Context, prepared *Prepared) (*RunResult, error) {
+	if prepared.closeTransport != nil {
+		defer prepared.closeTransport()
+	}
 	if err := PrepareSessions(ctx, prepared); err != nil {
 		return nil, err
 	}
@@ -172,15 +282,24 @@ func Run(ctx context.Context, prepared *Prepared) (*RunResult, error) {
 	}
 	run := newRun(ctx, prepared, writer)
 	run.metadata = runMetadata(cfg, prepared.SourceSHA256, int64(len(prepared.Source)))
-	run.metadata.Users = model.UserSet{Configured: len(prepared.Sessions), Selected: len(prepared.Sessions)}
+	run.metadata.Users = model.UserSet{Configured: prepared.ConfiguredUsers, Selected: len(prepared.Sessions), OneSubmitPerUser: cfg.Objective == config.ObjectiveMassiveBurst}
+	run.metadata.BenchmarkObjective = string(cfg.Objective)
+	run.metadata.ClientDiagnostics.NoFileSoftLimit = prepared.NoFile.SoftLimit
+	run.metadata.ClientDiagnostics.NoFileRequired = prepared.NoFile.Required
 	if cfg.Mode == config.ModeBurst {
 		burstSize, jitter := cfg.BurstSize, cfg.Jitter.Milliseconds()
 		run.metadata.Workload.BurstSize = &burstSize
 		run.metadata.Workload.JitterMilliseconds = &jitter
 	} else {
-		rate, duration := rateFloat(cfg.Rate), cfg.Duration.Milliseconds()
+		rate := rateFloat(cfg.Rate)
 		run.metadata.Workload.TargetRatePerSecond = &rate
-		run.metadata.Workload.ArrivalDurationMS = &duration
+		if cfg.TotalSubmissions > 0 {
+			total := cfg.TotalSubmissions
+			run.metadata.Workload.TotalSubmissions = &total
+		} else {
+			duration := cfg.Duration.Milliseconds()
+			run.metadata.Workload.ArrivalDurationMS = &duration
+		}
 	}
 	if err := writer.WriteRun(run.metadata); err != nil {
 		return nil, err
@@ -202,29 +321,35 @@ func Run(ctx context.Context, prepared *Prepared) (*RunResult, error) {
 }
 
 type benchmarkRun struct {
-	parentCtx    context.Context
-	ctx          context.Context
-	cancel       context.CancelFunc
-	prepared     *Prepared
-	writer       *result.Writer
-	pool         *scheduler.Pool
-	limiter      *observer.ReconcileLimiter
-	redactor     result.Redactor
-	metadata     model.RunMetadata
-	mu           sync.Mutex
-	records      []*model.SubmissionRecord
-	acceptedIDs  map[int64]struct{}
-	quality      map[string]struct{}
-	postWG       sync.WaitGroup
-	observerWG   sync.WaitGroup
-	activePosts  int
-	outstanding  int
-	peakInFlight int
-	stopArrivals bool
-	loadStart    time.Time
-	loadEnd      time.Time
-	drainStart   time.Time
-	drainEnd     time.Time
+	parentCtx                  context.Context
+	ctx                        context.Context
+	cancel                     context.CancelFunc
+	prepared                   *Prepared
+	writer                     *result.Writer
+	pool                       *scheduler.Pool
+	limiter                    *observer.ReconcileLimiter
+	redactor                   result.Redactor
+	metadata                   model.RunMetadata
+	mu                         sync.Mutex
+	records                    []*model.SubmissionRecord
+	acceptedIDs                map[int64]struct{}
+	quality                    map[string]struct{}
+	postWG                     sync.WaitGroup
+	observerWG                 sync.WaitGroup
+	activePosts                int
+	outstanding                int
+	peakInFlight               int
+	peakLogicalInFlight        int
+	activeObservers            int
+	peakObservers              int
+	burstGoroutinesBefore      int
+	burstGoroutinesAfterLaunch int
+	burstLaunchCompletion      *int64
+	stopArrivals               bool
+	loadStart                  time.Time
+	loadEnd                    time.Time
+	drainStart                 time.Time
+	drainEnd                   time.Time
 }
 
 func newRun(ctx context.Context, prepared *Prepared, writer *result.Writer) *benchmarkRun {
@@ -312,6 +437,7 @@ func (r *benchmarkRun) burst() {
 	// launch itself returns immediately after it reserves a bounded POST slot.
 	sort.SliceStable(plan, func(i, j int) bool { return plan[i].Offset < plan[j].Offset })
 	r.loadStart = time.Now()
+	r.burstGoroutinesBefore = runtime.NumGoroutine()
 	r.metadata.Phases.Load.StartedAt = r.loadStart.UTC()
 	for index, arrival := range plan {
 		intended := r.loadStart.Add(arrival.Offset)
@@ -319,13 +445,19 @@ func (r *benchmarkRun) burst() {
 			r.recordCancelled(model.PhaseLoad, index, arrival.Alias, intended)
 			continue
 		}
-		if r.arrivalMissed(intended) {
+		if r.arrivalMissed(intended) && cfg.Objective != config.ObjectiveMassiveBurst {
 			r.recordMissed(model.PhaseLoad, index, arrival.Alias, intended)
 			continue
+		}
+		if r.arrivalMissed(intended) {
+			r.addQuality("LOAD_GENERATOR_LIMITED")
 		}
 		r.launch(r.ctx, model.PhaseLoad, index, intended, arrival.Alias)
 	}
 	r.loadEnd = time.Now()
+	r.burstGoroutinesAfterLaunch = runtime.NumGoroutine()
+	launchCompletion := r.loadEnd.Sub(r.loadStart).Milliseconds()
+	r.burstLaunchCompletion = &launchCompletion
 	loadEnd := r.loadEnd.UTC()
 	r.metadata.Phases.Load.EndedAt = &loadEnd
 }
@@ -334,13 +466,19 @@ func (r *benchmarkRun) sustained() {
 	cfg := r.prepared.Config
 	r.loadStart = time.Now()
 	r.metadata.Phases.Load.StartedAt = r.loadStart.UTC()
-	count, err := scheduler.ArrivalCount(cfg.Rate, cfg.Duration)
+	var count int
+	var err error
+	if cfg.TotalSubmissions > 0 {
+		count, err = scheduler.ExactArrivalCount(cfg.TotalSubmissions)
+	} else {
+		count, err = scheduler.ArrivalCount(cfg.Rate, cfg.Duration)
+	}
 	if err != nil {
 		r.addQuality("SCHEDULER_PLAN_FAILED")
 		count = 0
 	}
 	for index := 0; index < count; index++ {
-		offset := config.OffsetFor(cfg.Rate, index)
+		offset := scheduler.OffsetFor(cfg.Rate, index)
 		intended := r.loadStart.Add(offset)
 		if !sleepUntil(r.ctx, intended) {
 			r.recordCancelled(model.PhaseLoad, index, "", intended)
@@ -352,11 +490,16 @@ func (r *benchmarkRun) sustained() {
 		}
 		r.launch(r.ctx, model.PhaseLoad, index, intended, "")
 	}
-	// Arrival generation ends exactly at the configured boundary, independently
-	// of request or Judge completion.
-	boundary := r.loadStart.Add(cfg.Duration)
-	sleepUntil(r.ctx, boundary)
-	r.loadEnd = boundary
+	if cfg.TotalSubmissions > 0 {
+		// Exact-volume mode ends as soon as logical arrival N has been created;
+		// there is intentionally no synthetic final sleep based on N/rate.
+		r.loadEnd = time.Now()
+	} else {
+		// Duration mode retains its existing half-open configured boundary.
+		boundary := r.loadStart.Add(cfg.Duration)
+		sleepUntil(r.ctx, boundary)
+		r.loadEnd = boundary
+	}
 	loadEnd := r.loadEnd.UTC()
 	r.metadata.Phases.Load.EndedAt = &loadEnd
 }
@@ -403,6 +546,7 @@ func (r *benchmarkRun) launch(ctx context.Context, phase model.Phase, sequence i
 	record.UserAlias = user.Alias
 	r.records = append(r.records, record)
 	r.activePosts++
+	r.updatePeakLogicalInFlightLocked()
 	r.postWG.Add(1)
 	r.mu.Unlock()
 	go func() {
@@ -457,11 +601,23 @@ func (r *benchmarkRun) launch(ctx context.Context, phase model.Phase, sequence i
 			if r.outstanding > r.peakInFlight {
 				r.peakInFlight = r.outstanding
 			}
+			r.updatePeakLogicalInFlightLocked()
 			r.mu.Unlock()
 			r.poolAccepted(user.Alias, completed)
 			r.observerWG.Add(1)
+			r.mu.Lock()
+			r.activeObservers++
+			if r.activeObservers > r.peakObservers {
+				r.peakObservers = r.activeObservers
+			}
+			r.mu.Unlock()
 			go func() {
 				defer r.observerWG.Done()
+				defer func() {
+					r.mu.Lock()
+					r.activeObservers--
+					r.mu.Unlock()
+				}()
 				defer close(done)
 				observerStarted := time.Now()
 				r.mu.Lock()
@@ -584,6 +740,14 @@ func (r *benchmarkRun) finish() (*RunResult, error) {
 	drainWindows := stats.BuildWindows(stats.WindowInput{RunID: r.prepared.Config.RunID, Phase: model.PhaseDrain, FilterPhase: &loadPhase, Start: r.drainStart, End: r.drainEnd, Origin: r.loadStart, Window: r.prepared.Config.Window, Records: values, PeakInFlight: r.peakInFlight})
 	windows := append(loadWindows, drainWindows...)
 	summary := summarize(r.prepared.Config, values, windows, r.loadStart, r.loadEnd, r.drainStart, r.drainEnd, r.quality, r.peakInFlight)
+	if r.prepared.Config.Mode == config.ModeBurst {
+		summary.Burst = burstMetrics(values, r.loadStart, r.burstLaunchCompletion, r.peakLogicalInFlight, r.peakObservers)
+		summary.Burst.Massive = r.prepared.Config.Objective == config.ObjectiveMassiveBurst
+		r.metadata.ClientDiagnostics.GoroutinesBeforeBurst = r.burstGoroutinesBefore
+		r.metadata.ClientDiagnostics.GoroutinesAfterLaunch = r.burstGoroutinesAfterLaunch
+		r.metadata.ClientDiagnostics.PeakLogicalInFlight = r.peakLogicalInFlight
+		r.metadata.ClientDiagnostics.PeakActiveObservers = r.peakObservers
+	}
 	classification, reasons := stats.Classify(stats.ClassificationInput{Mode: model.Mode(r.prepared.Config.Mode), Objective: r.prepared.Config.Objective, TargetRate: rateFloat(r.prepared.Config.Rate), Windows: loadWindows, Summary: summary})
 	summary.Classification, summary.ClassificationReasons = classification, reasons
 	if r.metadata.State != model.RunAborted && r.metadata.State != model.RunCancelled {
@@ -592,7 +756,9 @@ func (r *benchmarkRun) finish() (*RunResult, error) {
 	summary.RunState = r.metadata.State
 	ended := time.Now().UTC()
 	r.metadata.EndedAt = &ended
-	r.metadata.ObservedRates = &model.ObservedRates{AttemptedPerSecond: summary.Rates.LoadAttemptedPerSecond, AcceptedPerSecond: summary.Rates.LoadAcceptedPerSecond, CompletedPerSecond: summary.Rates.LoadTerminalCompletionSecond}
+	if r.prepared.Config.Mode != config.ModeBurst {
+		r.metadata.ObservedRates = &model.ObservedRates{AttemptedPerSecond: summary.Rates.LoadAttemptedPerSecond, AcceptedPerSecond: summary.Rates.LoadAcceptedPerSecond, CompletedPerSecond: summary.Rates.LoadTerminalCompletionSecond}
+	}
 	if err := r.writer.WriteSubmissions(values); err != nil {
 		return &RunResult{Dir: r.writer.Dir, Summary: summary}, fmt.Errorf("write submissions: %w", err)
 	}
@@ -636,6 +802,13 @@ func (r *benchmarkRun) setStarted(record *model.SubmissionRecord, at time.Time) 
 	if record.IntendedAt != nil {
 		delay := at.Sub(*record.IntendedAt).Seconds() * 1000
 		record.ScheduleDelayMS = &delay
+	}
+}
+
+func (r *benchmarkRun) updatePeakLogicalInFlightLocked() {
+	logical := r.activePosts + r.outstanding
+	if logical > r.peakLogicalInFlight {
+		r.peakLogicalInFlight = logical
 	}
 }
 func (r *benchmarkRun) setCompleted(record *model.SubmissionRecord, at time.Time) {
@@ -727,7 +900,13 @@ func summarize(cfg config.Config, records []model.SubmissionRecord, windows []mo
 		if record.TerminalStatus != "" {
 			summary.Counts.Terminal++
 			summary.Verdicts[record.TerminalStatus]++
+			switch record.CompletionSource {
+			case model.CompletionSSESnapshot, model.CompletionSSEEvent:
+				summary.Observer.SSECompletions++
+			}
 		}
+		summary.Observer.GETReconciliations += record.GETReconciliations
+		summary.Observer.SSEFailures += record.SSEFailures
 		if record.RateLimited {
 			summary.Counts.RateLimited++
 		}
@@ -817,10 +996,60 @@ func summarize(cfg config.Config, records []model.SubmissionRecord, windows []mo
 	return summary
 }
 
+func burstMetrics(records []model.SubmissionRecord, origin time.Time, launchCompletion *int64, peakLogical, peakObservers int) *model.BurstMetrics {
+	starts := make([]time.Time, 0)
+	accepted := make([]time.Time, 0)
+	terminal := make([]time.Time, 0)
+	offsets := make([]float64, 0)
+	for _, record := range records {
+		if record.Phase != model.PhaseLoad {
+			continue
+		}
+		if record.PostStartedAt != nil {
+			starts = append(starts, *record.PostStartedAt)
+			offsets = append(offsets, record.PostStartedAt.Sub(origin).Seconds()*1000)
+		}
+		if record.Accepted && record.PostCompletedAt != nil {
+			accepted = append(accepted, *record.PostCompletedAt)
+		}
+		if record.TerminalObservedAt != nil {
+			terminal = append(terminal, *record.TerminalObservedAt)
+		}
+	}
+	attemptedInterval, attemptedRate := intakeMetrics(starts)
+	acceptedInterval, acceptedRate := intakeMetrics(accepted)
+	terminalInterval, terminalRate := intakeMetrics(terminal)
+	return &model.BurstMetrics{AttemptedIntervalMS: attemptedInterval, AcceptedIntervalMS: acceptedInterval, TerminalIntervalMS: terminalInterval, AttemptedThroughputPerSec: attemptedRate, AcceptedThroughputPerSec: acceptedRate, TerminalThroughputPerSec: terminalRate, PostStartOffsetMS: stats.Distribution(offsets), LaunchCompletionMS: launchCompletion, PeakLogicalInFlight: peakLogical, PeakActiveObservers: peakObservers}
+}
+
+// intakeMetrics uses the span of observed client timestamps. A single event
+// has no measurable intake interval and is therefore unavailable, never zero.
+func intakeMetrics(values []time.Time) (*int64, *float64) {
+	if len(values) < 2 {
+		return nil, nil
+	}
+	min, max := values[0], values[0]
+	for _, value := range values[1:] {
+		if value.Before(min) {
+			min = value
+		}
+		if value.After(max) {
+			max = value
+		}
+	}
+	span := max.Sub(min)
+	if span <= 0 {
+		return nil, nil
+	}
+	milliseconds := span.Milliseconds()
+	rate := float64(len(values)) / span.Seconds()
+	return &milliseconds, &rate
+}
+
 func runMetadata(cfg config.Config, sourceSHA string, sourceBytes int64) model.RunMetadata {
 	now := time.Now().UTC()
 	sha, dirty := gitInfo()
-	return model.RunMetadata{SchemaVersion: "astracode.judge-benchmark.run.v1", BenchmarkVersion: model.BenchmarkVersion, RunID: cfg.RunID, Mode: model.Mode(cfg.Mode), Repetition: cfg.Repetition, Seed: cfg.Seed, State: model.RunCompleted, StartedAt: now, Repository: model.Repository{GitSHA: sha, Dirty: dirty}, Target: model.Target{BaseURL: cfg.BaseURL.Scheme + "://" + cfg.BaseURL.Host, ProblemID: cfg.ProblemID, ProblemSlug: cfg.ProblemSlug, Language: cfg.Language, ExpectedVerdict: cfg.ExpectedVerdict, SourceSHA256: sourceSHA, SourceBytes: sourceBytes}, Users: model.UserSet{Configured: 0, Selected: 0}, Workload: model.Workload{WindowMS: cfg.Window.Milliseconds(), WarmupCount: cfg.WarmupCount, SubmitCooldownMS: cfg.SubmitCooldown.Milliseconds(), CooldownGuardMS: cfg.CooldownGuard.Milliseconds(), SubmitLatencyBudgetMS: cfg.SubmitLatencyBudget.Milliseconds(), PoolHeadroomPercent: cfg.PoolHeadroomPercent, MaxSubmissions: cfg.MaxSubmissions, MaxInFlight: cfg.MaxInFlight}, Timeouts: model.Timeouts{APIMS: cfg.APITimeout.Milliseconds(), SubmissionMS: cfg.SubmissionTimeout.Milliseconds(), DrainMS: cfg.DrainTimeout.Milliseconds()}, Observer: model.ObserverConfig{SSEPrimary: true, ConnectMS: cfg.SSEConnectTimeout.Milliseconds(), IdleMS: cfg.SSEIdleTimeout.Milliseconds(), MaxReconnects: cfg.SSEMaxReconnects, BackoffBaseMS: cfg.SSEBackoffBase.Milliseconds(), BackoffMaxMS: cfg.SSEBackoffMax.Milliseconds(), SafetyReconcileIntervalMS: cfg.SafetyReconcileInterval.Milliseconds(), ReconcileMaxQPS: cfg.ReconcileMaxQPS}}
+	return model.RunMetadata{SchemaVersion: "astracode.judge-benchmark.run.v1", BenchmarkVersion: model.BenchmarkVersion, RunID: cfg.RunID, Mode: model.Mode(cfg.Mode), Repetition: cfg.Repetition, Seed: cfg.Seed, State: model.RunCompleted, StartedAt: now, Repository: model.Repository{GitSHA: sha, Dirty: dirty}, Target: model.Target{BaseURL: cfg.BaseURL.Scheme + "://" + cfg.BaseURL.Host, ProblemID: cfg.ProblemID, ProblemSlug: cfg.ProblemSlug, Language: cfg.Language, ExpectedVerdict: cfg.ExpectedVerdict, SourceSHA256: sourceSHA, SourceBytes: sourceBytes}, Users: model.UserSet{Configured: 0, Selected: 0}, Workload: model.Workload{WindowMS: cfg.Window.Milliseconds(), WarmupCount: cfg.WarmupCount, SubmitCooldownMS: cfg.SubmitCooldown.Milliseconds(), CooldownGuardMS: cfg.CooldownGuard.Milliseconds(), SubmitLatencyBudgetMS: cfg.SubmitLatencyBudget.Milliseconds(), PoolHeadroomPercent: cfg.PoolHeadroomPercent, MaxSubmissions: cfg.MaxSubmissions, MaxInFlight: cfg.MaxInFlight}, Timeouts: model.Timeouts{APIMS: cfg.APITimeout.Milliseconds(), SubmissionMS: cfg.SubmissionTimeout.Milliseconds(), DrainMS: cfg.DrainTimeout.Milliseconds()}, Observer: model.ObserverConfig{SSEPrimary: true, ConnectMS: cfg.SSEConnectTimeout.Milliseconds(), IdleMS: cfg.SSEIdleTimeout.Milliseconds(), MaxReconnects: cfg.SSEMaxReconnects, BackoffBaseMS: cfg.SSEBackoffBase.Milliseconds(), BackoffMaxMS: cfg.SSEBackoffMax.Milliseconds(), SafetyReconcileIntervalMS: cfg.SafetyReconcileInterval.Milliseconds(), ReconcileMaxQPS: cfg.ReconcileMaxQPS}, SystemConfig: cfg.SystemConfig}
 }
 func generatedRunID(cfg config.Config) string {
 	prefix := "B"
@@ -830,10 +1059,112 @@ func generatedRunID(cfg config.Config) string {
 	return fmt.Sprintf("%s-R%d-%s", prefix, cfg.Repetition, time.Now().UTC().Format("20060102T150405Z"))
 }
 func requiredSessionHorizon(cfg config.Config) time.Duration {
+	return requiredSessionHorizonFor(cfg, 1)
+}
+
+func requiredSessionHorizonFor(cfg config.Config, sessions int) time.Duration {
 	if cfg.Mode == config.ModeSustained {
-		return cfg.WarmupTimeout + cfg.Duration + cfg.DrainTimeout + cfg.AuthValidityMargin
+		load := cfg.Duration
+		if cfg.TotalSubmissions > 0 && cfg.Rate != nil {
+			load = scheduler.OffsetFor(cfg.Rate, cfg.TotalSubmissions-1)
+		}
+		return cfg.WarmupTimeout + load + cfg.DrainTimeout + cfg.AuthValidityMargin
 	}
-	return cfg.WarmupTimeout + cfg.SubmissionTimeout + cfg.AuthValidityMargin
+	// The SSE endpoint authenticates the established stream with its short-lived
+	// ticket, not the access cookie. Access validity must therefore cover
+	// pre-run warmup plus the bounded burst POST/ticket-start phase, rather than
+	// an arbitrarily long Judge drain. Reconnect/reconciliation after expiry is
+	// still recorded as an observer limitation rather than hidden.
+	if sessions < 1 {
+		sessions = 1
+	}
+	concurrency := cfg.PreflightConcurrency
+	if concurrency < 1 {
+		concurrency = 1
+	}
+	batches := (sessions + concurrency - 1) / concurrency
+	// Each batch may consume the bounded API timeout. This is deliberately a
+	// conservative access-token planning horizon, not a claim about server
+	// performance. It keeps a 10k preflight from validating an early session
+	// that expires before the common burst release.
+	// A refresh-required/needed-auto session can perform refresh plus /me in
+	// one worker slot. Use the two-request upper bound, not an optimistic
+	// single GET estimate, when proving the token survives to burst release.
+	preflight := saturatingDurationMultiply(cfg.APITimeout, batches*2)
+	warmup := time.Duration(0)
+	if cfg.WarmupCount > 0 {
+		warmup = cfg.WarmupTimeout
+	}
+	return preflight + warmup + cfg.BurstStartTimeout + cfg.AuthValidityMargin
+}
+
+func saturatingDurationMultiply(value time.Duration, factor int) time.Duration {
+	if value <= 0 || factor <= 0 {
+		return 0
+	}
+	max := int64(^uint64(0) >> 1)
+	if int64(factor) > max/int64(value) {
+		return time.Duration(max)
+	}
+	return value * time.Duration(factor)
+}
+
+func prepareAccessSession(ctx context.Context, cfg config.Config, session *credentials.Session, api *client.API) error {
+	return prepareAccessSessionFor(ctx, cfg, 1, session, api)
+}
+
+func prepareAccessSessionFor(ctx context.Context, cfg config.Config, sessions int, session *credentials.Session, api *client.API) error {
+	return ensureAccessSessionFor(ctx, cfg, sessions, session, api, true)
+}
+
+// prepareAccessSessionFinalFor honors required-mode's initial refresh without
+// issuing a needless second refresh immediately before the run. It refreshes
+// only if the remaining token can no longer cover the same bounded horizon.
+func prepareAccessSessionFinalFor(ctx context.Context, cfg config.Config, sessions int, session *credentials.Session, api *client.API) error {
+	return ensureAccessSessionFor(ctx, cfg, sessions, session, api, false)
+}
+
+func ensureAccessSessionFor(ctx context.Context, cfg config.Config, sessions int, session *credentials.Session, api *client.API, forceRequiredRefresh bool) error {
+	coversHorizon := accessCoversHorizonFor(session.AccessToken(cfg.BaseURL), cfg, sessions)
+	switch cfg.RefreshMode {
+	case config.RefreshRequired:
+		if !session.HasRefresh(cfg.BaseURL) {
+			return errors.New("refresh is required but no refresh token is available")
+		}
+		if forceRequiredRefresh || !coversHorizon {
+			if err := refreshWithTimeout(ctx, api, cfg.APITimeout); err != nil {
+				return fmt.Errorf("refresh access session: %w", err)
+			}
+		}
+	case config.RefreshAuto:
+		if !coversHorizon {
+			if !session.HasRefresh(cfg.BaseURL) {
+				return errors.New("access token cannot cover benchmark horizon and no refresh token is available")
+			}
+			if err := refreshWithTimeout(ctx, api, cfg.APITimeout); err != nil {
+				return fmt.Errorf("refresh access session: %w", err)
+			}
+		}
+	case config.RefreshOff:
+		if !coversHorizon {
+			return errors.New("access token cannot cover benchmark horizon while --session-refresh=off")
+		}
+	default:
+		return errors.New("invalid session refresh mode")
+	}
+	if !accessCoversHorizonFor(session.AccessToken(cfg.BaseURL), cfg, sessions) {
+		return errors.New("access token cannot cover benchmark horizon after refresh")
+	}
+	return nil
+}
+
+func accessCoversHorizon(token string, cfg config.Config) bool {
+	return accessCoversHorizonFor(token, cfg, 1)
+}
+
+func accessCoversHorizonFor(token string, cfg config.Config, sessions int) bool {
+	expiresAt, ok := tokenExpiry(token)
+	return ok && time.Until(expiresAt) >= requiredSessionHorizonFor(cfg, sessions)
 }
 func tokenExpiry(token string) (time.Time, bool) {
 	parts := splitJWT(token)
@@ -920,6 +1251,11 @@ func sleepContext(ctx context.Context, d time.Duration) bool {
 	}
 }
 func sleepUntil(ctx context.Context, at time.Time) bool {
+	select {
+	case <-ctx.Done():
+		return false
+	default:
+	}
 	d := time.Until(at)
 	if d <= 0 {
 		return true
