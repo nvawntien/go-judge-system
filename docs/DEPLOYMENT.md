@@ -81,6 +81,43 @@ submission-service
 
 It does **not** run production `go-judge` or `judge-worker`.
 
+### Envoy file-descriptor limit
+
+The checked-in `envoy` service sets Docker's `nofile` soft and hard limits to
+`65536`. This is an ingress safety requirement for controlled high-connection
+benchmarks, not a general proxy-tuning change. One live submission SSE stream
+can require both a client-to-Envoy socket and an Envoy-to-Submission-Service
+socket; a massive submission burst also creates short-lived API and ticket
+connections. The inherited soft limit of `1024` is therefore insufficient and
+has previously caused Envoy `socket(2)` failures.
+
+The App Node's `/etc/astracode/app-node.override.yml` is composed last. It
+must not replace `services.envoy.ulimits.nofile` with a lower value. A changed
+Compose limit requires recreation of the Envoy container; restarting the old
+container alone does not change its process limit.
+
+After deployment, verify the effective setting on the running container:
+
+```bash
+docker inspect judge_envoy --format '{{json .HostConfig.Ulimits}}'
+
+pid="$(docker inspect -f '{{.State.Pid}}' judge_envoy)"
+test "$pid" -gt 0
+grep '^Max open files' "/proc/$pid/limits"
+```
+
+The final command must show:
+
+```text
+Max open files            65536                65536                files
+```
+
+This change does not alter Envoy worker concurrency, circuit breakers,
+connection pools, HTTP protocol settings, access logging, SSE timeouts,
+KrakenD, or application services. It only raises the descriptor ceiling so a
+subsequent benchmark can measure those components without the known 1024-FD
+failure mode.
+
 Every App deployment must compose exactly these files:
 
 ```text
