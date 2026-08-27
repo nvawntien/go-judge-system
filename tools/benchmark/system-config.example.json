@@ -1,0 +1,17 @@
+{
+  "label": "replace-with-tested-config-label",
+  "release": "replace-with-immutable-release",
+  "app": {
+    "nodes": 1,
+    "cpu_cores_per_node": 1,
+    "memory_mib_per_node": 1
+  },
+  "judge": {
+    "nodes": 1,
+    "cpu_cores_per_node": 1,
+    "memory_mib_per_node": 1,
+    "worker_pool_size": 1,
+    "worker_memory_limit_mib": 1,
+    "sandbox_memory_limit_mib": 1
+  }
+}

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/nvawntien/go-judge-system/tools/benchmark/judge/internal/credentials"
@@ -96,5 +97,31 @@ func TestSubmitRateLimitWithoutRetryAfterDoesNotFabricateValue(t *testing.T) {
 	got, err := api.Submit(context.Background(), SubmissionRequest{ProblemID: 1, Language: "GO", SourceCode: "x"})
 	if err != nil || got.Kind != SubmitRateLimit || got.RetryAfter != nil {
 		t.Fatalf("result=%+v err=%v", got, err)
+	}
+}
+
+func TestMeDiagnosticsAreStatusAwareBoundedAndSecretSafe(t *testing.T) {
+	secret := "never-include-response-body"
+	for _, test := range []struct {
+		name   string
+		status int
+		body   string
+		want   string
+	}{
+		{name: "empty 401", status: http.StatusUnauthorized, want: "HTTP 401 API response is empty"},
+		{name: "empty 403", status: http.StatusForbidden, want: "HTTP 403 API response is empty"},
+		{name: "malformed JSON", status: http.StatusUnauthorized, body: "not-json", want: "HTTP 401 API response contains invalid JSON"},
+		{name: "oversized", status: http.StatusForbidden, body: strings.Repeat(secret, maxResponseBytes/len(secret)+1), want: "HTTP 403 API response exceeds size limit"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			api := testAPI(t, http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+				writer.WriteHeader(test.status)
+				_, _ = writer.Write([]byte(test.body))
+			}))
+			_, err := api.Me(context.Background())
+			if err == nil || !strings.Contains(err.Error(), test.want) || strings.Contains(err.Error(), secret) {
+				t.Fatalf("err=%v", err)
+			}
+		})
 	}
 }

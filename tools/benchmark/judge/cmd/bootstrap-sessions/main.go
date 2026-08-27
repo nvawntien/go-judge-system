@@ -35,6 +35,7 @@ type options struct {
 	confirmHost  string
 	passwordFile string
 	loginDelay   time.Duration
+	concurrency  int
 }
 
 func main() {
@@ -72,7 +73,7 @@ func run(ctx context.Context, args []string, stdin *os.File, stdout, stderr io.W
 		return err
 	}
 	defer clear(password)
-	file, err := bootstrap.Run(ctx, bootstrap.Options{BaseURL: base, AllowRemote: opts.allowRemote, ConfirmTargetHost: opts.confirmHost, Start: opts.start, Count: opts.count, Password: password, Output: opts.output, Replace: opts.replace, LoginDelay: opts.loginDelay})
+	file, err := bootstrap.Run(ctx, bootstrap.Options{BaseURL: base, AllowRemote: opts.allowRemote, ConfirmTargetHost: opts.confirmHost, Start: opts.start, Count: opts.count, Password: password, Output: opts.output, Replace: opts.replace, LoginDelay: opts.loginDelay, Concurrency: opts.concurrency})
 	if err != nil {
 		return err
 	}
@@ -89,18 +90,19 @@ func parse(args []string, stderr io.Writer) (options, error) {
 	fs := flag.NewFlagSet("bootstrap-sessions", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.StringVar(&opts.baseURL, "base-url", "", "public AstraCode gateway base URL")
-	fs.IntVar(&opts.start, "start", 1, "first benchmark sequence (1..100)")
-	fs.IntVar(&opts.count, "count", 50, "number of benchmark users")
+	fs.IntVar(&opts.start, "start", 1, "first benchmark sequence (1..10000)")
+	fs.IntVar(&opts.count, "count", 50, "number of benchmark users (within 1..10000)")
 	fs.StringVar(&opts.output, "output", "users.local.json", "local credential output path")
 	fs.BoolVar(&opts.replace, "replace", false, "atomically replace an existing local credential file")
 	fs.BoolVar(&opts.allowRemote, "allow-remote", false, "allow confirmed non-loopback HTTPS target")
 	fs.StringVar(&opts.confirmHost, "confirm-target-host", "", "exact non-loopback target hostname")
 	fs.StringVar(&opts.passwordFile, "password-file", "", "secure one-password file")
-	fs.DurationVar(&opts.loginDelay, "login-delay", 50*time.Millisecond, "sequential delay between successful logins")
+	fs.DurationVar(&opts.loginDelay, "login-delay", 50*time.Millisecond, "per-worker delay between successful logins")
+	fs.IntVar(&opts.concurrency, "concurrency", 16, "bounded concurrent login/session validations")
 	if err := fs.Parse(args); err != nil {
 		return options{}, err
 	}
-	if fs.NArg() != 0 || opts.baseURL == "" || opts.loginDelay < 0 {
+	if fs.NArg() != 0 || opts.baseURL == "" || opts.loginDelay < 0 || opts.concurrency <= 0 {
 		return options{}, errors.New("invalid bootstrap arguments")
 	}
 	return opts, nil
@@ -201,7 +203,7 @@ func readPasswordFile(path string) ([]byte, error) {
 func safeError(err error) string {
 	switch {
 	case errors.Is(err, bootstrap.ErrInvalidRange):
-		return "start/count must select benchmark accounts 001 through 100"
+		return "start/count must select benchmark accounts 001 through 10000"
 	case errors.Is(err, bootstrap.ErrTargetUnsafe):
 		return "target must be loopback HTTP(S), or confirmed HTTPS remote"
 	case errors.Is(err, errInteractiveTTY):

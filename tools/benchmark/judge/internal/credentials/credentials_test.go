@@ -1,6 +1,7 @@
 package credentials
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 	"os"
@@ -8,6 +9,15 @@ import (
 	"runtime"
 	"testing"
 )
+
+func canonicalFile(count int) File {
+	users := make([]User, count)
+	for index := range users {
+		sequence := index + 1
+		users[index] = User{Alias: fmt.Sprintf("bench-%03d", sequence), Cookies: Cookies{AccessToken: fmt.Sprintf("token-%d", sequence)}}
+	}
+	return File{SchemaVersion: SchemaVersion, Users: users}
+}
 
 func validFile() File {
 	return File{SchemaVersion: SchemaVersion, Users: []User{{Alias: "bench-001", Cookies: Cookies{AccessToken: "one"}}, {Alias: "bench-002", Cookies: Cookies{AccessToken: "two"}}}}
@@ -95,5 +105,29 @@ func TestSessionRejectsPOSTRedirectBeforeReplay(t *testing.T) {
 	redirect, _ := http.NewRequest(http.MethodPost, "https://example.test/other", nil)
 	if err := sessions[0].Client.CheckRedirect(redirect, []*http.Request{request}); err == nil {
 		t.Fatal("redirect that could replay POST was accepted")
+	}
+}
+
+func TestSelectCanonicalSupportsMassiveBurstRanges(t *testing.T) {
+	file := canonicalFile(10000)
+	for _, count := range []int{1000, 5000, 10000} {
+		selected, err := SelectCanonical(file, count)
+		if err != nil || len(selected.Users) != count || selected.Users[0].Alias != "bench-001" || selected.Users[count-1].Alias != fmt.Sprintf("bench-%03d", count) {
+			t.Fatalf("count=%d users=%d err=%v", count, len(selected.Users), err)
+		}
+	}
+	if _, err := SelectCanonical(file, 10001); err == nil {
+		t.Fatal("out-of-range canonical selection accepted")
+	}
+	file.Users[1].Alias = "other-user"
+	if _, err := SelectCanonical(file, 2); err == nil {
+		t.Fatal("noncanonical session alias accepted")
+	}
+}
+
+func TestNewBenchmarkTransportHasExplicitHighScaleLimits(t *testing.T) {
+	transport := NewBenchmarkTransport(10000)
+	if transport.MaxConnsPerHost != 10000 || transport.MaxIdleConnsPerHost != 4096 || transport.MaxIdleConns != 4096 {
+		t.Fatalf("transport=%+v", transport)
 	}
 }

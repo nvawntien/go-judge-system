@@ -157,10 +157,35 @@ func FixedOffsets(rate *big.Rat, duration time.Duration) ([]time.Duration, error
 	}
 	offsets := make([]time.Duration, 0, count)
 	for index := 0; index < count; index++ {
-		offset := offsetFor(rate, index)
+		offset := OffsetFor(rate, index)
 		offsets = append(offsets, offset)
 	}
 	return offsets, nil
+}
+
+// ExactOffsets derives exactly total open-loop arrival offsets from the
+// original origin. It deliberately does not convert a total into a duration.
+func ExactOffsets(rate *big.Rat, total int) ([]time.Duration, error) {
+	if rate == nil || rate.Sign() <= 0 || total <= 0 {
+		return nil, errors.New("positive rate and total submissions are required")
+	}
+	if total > 1_000_000 {
+		return nil, errors.New("too many offsets to materialize; stream arrivals instead")
+	}
+	offsets := make([]time.Duration, total)
+	for index := range offsets {
+		offsets[index] = OffsetFor(rate, index)
+	}
+	return offsets, nil
+}
+
+// ExactArrivalCount validates and returns an exact requested measured volume.
+// The runner streams this count without materializing a plan.
+func ExactArrivalCount(total int) (int, error) {
+	if total <= 0 {
+		return 0, errors.New("total submissions must be positive")
+	}
+	return total, nil
 }
 
 // ArrivalCount returns the number of half-open arrival offsets in [0,duration).
@@ -178,7 +203,9 @@ func ArrivalCount(rate *big.Rat, duration time.Duration) (int, error) {
 	return int(value.Int64()), nil
 }
 
-func offsetFor(rate *big.Rat, index int) time.Duration {
+// OffsetFor derives each arrival from its original origin. It deliberately
+// avoids repeatedly adding a rounded duration.
+func OffsetFor(rate *big.Rat, index int) time.Duration {
 	seconds := new(big.Rat).Quo(big.NewRat(int64(index), 1), rate)
 	ns := new(big.Rat).Mul(seconds, big.NewRat(int64(time.Second), 1))
 	value := new(big.Int).Quo(ns.Num(), ns.Denom())

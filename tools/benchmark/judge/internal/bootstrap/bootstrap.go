@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -24,9 +25,10 @@ import (
 )
 
 const (
-	MinSequence      = 1
-	MaxSequence      = 100
-	maxResponseBytes = 1 << 20
+	MinSequence        = 1
+	MaxSequence        = 10000
+	maxResponseBytes   = 1 << 20
+	defaultConcurrency = 16
 )
 
 var (
@@ -44,6 +46,10 @@ type Options struct {
 	Output            string
 	Replace           bool
 	LoginDelay        time.Duration
+	// Concurrency bounds normal Login + /me preparation work. It is not a
+	// load-test control and defaults conservatively.
+	Concurrency       int
+	HTTPTransport     http.RoundTripper
 	HTTPClientFactory func(jar http.CookieJar) *http.Client
 }
 
@@ -98,25 +104,29 @@ func Run(ctx context.Context, options Options) (credentials.File, error) {
 	if err := ensureOutputTarget(options.Output, options.Replace); err != nil {
 		return credentials.File{}, err
 	}
-
-	file := credentials.File{SchemaVersion: credentials.SchemaVersion, Users: make([]credentials.User, 0, len(identities))}
-	for index, identity := range identities {
-		if err := ctx.Err(); err != nil {
-			return credentials.File{}, err
-		}
-		user, err := loginAndValidate(ctx, options, identity)
-		if err != nil {
-			return credentials.File{}, err
-		}
-		file.Users = append(file.Users, user)
-		if index+1 < len(identities) && options.LoginDelay > 0 {
-			select {
-			case <-ctx.Done():
-				return credentials.File{}, ctx.Err()
-			case <-time.After(options.LoginDelay):
-			}
-		}
+	concurrency := options.Concurrency
+	if concurrency == 0 {
+		concurrency = defaultConcurrency
 	}
+	if concurrency < 1 || concurrency > len(identities) {
+		if concurrency < 1 {
+			return credentials.File{}, errors.New("bootstrap concurrency must be positive")
+		}
+		concurrency = len(identities)
+	}
+	transport := options.HTTPTransport
+	if transport == nil {
+		transport = credentials.NewBenchmarkTransport(max(64, concurrency*2))
+	}
+	if closer, ok := transport.(interface{ CloseIdleConnections() }); ok {
+		defer closer.CloseIdleConnections()
+	}
+
+	users, err := bootstrapUsers(ctx, options, identities, concurrency, transport)
+	if err != nil {
+		return credentials.File{}, err
+	}
+	file := credentials.File{SchemaVersion: credentials.SchemaVersion, Users: users}
 	if err := credentials.Validate(file); err != nil {
 		return credentials.File{}, errors.New("generated credential file failed validation")
 	}
@@ -126,12 +136,75 @@ func Run(ctx context.Context, options Options) (credentials.File, error) {
 	return file, nil
 }
 
-func loginAndValidate(ctx context.Context, options Options, identity Identity) (credentials.User, error) {
+func bootstrapUsers(ctx context.Context, options Options, identities []Identity, concurrency int, transport http.RoundTripper) ([]credentials.User, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	users := make([]credentials.User, len(identities))
+	jobs := make(chan int)
+	errCh := make(chan error, 1)
+	var workers sync.WaitGroup
+	for range concurrency {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case index, ok := <-jobs:
+					if !ok {
+						return
+					}
+					user, err := loginAndValidate(ctx, options, identities[index], transport)
+					if err != nil {
+						select {
+						case errCh <- err:
+							cancel()
+						default:
+						}
+						return
+					}
+					users[index] = user
+					if options.LoginDelay > 0 && !sleep(ctx, options.LoginDelay) {
+						return
+					}
+				}
+			}
+		}()
+	}
+	for index := range identities {
+		select {
+		case <-ctx.Done():
+			close(jobs)
+			workers.Wait()
+			select {
+			case err := <-errCh:
+				return nil, err
+			default:
+				return nil, ctx.Err()
+			}
+		case jobs <- index:
+		}
+	}
+	close(jobs)
+	workers.Wait()
+	select {
+	case err := <-errCh:
+		return nil, err
+	default:
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return users, nil
+}
+
+func loginAndValidate(ctx context.Context, options Options, identity Identity, transport http.RoundTripper) (credentials.User, error) {
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		return credentials.User{}, errors.New("create cookie jar")
 	}
-	client := newClient(jar, options.HTTPClientFactory)
+	client := newClient(jar, options.HTTPClientFactory, transport)
 	body, err := json.Marshal(struct {
 		Identifier string `json:"identifier"`
 		Password   string `json:"password"`
@@ -190,13 +263,13 @@ func loginAndValidate(ctx context.Context, options Options, identity Identity) (
 	return credentials.User{Alias: identity.Alias, Cookies: credentials.Cookies{AccessToken: access, RefreshToken: refresh}}, nil
 }
 
-func newClient(jar http.CookieJar, factory func(http.CookieJar) *http.Client) *http.Client {
+func newClient(jar http.CookieJar, factory func(http.CookieJar) *http.Client, transport http.RoundTripper) *http.Client {
 	var client *http.Client
 	if factory != nil {
 		client = factory(jar)
 	}
 	if client == nil {
-		client = &http.Client{Timeout: 10 * time.Second}
+		client = &http.Client{Timeout: 10 * time.Second, Transport: transport}
 	}
 	// A factory may provide a test transport, but it must never weaken the
 	// session boundary or permit a redirect to replay credentials.
@@ -206,6 +279,17 @@ func newClient(jar http.CookieJar, factory func(http.CookieJar) *http.Client) *h
 		client.Timeout = 10 * time.Second
 	}
 	return client
+}
+
+func sleep(ctx context.Context, duration time.Duration) bool {
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
 }
 
 func endpoint(base *url.URL, path string) string {

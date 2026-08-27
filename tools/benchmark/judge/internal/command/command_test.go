@@ -3,6 +3,8 @@ package command
 import (
 	"bytes"
 	"context"
+	"errors"
+	"flag"
 	"io"
 	"path/filepath"
 	"strings"
@@ -41,6 +43,28 @@ func TestSharedFlagsPopulateBoundConfig(t *testing.T) {
 		cfg.MaxSubmissions != 10 || cfg.RateRaw != "0.10" || cfg.Rate == nil ||
 		cfg.Rate.RatString() != "1/10" || cfg.Duration != time.Minute {
 		t.Fatalf("shared flags did not populate the finalized config: %+v", *cfg)
+	}
+}
+
+func TestSustainedExactVolumeFlagPopulatesBoundConfig(t *testing.T) {
+	var stderr bytes.Buffer
+	fs, cfg := newFlagSet("sustained", config.ModeSustained, &stderr)
+	args := append([]string{}, sharedSustainedFlags("users.local.json")...)
+	for index, argument := range args {
+		if argument == "--duration" {
+			args = append(args[:index], args[index+2:]...)
+			break
+		}
+	}
+	args = append(args, "--total-submissions", "10")
+	if err := fs.Parse(args); err != nil {
+		t.Fatal(err)
+	}
+	if err := finalize(cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.TotalSubmissions != 10 || cfg.Duration != 0 || cfg.Rate == nil {
+		t.Fatalf("exact-volume flags did not populate the finalized config: %+v", *cfg)
 	}
 }
 
@@ -83,6 +107,47 @@ func TestCommandPathsUseParsedSharedFlagsBeforeNetwork(t *testing.T) {
 			}
 			if strings.Contains(err.Error(), "--base-url is required") {
 				t.Fatalf("regression: parsed --base-url was lost: %v", err)
+			}
+		})
+	}
+}
+
+func TestBenchmarkSubcommandHelpUsesFlagErrHelpWithoutCustomValuePanic(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		args  []string
+		flags []string
+	}{
+		{
+			name:  "burst",
+			args:  []string{"burst", "--help"},
+			flags: []string{"base-url", "benchmark-objective", "session-refresh", "submit-error-policy", "system-config", "users-file", "max-submissions", "burst-size"},
+		},
+		{
+			name:  "sustained",
+			args:  []string{"sustained", "--help"},
+			flags: []string{"base-url", "benchmark-objective", "session-refresh", "submit-error-policy", "system-config", "users-file", "max-submissions", "rate", "duration", "total-submissions"},
+		},
+		{
+			name:  "preflight",
+			args:  []string{"preflight", "--help"},
+			flags: []string{"mode", "base-url", "benchmark-objective", "session-refresh", "submit-error-policy", "system-config", "users-file", "max-submissions"},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			err := Execute(context.Background(), test.args, &stdout, &stderr)
+			if !errors.Is(err, flag.ErrHelp) {
+				t.Fatalf("help error=%v, want flag.ErrHelp; stderr=%q", err, stderr.String())
+			}
+			output := stderr.String()
+			if strings.Contains(output, "panic calling String method") {
+				t.Fatalf("help rendered a custom flag panic: %q", output)
+			}
+			for _, name := range test.flags {
+				if !strings.Contains(output, "-"+name) {
+					t.Fatalf("help output missing -%s: %q", name, output)
+				}
 			}
 		})
 	}
