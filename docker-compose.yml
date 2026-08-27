@@ -16,6 +16,14 @@ services:
     container_name: judge_envoy
     image: envoyproxy/envoy:v1.34.2
     restart: unless-stopped
+    # A full SSE stream can hold both a downstream client socket and an
+    # Envoy-to-Submission upstream socket. Keep the soft and hard process
+    # limits aligned so a large, controlled burst cannot inherit Docker's
+    # commonly observed soft limit of 1024 descriptors.
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     ports:
       - "8080:8080"
     volumes:
