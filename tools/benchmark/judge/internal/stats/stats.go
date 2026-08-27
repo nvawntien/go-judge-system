@@ -22,7 +22,18 @@ func Distribution(values []float64) model.Distribution {
 		sum += value
 	}
 	min, mean, max := sorted[0], sum/float64(len(sorted)), sorted[len(sorted)-1]
-	return model.Distribution{Count: len(sorted), Min: &min, Mean: &mean, P50: percentile(sorted, .50), P95: percentile(sorted, .95), P99: percentile(sorted, .99), Max: &max}
+	variance := 0.0
+	for _, value := range sorted {
+		delta := value - mean
+		variance += delta * delta
+	}
+	std := math.Sqrt(variance / float64(len(sorted)))
+	var cv *float64
+	if mean != 0 {
+		value := std / mean
+		cv = &value
+	}
+	return model.Distribution{Count: len(sorted), Min: &min, Mean: &mean, Std: &std, CV: cv, P50: percentile(sorted, .50), P90: percentile(sorted, .90), P95: percentile(sorted, .95), P99: percentile(sorted, .99), Max: &max}
 }
 
 // percentile uses the documented nearest-rank method.

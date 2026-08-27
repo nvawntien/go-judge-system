@@ -10,12 +10,16 @@ import (
 )
 
 func Markdown(summary model.RunSummary) string {
+	if summary.Burst != nil && summary.Burst.Massive {
+		return massiveBurstMarkdown(summary)
+	}
 	return fmt.Sprintf(`# Judge benchmark %s
 
 Classification: **%s**
 
 ## Load window
 
+- Measured volume (intended): %d submissions
 - Intended / attempted / accepted: %d / %d / %d
 - HTTP-201 accepted after load stop: %d
 - Terminal completions during load: %d
@@ -34,10 +38,58 @@ Classification: **%s**
 
 %v
 `, summary.RunID, summary.Classification,
-		summary.Counts.Intended, summary.Counts.Attempted, summary.LoadWindow.Accepted, summary.LoadWindow.BoundaryAcceptedAfterLoad,
+		summary.Counts.Intended, summary.Counts.Intended, summary.Counts.Attempted, summary.LoadWindow.Accepted, summary.LoadWindow.BoundaryAcceptedAfterLoad,
 		summary.LoadWindow.Completed, summary.LoadWindow.OutstandingAtEnd, optionalInt(summary.LoadWindow.BurstSpreadMS),
 		summary.Rates.LoadAttemptedPerSecond, summary.Rates.LoadAcceptedPerSecond, summary.Rates.LoadTerminalCompletionSecond,
 		summary.Drain.OutstandingAtStart, summary.Drain.Completed, summary.Drain.Remaining, summary.Drain.DurationMS,
+		summary.QualityFlags)
+}
+
+func massiveBurstMarkdown(summary model.RunSummary) string {
+	burst := summary.Burst
+	return fmt.Sprintf(`# ASTRACODE MASSIVE SUBMISSION BURST %s
+
+Classification: **%s**
+
+## Submission API
+
+- Attempted / accepted: %d / %d
+- Effective attempted throughput: %s submissions/s
+- Effective accepted throughput: %s submissions/s
+- Submit p50 / p95 / p99: %s / %s / %s ms
+- HTTP 429 / other 4xx / 5xx / transport: %d / %d / %d / %d
+
+## Burst quality
+
+- POST-start spread: %v ms
+- POST-start p50 / p95 / p99 offset: %s / %s / %s ms
+- Schedule delay p50 / p95 / p99: %s / %s / %s ms
+- Peak logical in-flight: %d
+- Peak active SSE observers: %d
+
+## Judge / E2E
+
+- Terminal completed / accepted: %d / %d
+- Effective terminal throughput: %s submissions/s
+- Remaining backlog after drain: %d
+- Drain duration: %d ms
+- E2E p50 / p95 / p99: %s / %s / %s ms
+- SSE completions / failures / GET reconciliations: %d / %d / %d
+
+## Quality
+
+%v
+`, summary.RunID, summary.Classification,
+		summary.Counts.Attempted, summary.Counts.Accepted,
+		optionalFloat(burst.AttemptedThroughputPerSec), optionalFloat(burst.AcceptedThroughputPerSec),
+		optionalFloat(summary.Latencies.SubmitMS.P50), optionalFloat(summary.Latencies.SubmitMS.P95), optionalFloat(summary.Latencies.SubmitMS.P99),
+		summary.Counts.RateLimited, summary.Counts.Other4xx, summary.Counts.ServerErrors, summary.Counts.TransportFailures,
+		optionalInt(summary.LoadWindow.BurstSpreadMS), optionalFloat(burst.PostStartOffsetMS.P50), optionalFloat(burst.PostStartOffsetMS.P95), optionalFloat(burst.PostStartOffsetMS.P99),
+		optionalFloat(summary.Latencies.ScheduleDelayMS.P50), optionalFloat(summary.Latencies.ScheduleDelayMS.P95), optionalFloat(summary.Latencies.ScheduleDelayMS.P99),
+		burst.PeakLogicalInFlight, burst.PeakActiveObservers,
+		summary.Counts.Terminal, summary.Counts.Accepted, optionalFloat(burst.TerminalThroughputPerSec), summary.Drain.Remaining, summary.Drain.DurationMS,
+		optionalFloat(summary.Latencies.EndToEndMS.P50), optionalFloat(summary.Latencies.EndToEndMS.P95), optionalFloat(summary.Latencies.EndToEndMS.P99),
+		summary.Observer.SSECompletions, summary.Observer.SSEFailures, summary.Observer.GETReconciliations,
 		summary.QualityFlags)
 }
 
@@ -46,4 +98,11 @@ func optionalInt(value *int64) string {
 		return "n/a"
 	}
 	return strconv.FormatInt(*value, 10)
+}
+
+func optionalFloat(value *float64) string {
+	if value == nil {
+		return "unavailable"
+	}
+	return fmt.Sprintf("%.3f", *value)
 }

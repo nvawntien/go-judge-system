@@ -29,7 +29,7 @@ wait_for_kafka_protocol() {
 
 wait_for_kafka_protocol || exit 1
 
-"$KAFKA_TOPICS_COMMAND" --bootstrap-server "$KAFKA_BOOTSTRAP_SERVER" --create --if-not-exists --topic judge.submission.jobs --partitions 3 --replication-factor 1
+"$KAFKA_TOPICS_COMMAND" --bootstrap-server "$KAFKA_BOOTSTRAP_SERVER" --create --if-not-exists --topic judge.submission.jobs --partitions 6 --replication-factor 1
 "$KAFKA_TOPICS_COMMAND" --bootstrap-server "$KAFKA_BOOTSTRAP_SERVER" --create --if-not-exists --topic judge.submission.jobs.dlt --partitions 1 --replication-factor 1
-"$KAFKA_TOPICS_COMMAND" --bootstrap-server "$KAFKA_BOOTSTRAP_SERVER" --create --if-not-exists --topic judge.submission.results --partitions 3 --replication-factor 1
+"$KAFKA_TOPICS_COMMAND" --bootstrap-server "$KAFKA_BOOTSTRAP_SERVER" --create --if-not-exists --topic judge.submission.results --partitions 6 --replication-factor 1
 "$KAFKA_TOPICS_COMMAND" --bootstrap-server "$KAFKA_BOOTSTRAP_SERVER" --list

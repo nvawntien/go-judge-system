@@ -79,6 +79,27 @@ def single_run(charts: Path, submissions: pd.DataFrame, windows: pd.DataFrame, m
 
 def comparison(charts: Path, experiments: pd.DataFrame) -> list[str]:
     charts.mkdir(parents=True, exist_ok=True); output = []
+    if len(experiments) and "comparison_kind" in experiments and experiments.comparison_kind.eq("burst").all():
+        burst_plots = [
+            ("burst_size_vs_effective_accepted_throughput.png", "burst_size", "throughput_mean", "Burst size vs effective accepted intake", "distinct submissions", "accepted sub/s"),
+            ("burst_size_vs_submit_p95.png", "burst_size", "p95_mean", "Burst size vs submit p95", "distinct submissions", "milliseconds"),
+            ("burst_size_vs_outstanding.png", "burst_size", "outstanding_peak_mean", "Burst size vs peak client outstanding", "distinct submissions", "accepted minus terminal"),
+        ]
+        for filename, x, y, title, xlabel, ylabel in burst_plots:
+            view = experiments.dropna(subset=[x, y])
+            if not len(view):
+                continue
+            plt.figure(figsize=(7, 4.5))
+            for label, group in view.groupby("system_config_series"):
+                plt.plot(group[x], group[y], marker="o", label=label)
+            plt.title(title); plt.xlabel(xlabel); plt.ylabel(ylabel); plt.legend()
+            path = charts / filename; _save(path); output.append(path.name)
+        lag = experiments.dropna(subset=["burst_size", "kafka_lag_end_mean"])
+        if len(lag):
+            plt.figure(figsize=(7, 4.5)); plt.plot(lag.burst_size, lag.kafka_lag_end_mean, marker="o")
+            plt.title("Burst size vs Kafka lag at end"); plt.xlabel("distinct submissions"); plt.ylabel("messages")
+            path = charts / "burst_size_vs_kafka_lag.png"; _save(path); output.append(path.name)
+        return output
     plots = [("throughput_vs_rate.png", "requested_rate", "throughput_mean", "Requested rate vs completed throughput", "requested sub/s", "completed sub/s"),
              ("p95_latency_vs_rate.png", "requested_rate", "p95_mean", "Requested rate vs E2E p95", "requested sub/s", "milliseconds"),
              ("p99_latency_vs_rate.png", "requested_rate", "p99_mean", "Requested rate vs E2E p99", "requested sub/s", "milliseconds"),
@@ -88,7 +109,7 @@ def comparison(charts: Path, experiments: pd.DataFrame) -> list[str]:
         view = experiments.dropna(subset=[x, y])
         if not len(view): continue
         plt.figure(figsize=(7, 4.5));
-        for label, group in view.groupby("experiment_label"):
+        for label, group in view.groupby("system_config_series"):
             plt.plot(group[x], group[y], marker="o", label=label)
         plt.title(title); plt.xlabel(xlabel); plt.ylabel(ylabel); plt.legend()
         path = charts / filename; _save(path); output.append(path.name)
@@ -96,6 +117,10 @@ def comparison(charts: Path, experiments: pd.DataFrame) -> list[str]:
     if len(lag):
         plt.figure(figsize=(7, 4.5)); plt.plot(lag.requested_rate, lag.kafka_lag_end_mean, marker="o"); plt.title("Requested rate vs Kafka lag at end"); plt.xlabel("requested sub/s"); plt.ylabel("messages")
         path = charts / "kafka_lag_vs_rate.png"; _save(path); output.append(path.name)
+    outstanding = experiments.dropna(subset=["requested_rate", "outstanding_peak_mean"])
+    if len(outstanding):
+        plt.figure(figsize=(7, 4.5)); plt.plot(outstanding.requested_rate, outstanding.outstanding_peak_mean, marker="o"); plt.title("Requested rate vs peak client outstanding"); plt.xlabel("requested sub/s"); plt.ylabel("accepted minus terminal")
+        path = charts / "outstanding_vs_rate.png"; _save(path); output.append(path.name)
     efficiency = experiments.dropna(subset=["requested_rate", "throughput_mean"]).copy()
     if len(efficiency):
         efficiency["efficiency"] = efficiency.throughput_mean / efficiency.requested_rate.replace(0, np.nan)
@@ -103,4 +128,25 @@ def comparison(charts: Path, experiments: pd.DataFrame) -> list[str]:
         path = charts / "throughput_efficiency.png"; _save(path); output.append(path.name)
         plt.figure(figsize=(7, 4.5)); plt.plot(efficiency.requested_rate, efficiency.throughput_mean, marker="o", label="observed"); plt.title("Capacity frontier from tested configurations"); plt.xlabel("requested sub/s"); plt.ylabel("completed sub/s"); plt.legend()
         path = charts / "capacity_frontier.png"; _save(path); output.append(path.name)
+    return output
+
+
+def api_comparison(charts: Path, experiments: pd.DataFrame) -> list[str]:
+    """API-only capacity charts; absent measurements remain absent."""
+    charts.mkdir(parents=True, exist_ok=True)
+    output = []
+    for filename, y, title, ylabel in [
+        ("throughput_vs_rate.png", "achieved_mean", "Requested API rate vs achieved throughput", "achieved req/s"),
+        ("p95_latency_vs_rate.png", "p95_mean", "Requested API rate vs p95 latency", "milliseconds"),
+        ("p99_latency_vs_rate.png", "p99_mean", "Requested API rate vs p99 latency", "milliseconds"),
+        ("error_rate_vs_rate.png", "error_rate_mean", "Requested API rate vs error rate", "error fraction"),
+    ]:
+        view = experiments.dropna(subset=["requested_rate", y])
+        if not len(view):
+            continue
+        plt.figure(figsize=(7, 4.5))
+        for label, group in view.groupby("system_config_series"):
+            plt.plot(group.requested_rate, group[y], marker="o", label=label)
+        plt.title(title); plt.xlabel("requested req/s"); plt.ylabel(ylabel); plt.legend()
+        path = charts / filename; _save(path); output.append(path.name)
     return output

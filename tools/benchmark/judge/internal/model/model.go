@@ -65,23 +65,26 @@ const (
 )
 
 type RunMetadata struct {
-	SchemaVersion    string         `json:"schema_version"`
-	BenchmarkVersion string         `json:"benchmark_version"`
-	RunID            string         `json:"run_id"`
-	Mode             Mode           `json:"mode"`
-	Repetition       int            `json:"repetition"`
-	Seed             int64          `json:"seed"`
-	State            RunState       `json:"state"`
-	StartedAt        time.Time      `json:"started_at"`
-	EndedAt          *time.Time     `json:"ended_at,omitempty"`
-	Repository       Repository     `json:"repository"`
-	Target           Target         `json:"target"`
-	Users            UserSet        `json:"users"`
-	Workload         Workload       `json:"workload"`
-	Timeouts         Timeouts       `json:"timeouts"`
-	Observer         ObserverConfig `json:"observer"`
-	Phases           Phases         `json:"phases"`
-	ObservedRates    *ObservedRates `json:"observed_rates,omitempty"`
+	SchemaVersion      string            `json:"schema_version"`
+	BenchmarkVersion   string            `json:"benchmark_version"`
+	RunID              string            `json:"run_id"`
+	Mode               Mode              `json:"mode"`
+	Repetition         int               `json:"repetition"`
+	Seed               int64             `json:"seed"`
+	State              RunState          `json:"state"`
+	StartedAt          time.Time         `json:"started_at"`
+	EndedAt            *time.Time        `json:"ended_at,omitempty"`
+	Repository         Repository        `json:"repository"`
+	Target             Target            `json:"target"`
+	Users              UserSet           `json:"users"`
+	Workload           Workload          `json:"workload"`
+	Timeouts           Timeouts          `json:"timeouts"`
+	Observer           ObserverConfig    `json:"observer"`
+	Phases             Phases            `json:"phases"`
+	ObservedRates      *ObservedRates    `json:"observed_rates,omitempty"`
+	SystemConfig       *SystemConfig     `json:"system_config,omitempty"`
+	BenchmarkObjective string            `json:"benchmark_objective"`
+	ClientDiagnostics  ClientDiagnostics `json:"client_diagnostics"`
 }
 
 type Repository struct {
@@ -100,8 +103,20 @@ type Target struct {
 }
 
 type UserSet struct {
-	Configured int `json:"configured"`
-	Selected   int `json:"selected"`
+	Configured       int  `json:"configured"`
+	Selected         int  `json:"selected"`
+	OneSubmitPerUser bool `json:"one_submit_per_user"`
+}
+
+// ClientDiagnostics records only local generator capacity evidence. It has no
+// credentials, identifiers, or host-sensitive data.
+type ClientDiagnostics struct {
+	GoroutinesBeforeBurst int    `json:"goroutines_before_burst,omitempty"`
+	GoroutinesAfterLaunch int    `json:"goroutines_after_burst_launch,omitempty"`
+	PeakLogicalInFlight   int    `json:"peak_logical_in_flight,omitempty"`
+	PeakActiveObservers   int    `json:"peak_active_observers,omitempty"`
+	NoFileSoftLimit       uint64 `json:"nofile_soft_limit,omitempty"`
+	NoFileRequired        uint64 `json:"nofile_required,omitempty"`
 }
 
 type Workload struct {
@@ -109,6 +124,7 @@ type Workload struct {
 	JitterMilliseconds    *int64   `json:"jitter_ms,omitempty"`
 	TargetRatePerSecond   *float64 `json:"target_rate_per_second,omitempty"`
 	ArrivalDurationMS     *int64   `json:"arrival_duration_ms,omitempty"`
+	TotalSubmissions      *int     `json:"total_submissions,omitempty"`
 	WindowMS              int64    `json:"window_ms"`
 	WarmupCount           int      `json:"warmup_count"`
 	SubmitCooldownMS      int64    `json:"submit_cooldown_ms"`
@@ -151,6 +167,30 @@ type ObservedRates struct {
 	AttemptedPerSecond float64 `json:"attempted_per_second"`
 	AcceptedPerSecond  float64 `json:"accepted_per_second"`
 	CompletedPerSecond float64 `json:"completed_per_second"`
+}
+
+// SystemConfig is an explicit allowlist of reproducibility data supplied by an
+// operator. It deliberately cannot carry environment dumps or credentials.
+type SystemConfig struct {
+	Label   string          `json:"label"`
+	Release string          `json:"release"`
+	App     NodeConfig      `json:"app"`
+	Judge   JudgeNodeConfig `json:"judge"`
+}
+
+type NodeConfig struct {
+	Nodes            int `json:"nodes"`
+	CPUCoresPerNode  int `json:"cpu_cores_per_node"`
+	MemoryMiBPerNode int `json:"memory_mib_per_node"`
+}
+
+type JudgeNodeConfig struct {
+	Nodes                 int `json:"nodes"`
+	CPUCoresPerNode       int `json:"cpu_cores_per_node"`
+	MemoryMiBPerNode      int `json:"memory_mib_per_node"`
+	WorkerPoolSize        int `json:"worker_pool_size"`
+	WorkerMemoryLimitMiB  int `json:"worker_memory_limit_mib"`
+	SandboxMemoryLimitMiB int `json:"sandbox_memory_limit_mib"`
 }
 
 // SubmissionRecord has only safe aliases and API-visible identifiers. It never
@@ -237,7 +277,10 @@ type Distribution struct {
 	Count int      `json:"count"`
 	Min   *float64 `json:"min,omitempty"`
 	Mean  *float64 `json:"mean,omitempty"`
+	Std   *float64 `json:"std,omitempty"`
+	CV    *float64 `json:"cv,omitempty"`
 	P50   *float64 `json:"p50,omitempty"`
+	P90   *float64 `json:"p90,omitempty"`
 	P95   *float64 `json:"p95,omitempty"`
 	P99   *float64 `json:"p99,omitempty"`
 	Max   *float64 `json:"max,omitempty"`
@@ -259,6 +302,23 @@ type RunSummary struct {
 	Verdicts              map[string]int  `json:"verdicts"`
 	Observer              ObserverTotals  `json:"observer"`
 	ExternalMetrics       ExternalMetrics `json:"external_metrics"`
+	Burst                 *BurstMetrics   `json:"burst,omitempty"`
+}
+
+// BurstMetrics uses actual client timestamps; it deliberately never derives
+// intake throughput from the synthetic scheduler window.
+type BurstMetrics struct {
+	Massive                   bool         `json:"massive"`
+	AttemptedIntervalMS       *int64       `json:"attempted_intake_interval_ms,omitempty"`
+	AcceptedIntervalMS        *int64       `json:"accepted_intake_interval_ms,omitempty"`
+	TerminalIntervalMS        *int64       `json:"terminal_completion_interval_ms,omitempty"`
+	AttemptedThroughputPerSec *float64     `json:"attempted_throughput_per_sec,omitempty"`
+	AcceptedThroughputPerSec  *float64     `json:"accepted_throughput_per_sec,omitempty"`
+	TerminalThroughputPerSec  *float64     `json:"terminal_throughput_per_sec,omitempty"`
+	PostStartOffsetMS         Distribution `json:"post_start_offset_ms"`
+	LaunchCompletionMS        *int64       `json:"launch_completion_ms,omitempty"`
+	PeakLogicalInFlight       int          `json:"peak_logical_in_flight"`
+	PeakActiveObservers       int          `json:"peak_active_observers"`
 }
 
 type Counts struct {

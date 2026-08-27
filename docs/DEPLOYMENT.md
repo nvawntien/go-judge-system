@@ -81,6 +81,43 @@ submission-service
 
 It does **not** run production `go-judge` or `judge-worker`.
 
+### Envoy file-descriptor limit
+
+The checked-in `envoy` service sets Docker's `nofile` soft and hard limits to
+`65536`. This is an ingress safety requirement for controlled high-connection
+benchmarks, not a general proxy-tuning change. One live submission SSE stream
+can require both a client-to-Envoy socket and an Envoy-to-Submission-Service
+socket; a massive submission burst also creates short-lived API and ticket
+connections. The inherited soft limit of `1024` is therefore insufficient and
+has previously caused Envoy `socket(2)` failures.
+
+The App Node's `/etc/astracode/app-node.override.yml` is composed last. It
+must not replace `services.envoy.ulimits.nofile` with a lower value. A changed
+Compose limit requires recreation of the Envoy container; restarting the old
+container alone does not change its process limit.
+
+After deployment, verify the effective setting on the running container:
+
+```bash
+docker inspect judge_envoy --format '{{json .HostConfig.Ulimits}}'
+
+pid="$(docker inspect -f '{{.State.Pid}}' judge_envoy)"
+test "$pid" -gt 0
+grep '^Max open files' "/proc/$pid/limits"
+```
+
+The final command must show:
+
+```text
+Max open files            65536                65536                files
+```
+
+This change does not alter Envoy worker concurrency, circuit breakers,
+connection pools, HTTP protocol settings, access logging, SSE timeouts,
+KrakenD, or application services. It only raises the descriptor ceiling so a
+subsequent benchmark can measure those components without the known 1024-FD
+failure mode.
+
 Every App deployment must compose exactly these files:
 
 ```text
@@ -120,7 +157,7 @@ and only then activates the complete App service set.
 ### One-time benchmark account provisioning
 
 The Auth image contains `/app/provision-benchmark-users` for the fixed
-`benchmark_judge_001` through `benchmark_judge_100` fixture pool. It does not
+`benchmark_judge_001` through `benchmark_judge_10000` fixture pool. It does not
 create sessions, tokens, mail, or verification artifacts. Operators must use
 the exact immutable Auth image tag already deployed to the App Node, first run
 a dry-run, review its sanitized target/range and exact confirmation phrase,
@@ -152,6 +189,12 @@ docker compose --project-name go-judge-system <same-app-compose-arguments> \
 Normal provisioning is idempotent: canonical existing benchmark accounts are
 skipped only when their stored hash matches the supplied password. Normal mode
 never resets, deletes, or changes existing accounts; conflicts stop it safely.
+The fixed range is `1..10000`; `%03d` keeps `001..100` unchanged and naturally
+extends the deterministic namespace through `10000`. For a 10K fixture build,
+plan the complete range first (`--start 1 --count 10000`), then apply only the
+printed exact confirmation. The command reuses one database pool, processes
+accounts sequentially with the production password encoder, and prints only
+count-based progress every 500 accounts—never passwords or hashes.
 
 ### Benchmark password rotation
 

@@ -32,4 +32,4 @@ Auth owns MinIO avatar objects. Problem owns testcase ZIP objects and creates pr
 
 ## Kafka
 
-Kafka runs in single-node KRaft mode. `infra/kafka/kafka-init.sh` explicitly creates three topics: jobs (three partitions), results (three), DLT (one). Producers use all acknowledgements and idempotent Sarama settings (`pkg/kafka/sarama.go`). This does not create exactly-once processing across Kafka and PostgreSQL; the outbox and attempt ID mitigate distinct portions of that problem.
+Kafka runs in single-node KRaft mode. `infra/kafka/kafka-init.sh` explicitly creates three topics: jobs (six partitions), results (six), DLT (one). Producers use all acknowledgements and idempotent Sarama settings (`pkg/kafka/sarama.go`). Topic creation is idempotent but does not resize an existing topic; the six-partition definition is the fresh-environment and disaster-recovery topology. This does not create exactly-once processing across Kafka and PostgreSQL; the outbox and attempt ID mitigate distinct portions of that problem.
