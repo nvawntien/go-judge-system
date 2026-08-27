@@ -15,7 +15,8 @@ import (
 )
 
 const (
-	batchSize                         = 50
+	defaultBatchSize                  = 50
+	officialBatchSize                 = 4
 	expectedOutputHeadroomBytes       = 64 * 1024
 	minCompileLimitMS           int64 = 30_000
 )
@@ -71,9 +72,9 @@ func (c *GoJudgeClient) Execute(ctx context.Context, req outbound.ExecutionReque
 		MemoryUsed:    0,
 	}
 
-	currentBatchSize := batchSize
+	currentBatchSize := defaultBatchSize
 	if req.StopOnFirstFailure {
-		currentBatchSize = 1
+		currentBatchSize = officialBatchSize
 	}
 
 	for start := 0; start < len(req.TestCases); start += currentBatchSize {

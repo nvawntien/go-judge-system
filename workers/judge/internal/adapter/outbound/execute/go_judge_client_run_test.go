@@ -3,6 +3,7 @@ package execute
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -70,8 +71,73 @@ func TestRunCodeCompilesOnceAndRunsAllCases(t *testing.T) {
 	}
 }
 
-func TestOfficialExecutionRunsOneTestCasePerRequest(t *testing.T) {
-	var runCalls int
+func TestOfficialExecutionBatchesAtMostFourAndCompilesOnce(t *testing.T) {
+	tests := []struct {
+		name        string
+		testCount   int
+		wantBatches []int
+	}{
+		{name: "one testcase", testCount: 1, wantBatches: []int{1}},
+		{name: "four testcases", testCount: 4, wantBatches: []int{4}},
+		{name: "five testcases", testCount: 5, wantBatches: []int{4, 1}},
+		{name: "twenty four testcases", testCount: 24, wantBatches: []int{4, 4, 4, 4, 4, 4}},
+		{name: "fifty testcases", testCount: 50, wantBatches: []int{4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 2}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var compileCalls int
+			var batches []int
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				var req gojudge.Request
+				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+					t.Fatalf("decode request: %v", err)
+				}
+				if len(req.Cmd) == 1 && req.Cmd[0].CopyOutCached != nil {
+					compileCalls++
+					_ = json.NewEncoder(w).Encode(gojudge.Response{{Status: "Accepted", FileIDs: map[string]string{"main": "exe-1"}}})
+					return
+				}
+
+				batches = append(batches, len(req.Cmd))
+				response := make(gojudge.Response, 0, len(req.Cmd))
+				for _, cmd := range req.Cmd {
+					file := cmd.CopyIn["main"]
+					if file == nil || file.FileID == nil || *file.FileID != "exe-1" {
+						t.Fatalf("compiled command did not reuse executable file ID: %#v", file)
+					}
+					response = append(response, acceptedResponseForCommand(t, cmd))
+				}
+				_ = json.NewEncoder(w).Encode(response)
+			}))
+
+			client := NewGoJudgeClient(server.URL, zap.NewNop())
+			result, err := client.Execute(context.Background(), outbound.ExecutionRequest{
+				Language:           "CPP",
+				SourceCode:         "int main(){}",
+				StopOnFirstFailure: true,
+				TestCases:          officialTestCases(tt.testCount),
+			})
+			server.Close()
+			if err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+			if compileCalls != 1 {
+				t.Fatalf("compile calls = %d, want 1", compileCalls)
+			}
+			if fmt.Sprint(batches) != fmt.Sprint(tt.wantBatches) {
+				t.Fatalf("batch sizes = %v, want %v", batches, tt.wantBatches)
+			}
+			if result.Status != "ACCEPTED" || len(result.TestCases) != tt.testCount {
+				t.Fatalf("result = %#v, want %d accepted test cases", result, tt.testCount)
+			}
+		})
+	}
+}
+
+func TestOfficialExecutionStopsAfterFailingBatchInTestcaseOrder(t *testing.T) {
+	var batches [][]int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		var req gojudge.Request
@@ -83,33 +149,226 @@ func TestOfficialExecutionRunsOneTestCasePerRequest(t *testing.T) {
 			return
 		}
 
-		runCalls++
-		if len(req.Cmd) != 1 {
-			t.Fatalf("official request command count = %d, want 1", len(req.Cmd))
+		indexes := commandIndexes(t, req.Cmd)
+		batches = append(batches, indexes)
+		response := make(gojudge.Response, 0, len(indexes))
+		for _, index := range indexes {
+			if index == 6 {
+				response = append(response, gojudge.Result{Status: "Accepted", Files: map[string]string{"stdout": "wrong\n", "stderr": ""}})
+				continue
+			}
+			if index == 7 {
+				response = append(response, gojudge.Result{Status: "Time Limit Exceeded", Files: map[string]string{"stdout": "", "stderr": ""}})
+				continue
+			}
+			response = append(response, acceptedResponse(index))
 		}
-		_ = json.NewEncoder(w).Encode(gojudge.Response{{Status: "Accepted", Files: map[string]string{"stdout": "1\n", "stderr": ""}}})
+		_ = json.NewEncoder(w).Encode(response)
 	}))
 	defer server.Close()
 
-	client := NewGoJudgeClient(server.URL, zap.NewNop())
-	res, err := client.Execute(context.Background(), outbound.ExecutionRequest{
+	result, err := NewGoJudgeClient(server.URL, zap.NewNop()).Execute(context.Background(), outbound.ExecutionRequest{
 		Language:           "CPP",
 		SourceCode:         "int main(){}",
 		StopOnFirstFailure: true,
-		TestCases: []outbound.ExecutionTestCase{
-			{Index: 1, ID: "1", Kind: "official", Stdin: "1\n", ExpectedOutput: stringPtr("1\n")},
-			{Index: 2, ID: "2", Kind: "official", Stdin: "2\n", ExpectedOutput: stringPtr("1\n")},
-		},
+		TestCases:          officialTestCases(24),
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	if runCalls != 2 {
-		t.Fatalf("run calls = %d, want 2", runCalls)
+	if fmt.Sprint(batches) != "[[1 2 3 4] [5 6 7 8]]" {
+		t.Fatalf("submitted batches = %v, want [[1 2 3 4] [5 6 7 8]]", batches)
 	}
-	if res.Status != "ACCEPTED" || len(res.TestCases) != 2 {
-		t.Fatalf("result = %#v, want two accepted test cases", res)
+	if result.Status != "WRONG_ANSWER" || len(result.TestCases) != 6 || result.TestCases[5].ID != "6" {
+		t.Fatalf("result = %#v, want first ordered failure at testcase 6", result)
 	}
+}
+
+func TestOfficialExecutionDoesNotSubmitBatchesAfterLaterFailure(t *testing.T) {
+	var batches [][]int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		var req gojudge.Request
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if len(req.Cmd) == 1 && req.Cmd[0].CopyOutCached != nil {
+			_ = json.NewEncoder(w).Encode(gojudge.Response{{Status: "Accepted", FileIDs: map[string]string{"main": "exe-1"}}})
+			return
+		}
+
+		indexes := commandIndexes(t, req.Cmd)
+		batches = append(batches, indexes)
+		response := make(gojudge.Response, 0, len(indexes))
+		for _, index := range indexes {
+			if index == 10 {
+				response = append(response, gojudge.Result{Status: "Accepted", Files: map[string]string{"stdout": "wrong\n", "stderr": ""}})
+				continue
+			}
+			response = append(response, acceptedResponse(index))
+		}
+		_ = json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	result, err := NewGoJudgeClient(server.URL, zap.NewNop()).Execute(context.Background(), outbound.ExecutionRequest{
+		Language:           "CPP",
+		SourceCode:         "int main(){}",
+		StopOnFirstFailure: true,
+		TestCases:          officialTestCases(24),
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if fmt.Sprint(batches) != "[[1 2 3 4] [5 6 7 8] [9 10 11 12]]" {
+		t.Fatalf("submitted batches = %v, want batches through testcase 12 only", batches)
+	}
+	if result.Status != "WRONG_ANSWER" || len(result.TestCases) != 10 || result.TestCases[9].ID != "10" {
+		t.Fatalf("result = %#v, want first ordered failure at testcase 10", result)
+	}
+}
+
+func TestOfficialExecutionDoesNotSubmitLaterBatchesAfterFirstBatchFailure(t *testing.T) {
+	var batches [][]int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		var req gojudge.Request
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if len(req.Cmd) == 1 && req.Cmd[0].CopyOutCached != nil {
+			_ = json.NewEncoder(w).Encode(gojudge.Response{{Status: "Accepted", FileIDs: map[string]string{"main": "exe-1"}}})
+			return
+		}
+
+		indexes := commandIndexes(t, req.Cmd)
+		batches = append(batches, indexes)
+		response := make(gojudge.Response, 0, len(indexes))
+		for _, index := range indexes {
+			if index == 2 {
+				response = append(response, gojudge.Result{Status: "Accepted", Files: map[string]string{"stdout": "wrong\n", "stderr": ""}})
+				continue
+			}
+			response = append(response, acceptedResponse(index))
+		}
+		_ = json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	result, err := NewGoJudgeClient(server.URL, zap.NewNop()).Execute(context.Background(), outbound.ExecutionRequest{
+		Language:           "CPP",
+		SourceCode:         "int main(){}",
+		StopOnFirstFailure: true,
+		TestCases:          officialTestCases(24),
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if fmt.Sprint(batches) != "[[1 2 3 4]]" {
+		t.Fatalf("submitted batches = %v, want only the first batch", batches)
+	}
+	if result.Status != "WRONG_ANSWER" || len(result.TestCases) != 2 || result.TestCases[1].ID != "2" {
+		t.Fatalf("result = %#v, want first ordered failure at testcase 2", result)
+	}
+}
+
+func TestExecutionWithoutEarlyStopProcessesAllBatches(t *testing.T) {
+	tests := []struct {
+		name        string
+		testCount   int
+		wantBatches []int
+	}{
+		{name: "twenty four testcases", testCount: 24, wantBatches: []int{24}},
+		{name: "fifty testcases", testCount: 50, wantBatches: []int{50}},
+		{name: "fifty one testcases", testCount: 51, wantBatches: []int{50, 1}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var compileCalls int
+			var batches []int
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				var req gojudge.Request
+				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+					t.Fatalf("decode request: %v", err)
+				}
+				if len(req.Cmd) == 1 && req.Cmd[0].CopyOutCached != nil {
+					compileCalls++
+					_ = json.NewEncoder(w).Encode(gojudge.Response{{Status: "Accepted", FileIDs: map[string]string{"main": "exe-1"}}})
+					return
+				}
+
+				batches = append(batches, len(req.Cmd))
+				response := make(gojudge.Response, 0, len(req.Cmd))
+				for _, cmd := range req.Cmd {
+					response = append(response, acceptedResponseForCommand(t, cmd))
+				}
+				_ = json.NewEncoder(w).Encode(response)
+			}))
+
+			result, err := NewGoJudgeClient(server.URL, zap.NewNop()).Execute(context.Background(), outbound.ExecutionRequest{
+				Language:           "CPP",
+				SourceCode:         "int main(){}",
+				StopOnFirstFailure: false,
+				TestCases:          officialTestCases(tt.testCount),
+			})
+			server.Close()
+			if err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+			if compileCalls != 1 {
+				t.Fatalf("compile calls = %d, want 1", compileCalls)
+			}
+			if fmt.Sprint(batches) != fmt.Sprint(tt.wantBatches) {
+				t.Fatalf("batch sizes = %v, want %v", batches, tt.wantBatches)
+			}
+			if result.Status != "ACCEPTED" || len(result.TestCases) != tt.testCount {
+				t.Fatalf("result = %#v, want %d accepted test cases", result, tt.testCount)
+			}
+		})
+	}
+}
+
+func officialTestCases(count int) []outbound.ExecutionTestCase {
+	testCases := make([]outbound.ExecutionTestCase, 0, count)
+	for index := 1; index <= count; index++ {
+		output := fmt.Sprintf("%d\n", index)
+		testCases = append(testCases, outbound.ExecutionTestCase{
+			Index:          index,
+			ID:             fmt.Sprintf("%d", index),
+			Kind:           "official",
+			Stdin:          output,
+			ExpectedOutput: &output,
+		})
+	}
+	return testCases
+}
+
+func commandIndexes(t *testing.T, commands []*gojudge.Cmd) []int {
+	t.Helper()
+	indexes := make([]int, 0, len(commands))
+	for _, command := range commands {
+		if len(command.Files) == 0 || command.Files[0].Content == nil {
+			t.Fatalf("command stdin = %#v, want a testcase index", command.Files)
+		}
+		var index int
+		if _, err := fmt.Sscanf(*command.Files[0].Content, "%d", &index); err != nil {
+			t.Fatalf("parse testcase stdin %q: %v", *command.Files[0].Content, err)
+		}
+		indexes = append(indexes, index)
+	}
+	return indexes
+}
+
+func acceptedResponseForCommand(t *testing.T, command *gojudge.Cmd) gojudge.Result {
+	t.Helper()
+	indexes := commandIndexes(t, []*gojudge.Cmd{command})
+	return acceptedResponse(indexes[0])
+}
+
+func acceptedResponse(index int) gojudge.Result {
+	return gojudge.Result{Status: "Accepted", Files: map[string]string{"stdout": fmt.Sprintf("%d\n", index), "stderr": ""}}
 }
 
 func TestRunCodeCompileErrorReturnsNoTests(t *testing.T) {
