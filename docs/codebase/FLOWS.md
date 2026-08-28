@@ -18,7 +18,7 @@ sequenceDiagram
   S->>K: outbox relay publishes JobMessage
   K->>W: judge.submission.jobs
   W->>P: gRPC GetTestCase
-  W->>E: HTTP /run compiled/executed source
+  W->>E: unary gRPC Executor.Exec compiled/executed source
   W->>K: ResultMessage
   K->>S: judge.submission.results
   S->>DB: apply current attempt + replace results (tx)

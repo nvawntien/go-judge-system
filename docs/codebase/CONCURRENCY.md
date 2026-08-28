@@ -17,7 +17,7 @@ Submission's result consumer is another consumer-group loop. Broker delivery rem
 
 * gRPC caller deadlines come from Auth/Problem/Judge configuration and adapters. The public-profile-stats Auth call defaults to one second.
 * Worker testcase download uses 30 seconds, limits ZIP to 64 MiB and extracted content to 128 MiB (`official_loader.go`).
-* go-judge REST client has a 120-second client timeout; requests set CPU, wall clock, memory, process and output limits. Interactive requests may batch up to 50 testcases. Official submissions use one testcase per run request so execution can stop at the first failure; compiled languages compile once and each testcase run receives the cached compiled artifact.
+* go-judge unary gRPC calls have a 120-second per-RPC bound; requests set CPU, wall clock, memory, process and output limits. Interactive requests may batch up to 50 testcases. Official submissions use batches of at most four testcases so processing can stop in testcase order after the first failure; compiled languages compile once and each testcase batch receives the cached compiled artifact.
 * Interactive run-code has explicit source/stdin/expected-output/testcase/concurrency/timeout limits in Submission config and use case.
 
 ## Session cutoff resolution

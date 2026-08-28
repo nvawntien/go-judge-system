@@ -4,7 +4,7 @@ go 1.25.8
 
 require (
 	github.com/IBM/sarama v1.46.2
-	github.com/go-resty/resty/v2 v2.17.2
+	github.com/criyle/go-judge/pb v1.0.1
 	github.com/google/wire v0.6.0
 	go-judge-system/pkg v0.0.0
 	go.uber.org/zap v1.27.1

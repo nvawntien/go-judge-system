@@ -24,6 +24,7 @@ type App struct {
 	Logger        *zap.Logger
 	KafkaProducer sarama.SyncProducer
 	ProblemConn   *googlegrpc.ClientConn
+	SandboxConn   *SandboxClientConn
 }
 
 func NewApp(
@@ -33,6 +34,7 @@ func NewApp(
 	logger *zap.Logger,
 	producer sarama.SyncProducer,
 	problemConn *googlegrpc.ClientConn,
+	sandboxConn *SandboxClientConn,
 ) *App {
 	return &App{
 		Config:        cfg,
@@ -41,6 +43,7 @@ func NewApp(
 		Logger:        logger,
 		KafkaProducer: producer,
 		ProblemConn:   problemConn,
+		SandboxConn:   sandboxConn,
 	}
 }
 
@@ -124,6 +127,10 @@ func (a *App) Close() error {
 
 	if a.ProblemConn != nil {
 		addCloseErr("problem gRPC connection", a.ProblemConn.Close())
+	}
+
+	if a.SandboxConn != nil {
+		addCloseErr("go-judge sandbox gRPC connection", a.SandboxConn.ClientConn.Close())
 	}
 
 	if a.GRPC != nil {

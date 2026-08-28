@@ -68,7 +68,7 @@ services:
     build: !reset null
     ports: !reset []
     environment:
-      ES_ENABLE_GRPC: "false"
+      ES_ENABLE_GRPC: "true"
     networks: !override
       - judge_executor
 

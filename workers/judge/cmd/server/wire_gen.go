@@ -31,8 +31,13 @@ func InitializeApp(cfg *config.Config) (*container.App, func(), error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	sandboxServiceURL := container.ProvideSandboxServiceURL()
-	goJudgeClient := container.ProvideGoJudgeClient(sandboxServiceURL, zapLogger)
+	sandboxGRPCAddress := container.ProvideSandboxGRPCAddress()
+	sandboxClientConn, err := container.ProvideSandboxClientConn(sandboxGRPCAddress)
+	if err != nil {
+		return nil, nil, err
+	}
+	executorClient := container.ProvideSandboxExecutorClient(sandboxClientConn)
+	goJudgeClient := container.ProvideGoJudgeClient(executorClient, zapLogger)
 	syncProducer, err := kafka.NewSyncProducer(kafkaConfig, zapLogger)
 	if err != nil {
 		return nil, nil, err
@@ -58,7 +63,7 @@ func InitializeApp(cfg *config.Config) (*container.App, func(), error) {
 	runCodeHandler := handler.NewRunCodeHandler(runCodeUseCase)
 	judgeServer := grpc.NewJudgeServer(runCodeHandler)
 	server := grpc.NewServer(serverConfig, judgeServer)
-	app := container.NewApp(cfg, judgeJobConsumer, server, zapLogger, syncProducer, clientConn)
+	app := container.NewApp(cfg, judgeJobConsumer, server, zapLogger, syncProducer, clientConn, sandboxClientConn)
 	return app, func() {
 	}, nil
 }

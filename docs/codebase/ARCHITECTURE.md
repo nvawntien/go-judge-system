@@ -9,7 +9,7 @@ All four Go runtime components follow the same directional dependency pattern: i
 | Auth | Identity, sessions, roles, user suspension and profile media | Gin HTTP, gRPC `PublicUserService` | PostgreSQL, Redis, JWT signer, bcrypt, SMTP, MinIO |
 | Problem | Problem catalogue and testcase administration | Gin HTTP, gRPC `ProblemService` | PostgreSQL, Redis submission-eligibility cache, MinIO presigned URLs |
 | Submission | Submission lifecycle and client result delivery | Gin HTTP/SSE, Kafka result consumer | PostgreSQL, Kafka, Auth gRPC, Problem gRPC, Judge gRPC |
-| Judge Worker | Durable judging and synchronous run-code service | Kafka job consumer, gRPC `JudgeService` | Problem gRPC, HTTP go-judge executor, Kafka results, local testcase cache |
+| Judge Worker | Durable judging and synchronous run-code service | Kafka job consumer, gRPC `JudgeService` | Problem gRPC, unary go-judge gRPC executor, Kafka results, local testcase cache |
 
 ## Communication graph
 
@@ -36,7 +36,7 @@ flowchart TB
   kafka -->|jobs consumer group| worker
   worker -->|ProblemService.GetTestCase gRPC| problem
   worker -->|signed HTTP download| minio
-  worker -->|HTTP POST /run| executor
+  worker -->|unary gRPC Executor.Exec| executor
   worker -->|judge.submission.results| kafka
   kafka -->|results consumer group| submission
 ```
@@ -48,7 +48,7 @@ flowchart TB
 * Submission -> Auth gRPC `ResolvePublicUser`: resolves an active, non-suspended username to a stable user ID before serving public competitive aggregates. Auth owns this visibility decision; Submission then reads only its own database.
 * Submission -> Judge Worker gRPC `RunCode`: serves the interactive `/api/v1/submissions/run` feature, with request validation/limits in the Submission use case and worker execution adapter.
 * Judge Worker -> Problem gRPC `GetTestCase`: obtains a presigned testcase ZIP URL, count and version; the worker downloads it itself (`workers/judge/internal/adapter/outbound/problem/grpc_metadata_reader.go`).
-* Judge Worker -> go-judge: HTTP `/run`; compilation/execution commands and limits are built in `workers/judge/internal/adapter/outbound/execute/go_judge_client.go`.
+* Judge Worker -> go-judge: persistent internal gRPC connection to unary `Executor.Exec`; compilation/execution commands and limits are built in `workers/judge/internal/adapter/outbound/execute/go_judge_client.go`.
 
 ### Asynchronous paths
 

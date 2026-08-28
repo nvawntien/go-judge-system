@@ -21,6 +21,7 @@ import (
 	"go-judge-system/workers/judge/internal/application/port/outbound"
 	judgeuc "go-judge-system/workers/judge/internal/application/usecase/judge"
 
+	judgepb "github.com/criyle/go-judge/pb"
 	"github.com/google/wire"
 	"go.uber.org/zap"
 	googlegrpc "google.golang.org/grpc"
@@ -36,6 +37,9 @@ var InfrastructureProviderSet = wire.NewSet(
 )
 
 var OutboundProviderSet = wire.NewSet(
+	ProvideSandboxGRPCAddress,
+	ProvideSandboxClientConn,
+	ProvideSandboxExecutorClient,
 	ProvideGoJudgeClient,
 	wire.Bind(new(outbound.CodeExecutor), new(*execute.GoJudgeClient)),
 	judge.NewKafkaResultPublisher,
@@ -48,7 +52,6 @@ var OutboundProviderSet = wire.NewSet(
 	wire.Bind(new(outbound.ProblemTestCaseMetadataReader), new(*problem.GRPCMetadataReader)),
 	testcase.NewOfficialLoader,
 	wire.Bind(new(outbound.OfficialTestCaseLoader), new(*testcase.OfficialLoader)),
-	ProvideSandboxServiceURL,
 )
 
 var UseCaseProviderSet = wire.NewSet(
@@ -110,12 +113,30 @@ func ProvideProblemGRPCTimeout(cfg config.ProblemGRPCConfig) time.Duration {
 	return cfg.Timeout
 }
 
-type SandboxServiceURL string
+type SandboxGRPCAddress string
 
-func ProvideSandboxServiceURL() SandboxServiceURL {
-	return "http://judge_sandbox:5050"
+// SandboxClientConn gives Wire a distinct lifecycle-owned dependency while
+// retaining the shared grpc.ClientConn implementation.
+type SandboxClientConn struct {
+	*googlegrpc.ClientConn
 }
 
-func ProvideGoJudgeClient(url SandboxServiceURL, logger *zap.Logger) *execute.GoJudgeClient {
-	return execute.NewGoJudgeClient(string(url), logger)
+func ProvideSandboxGRPCAddress() SandboxGRPCAddress {
+	return "judge_sandbox:5051"
+}
+
+func ProvideSandboxClientConn(address SandboxGRPCAddress) (*SandboxClientConn, error) {
+	conn, err := sharedgrpc.NewClientConn(string(address), sharedgrpc.WithInsecureTransport())
+	if err != nil {
+		return nil, fmt.Errorf("create go-judge sandbox gRPC connection: %w", err)
+	}
+	return &SandboxClientConn{ClientConn: conn}, nil
+}
+
+func ProvideSandboxExecutorClient(conn *SandboxClientConn) judgepb.ExecutorClient {
+	return judgepb.NewExecutorClient(conn.ClientConn)
+}
+
+func ProvideGoJudgeClient(client judgepb.ExecutorClient, logger *zap.Logger) *execute.GoJudgeClient {
+	return execute.NewGoJudgeClient(client, logger)
 }
