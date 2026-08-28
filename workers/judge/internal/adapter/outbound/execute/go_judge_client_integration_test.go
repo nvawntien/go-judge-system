@@ -205,6 +205,31 @@ int main() { long long a, b; cin >> a >> b; cout << a + b << '\n'; }`
 	if !found || newFileID == "" || newFileID == fileID {
 		t.Fatalf("repopulated testcase FileID = %q/%t, want new non-empty FileID distinct from %q", newFileID, found, fileID)
 	}
+
+	// Submission-scoped executable cleanup must remove only the compile output;
+	// the independently owned testcase cache entry remains available.
+	beforeExecutableCleanup, err := sandboxClient.FileList(ctx, &emptypb.Empty{})
+	if err != nil {
+		t.Fatalf("FileList before executable cleanup: %v", err)
+	}
+	if _, found := beforeExecutableCleanup.GetFileIDs()[executableFileID]; !found {
+		t.Fatal("compiled executable FileID was absent before explicit cleanup")
+	}
+	restartedWorker.cleanupExecutableFile(executableFileID)
+	afterExecutableCleanup, err := sandboxClient.FileList(ctx, &emptypb.Empty{})
+	if err != nil {
+		t.Fatalf("FileList after executable cleanup: %v", err)
+	}
+	if _, found := afterExecutableCleanup.GetFileIDs()[executableFileID]; found {
+		t.Fatal("compiled executable FileID remained after cleanup")
+	}
+	if _, found := afterExecutableCleanup.GetFileIDs()[newFileID]; !found {
+		t.Fatal("executable cleanup removed the testcase-cache FileID")
+	}
+	cachedInput, err := sandboxClient.FileGet(ctx, &judgepb.FileID{FileID: newFileID})
+	if err != nil || string(cachedInput.GetContent()) != testCases[0].Stdin {
+		t.Fatalf("testcase-cache FileID after executable cleanup = %q/%v", string(cachedInput.GetContent()), err)
+	}
 }
 
 func countSandboxTestcaseCacheEntries(list *judgepb.FileListType) int {

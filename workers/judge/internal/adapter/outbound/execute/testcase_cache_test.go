@@ -578,14 +578,9 @@ func TestSandboxTestcaseCacheConcurrentPinnedUseAndCleanup(t *testing.T) {
 func TestGoJudgeClientPinsCachedInputUntilBatchExecReturns(t *testing.T) {
 	runStarted := make(chan struct{})
 	allowRunReturn := make(chan struct{})
-	var deletes atomic.Int32
 	rpc := &fakeExecutorRPC{
 		fileList: emptyFileList,
 		fileAdd:  sequentialFileAdd(),
-		fileDelete: func(context.Context, *judgepb.FileID) (*emptypb.Empty, error) {
-			deletes.Add(1)
-			return &emptypb.Empty{}, nil
-		},
 		handler: func(_ context.Context, request *judgepb.Request) (*judgepb.Response, error) {
 			if isCompileRequest(request) {
 				return compileAccepted("exe"), nil
@@ -610,16 +605,19 @@ func TestGoJudgeClientPinsCachedInputUntilBatchExecReturns(t *testing.T) {
 	}()
 	<-runStarted
 	client.testcaseCache.cleanup(context.Background())
-	if got := deletes.Load(); got != 0 {
-		t.Fatalf("cleanup deleted testcase while Exec was active: %d", got)
+	if got := rpc.deletedFileIDs(); len(got) != 0 {
+		t.Fatalf("cleanup deleted a file while Exec was active: %v", got)
 	}
 	close(allowRunReturn)
 	if err := <-done; err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
+	if got := rpc.deletedFileIDs(); fmt.Sprint(got) != "[exe]" {
+		t.Fatalf("post-execution cleanup = %v, want only the submission executable", got)
+	}
 	client.testcaseCache.cleanup(context.Background())
-	if got := deletes.Load(); got != 1 {
-		t.Fatalf("cleanup after Exec returned deleted %d files, want one", got)
+	if got := rpc.deletedFileIDs(); len(got) != 2 || got[0] != "exe" || got[1] == "exe" {
+		t.Fatalf("cleanup after Exec returned deleted %v, want executable then testcase cache file", got)
 	}
 }
 

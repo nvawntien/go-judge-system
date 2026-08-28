@@ -22,6 +22,7 @@ const (
 	expectedOutputHeadroomBytes       = 64 * 1024
 	minCompileLimitMS           int64 = 30_000
 	sandboxRPCTimeout                 = 120 * time.Second
+	executableCleanupRPCTimeout       = 5 * time.Second
 )
 
 // executorRPC is deliberately limited to the unary operation used by the
@@ -84,6 +85,11 @@ func (c *GoJudgeClient) Execute(ctx context.Context, req outbound.ExecutionReque
 			return compileResult, nil
 		}
 		exeFileID = fileID
+		// CopyOutCached creates a sandbox-owned executable that is only valid
+		// for this submission. Keep it through every testcase batch, then
+		// release it on every terminal path below. This is deliberately
+		// separate from testcase-cache lifecycle management.
+		defer c.cleanupExecutableFile(exeFileID)
 	}
 
 	result := &outbound.ExecutionResult{
@@ -143,6 +149,24 @@ func (c *GoJudgeClient) Execute(ctx context.Context, req outbound.ExecutionReque
 	}
 
 	return result, nil
+}
+
+// cleanupExecutableFile is best-effort housekeeping for a submission-scoped
+// CopyOutCached executable. It intentionally uses a small independent context:
+// the job context may already be canceled when a batch fails, but cleanup must
+// still have one bounded chance to release the sandbox file. A deletion failure
+// must never replace the execution result or trigger a retry.
+func (c *GoJudgeClient) cleanupExecutableFile(fileID string) {
+	if fileID == "" || c == nil || c.client == nil {
+		return
+	}
+	rpcCtx, cancel := context.WithTimeout(context.Background(), executableCleanupRPCTimeout)
+	defer cancel()
+	if _, err := c.client.FileDelete(rpcCtx, &judgepb.FileID{FileID: fileID}); err != nil {
+		if c.logger != nil {
+			c.logger.Warn("sandbox executable cleanup failed", zap.String("operation", "executable_cleanup"), zap.String("transport", "grpc"), zap.Error(err))
+		}
+	}
 }
 
 func (c *GoJudgeClient) compile(

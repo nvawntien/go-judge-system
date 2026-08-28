@@ -27,6 +27,7 @@ type fakeExecutorRPC struct {
 	fileAdd    func(context.Context, *judgepb.FileContent) (*judgepb.FileID, error)
 	fileList   func(context.Context, *emptypb.Empty) (*judgepb.FileListType, error)
 	fileDelete func(context.Context, *judgepb.FileID) (*emptypb.Empty, error)
+	deleted    []string
 }
 
 type unaryExecutorServer struct {
@@ -67,10 +68,19 @@ func (f *fakeExecutorRPC) FileList(ctx context.Context, empty *emptypb.Empty, _ 
 }
 
 func (f *fakeExecutorRPC) FileDelete(ctx context.Context, fileID *judgepb.FileID, _ ...grpc.CallOption) (*emptypb.Empty, error) {
+	f.mu.Lock()
+	f.deleted = append(f.deleted, fileID.GetFileID())
+	f.mu.Unlock()
 	if f.fileDelete == nil {
 		return &emptypb.Empty{}, nil
 	}
 	return f.fileDelete(ctx, fileID)
+}
+
+func (f *fakeExecutorRPC) deletedFileIDs() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.deleted...)
 }
 
 func TestGoJudgeClientCompileAndRunRequestsUseProtobufSemantics(t *testing.T) {
@@ -247,6 +257,186 @@ func TestGoJudgeClientNonEarlyStopPreservesFiftyCommandBatch(t *testing.T) {
 				t.Fatalf("testcase count = %d, want %d", len(result.TestCases), tt.count)
 			}
 		})
+	}
+}
+
+func TestGoJudgeClientDeletesSubmissionExecutableAfterFinalBatch(t *testing.T) {
+	var events []string
+	rpc := &fakeExecutorRPC{handler: func(_ context.Context, req *judgepb.Request) (*judgepb.Response, error) {
+		if isCompileRequest(req) {
+			events = append(events, "compile")
+			return compileAccepted("submission-exe"), nil
+		}
+		events = append(events, fmt.Sprintf("run-%d", len(events)))
+		return acceptedForRequest(req), nil
+	}, fileDelete: func(_ context.Context, fileID *judgepb.FileID) (*emptypb.Empty, error) {
+		events = append(events, "delete-"+fileID.GetFileID())
+		return &emptypb.Empty{}, nil
+	}}
+
+	result, err := NewGoJudgeClient(rpc, zap.NewNop()).Execute(context.Background(), outbound.ExecutionRequest{
+		Language: "CPP", SourceCode: "int main(){}", StopOnFirstFailure: true, TestCases: officialTestCases(5),
+	})
+	if err != nil || result.Status != "ACCEPTED" {
+		t.Fatalf("Execute() result/error = %#v/%v", result, err)
+	}
+	if got, want := fmt.Sprint(events), "[compile run-1 run-2 delete-submission-exe]"; got != want {
+		t.Fatalf("operation order = %s, want %s", got, want)
+	}
+	if got := rpc.deletedFileIDs(); fmt.Sprint(got) != "[submission-exe]" {
+		t.Fatalf("deleted FileIDs = %v, want executable exactly once", got)
+	}
+}
+
+func TestGoJudgeClientDeletesExecutableAfterEarlyStopAndExecutionError(t *testing.T) {
+	t.Run("early stop", func(t *testing.T) {
+		var runs int
+		rpc := &fakeExecutorRPC{handler: func(_ context.Context, req *judgepb.Request) (*judgepb.Response, error) {
+			if isCompileRequest(req) {
+				return compileAccepted("early-stop-exe"), nil
+			}
+			runs++
+			response := acceptedForRequest(req)
+			response.Results[0].Files["stdout"] = []byte("wrong\n")
+			return response, nil
+		}}
+		result, err := NewGoJudgeClient(rpc, zap.NewNop()).Execute(context.Background(), outbound.ExecutionRequest{
+			Language: "CPP", SourceCode: "int main(){}", StopOnFirstFailure: true, TestCases: officialTestCases(8),
+		})
+		if err != nil || result.Status != "WRONG_ANSWER" || runs != 1 {
+			t.Fatalf("result/error/runs = %#v/%v/%d", result, err, runs)
+		}
+		if got := rpc.deletedFileIDs(); fmt.Sprint(got) != "[early-stop-exe]" {
+			t.Fatalf("deleted FileIDs = %v, want early-stop executable exactly once", got)
+		}
+	})
+
+	t.Run("execution error", func(t *testing.T) {
+		rpc := &fakeExecutorRPC{handler: func(_ context.Context, req *judgepb.Request) (*judgepb.Response, error) {
+			if isCompileRequest(req) {
+				return compileAccepted("error-exe"), nil
+			}
+			return nil, errors.New("sandbox unavailable")
+		}}
+		_, err := NewGoJudgeClient(rpc, zap.NewNop()).Execute(context.Background(), outbound.ExecutionRequest{
+			Language: "CPP", SourceCode: "int main(){}", TestCases: officialTestCases(1),
+		})
+		if err == nil {
+			t.Fatal("Execute() error = nil, want execution failure")
+		}
+		if got := rpc.deletedFileIDs(); fmt.Sprint(got) != "[error-exe]" {
+			t.Fatalf("deleted FileIDs = %v, want error executable exactly once", got)
+		}
+	})
+}
+
+func TestGoJudgeClientDeletesExecutableAfterTerminalSandboxVerdicts(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		status judgepb.Response_Result_StatusType
+		want   string
+	}{
+		{name: "time limit", status: judgepb.Response_Result_TimeLimitExceeded, want: "TIME_LIMIT_EXCEEDED"},
+		{name: "memory limit", status: judgepb.Response_Result_MemoryLimitExceeded, want: "MEMORY_LIMIT_EXCEEDED"},
+		{name: "output limit", status: judgepb.Response_Result_OutputLimitExceeded, want: "OUTPUT_LIMIT_EXCEEDED"},
+		{name: "runtime error", status: judgepb.Response_Result_NonZeroExitStatus, want: "RUNTIME_ERROR"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			executableID := "terminal-" + strings.ReplaceAll(tt.name, " ", "-")
+			rpc := &fakeExecutorRPC{handler: func(_ context.Context, req *judgepb.Request) (*judgepb.Response, error) {
+				if isCompileRequest(req) {
+					return compileAccepted(executableID), nil
+				}
+				return &judgepb.Response{Results: []*judgepb.Response_Result{{Status: tt.status}}}, nil
+			}}
+			result, err := NewGoJudgeClient(rpc, zap.NewNop()).Execute(context.Background(), outbound.ExecutionRequest{
+				Language: "CPP", SourceCode: "int main(){}", StopOnFirstFailure: true, TestCases: officialTestCases(1),
+			})
+			if err != nil || result.Status != tt.want {
+				t.Fatalf("result/error = %#v/%v, want %s", result, err, tt.want)
+			}
+			if got := rpc.deletedFileIDs(); fmt.Sprint(got) != fmt.Sprintf("[%s]", executableID) {
+				t.Fatalf("deleted FileIDs = %v, want executable exactly once", got)
+			}
+		})
+	}
+}
+
+func TestGoJudgeClientExecutableCleanupSurvivesCancellationAndDeleteFailure(t *testing.T) {
+	t.Run("cancellation uses independent bounded cleanup context", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		cleanupContextWasLive := false
+		rpc := &fakeExecutorRPC{handler: func(_ context.Context, req *judgepb.Request) (*judgepb.Response, error) {
+			if isCompileRequest(req) {
+				return compileAccepted("cancelled-exe"), nil
+			}
+			cancel()
+			return nil, context.Canceled
+		}, fileDelete: func(cleanupCtx context.Context, _ *judgepb.FileID) (*emptypb.Empty, error) {
+			cleanupContextWasLive = cleanupCtx.Err() == nil
+			deadline, hasDeadline := cleanupCtx.Deadline()
+			if !hasDeadline || time.Until(deadline) > executableCleanupRPCTimeout || time.Until(deadline) <= 0 {
+				t.Fatalf("cleanup deadline = %v/%t, want bounded live context", deadline, hasDeadline)
+			}
+			return &emptypb.Empty{}, nil
+		}}
+		_, err := NewGoJudgeClient(rpc, zap.NewNop()).Execute(ctx, outbound.ExecutionRequest{
+			Language: "CPP", SourceCode: "int main(){}", TestCases: officialTestCases(1),
+		})
+		if !errors.Is(err, context.Canceled) || !cleanupContextWasLive {
+			t.Fatalf("Execute() error/cleanup context = %v/%t", err, cleanupContextWasLive)
+		}
+		if got := rpc.deletedFileIDs(); fmt.Sprint(got) != "[cancelled-exe]" {
+			t.Fatalf("deleted FileIDs = %v, want cancelled executable exactly once", got)
+		}
+	})
+
+	t.Run("delete failure preserves valid verdict", func(t *testing.T) {
+		rpc := &fakeExecutorRPC{handler: func(_ context.Context, req *judgepb.Request) (*judgepb.Response, error) {
+			if isCompileRequest(req) {
+				return compileAccepted("delete-failure-exe"), nil
+			}
+			return acceptedForRequest(req), nil
+		}, fileDelete: func(context.Context, *judgepb.FileID) (*emptypb.Empty, error) {
+			return nil, errors.New("delete unavailable")
+		}}
+		result, err := NewGoJudgeClient(rpc, zap.NewNop()).Execute(context.Background(), outbound.ExecutionRequest{
+			Language: "CPP", SourceCode: "int main(){}", TestCases: officialTestCases(1),
+		})
+		if err != nil || result.Status != "ACCEPTED" {
+			t.Fatalf("delete failure changed result/error = %#v/%v", result, err)
+		}
+		if got := rpc.deletedFileIDs(); fmt.Sprint(got) != "[delete-failure-exe]" {
+			t.Fatalf("deleted FileIDs = %v, want one best-effort cleanup", got)
+		}
+	})
+}
+
+func TestGoJudgeClientExecutableCleanupDoesNotDeleteTestcaseCacheFiles(t *testing.T) {
+	identity := testDatasetIdentity(42, 1, "a")
+	testCase := cachedOfficialTestCase(1, "case", "input\n", "ok\n")
+	rpc := &fakeExecutorRPC{
+		fileList: emptyFileList,
+		fileAdd: func(context.Context, *judgepb.FileContent) (*judgepb.FileID, error) {
+			return &judgepb.FileID{FileID: "testcase-cache-file"}, nil
+		},
+		handler: func(_ context.Context, req *judgepb.Request) (*judgepb.Response, error) {
+			if isCompileRequest(req) {
+				return compileAccepted("submission-exe"), nil
+			}
+			assertCachedOfficialStdin(t, req, "testcase-cache-file")
+			return acceptedResults("ok\n"), nil
+		},
+	}
+	result, err := NewGoJudgeClient(rpc, zap.NewNop(), enabledTestcaseCacheConfig()).Execute(context.Background(), outbound.ExecutionRequest{
+		Language: "CPP", SourceCode: "int main(){}", StopOnFirstFailure: true, TestcaseDataset: identity, TestCases: []outbound.ExecutionTestCase{testCase},
+	})
+	if err != nil || result.Status != "ACCEPTED" {
+		t.Fatalf("Execute() result/error = %#v/%v", result, err)
+	}
+	if got := rpc.deletedFileIDs(); fmt.Sprint(got) != "[submission-exe]" {
+		t.Fatalf("deleted FileIDs = %v, testcase cache FileID must remain untouched", got)
 	}
 }
 
