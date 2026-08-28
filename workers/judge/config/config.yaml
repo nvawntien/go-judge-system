@@ -27,6 +27,16 @@ judging:
   go_judge_url: ""
   max_concurrent_jobs: 4
 
+# Deliberately disabled until the Judge node supplies an explicit budget based
+# on its actual sandbox /dev/shm capacity and official testcase distribution.
+# When enabled, all three bounds below are required by the Worker.
+testcase_cache:
+  enabled: false
+  max_bytes: 0
+  max_entries: 0
+  idle_ttl: 0s
+  cleanup_interval: 0s
+
 run_code:
   max_captured_output_bytes: 1048576
   default_output_limit_bytes: 1048576

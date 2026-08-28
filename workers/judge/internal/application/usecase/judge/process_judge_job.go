@@ -55,6 +55,11 @@ func (u *ProcessJudgeJobUseCase) Execute(ctx context.Context, jobMsg *judge.JobM
 		SourceCode:         jobMsg.SourceCode,
 		TestCases:          bundle.TestCases,
 		StopOnFirstFailure: true,
+		TestcaseDataset: &outbound.TestcaseDatasetIdentity{
+			ProblemID:       metadata.ProblemID,
+			Version:         bundle.Version,
+			DatasetChecksum: bundle.DatasetChecksum,
+		},
 	})
 	if err != nil {
 		return u.handleProcessingError(ctx, jobMsg, "execute submission", err)

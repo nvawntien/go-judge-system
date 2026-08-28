@@ -37,7 +37,11 @@ func InitializeApp(cfg *config.Config) (*container.App, func(), error) {
 		return nil, nil, err
 	}
 	executorClient := container.ProvideSandboxExecutorClient(sandboxClientConn)
-	goJudgeClient := container.ProvideGoJudgeClient(executorClient, zapLogger)
+	testcaseCacheConfig, err := container.ProvideTestcaseCacheConfig(cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	goJudgeClient := container.ProvideGoJudgeClient(executorClient, zapLogger, testcaseCacheConfig)
 	syncProducer, err := kafka.NewSyncProducer(kafkaConfig, zapLogger)
 	if err != nil {
 		return nil, nil, err

@@ -171,7 +171,7 @@ func transportABRunGRPC(
 		end := min(start+officialBatchSize, len(testCases))
 		batch := testCases[start:end]
 		batchStarted := time.Now()
-		results, err := client.runBatch(ctx, "CPP", source, langCfg, limits, true, executableFileID, batch, batchIndexBase*10+batchIndex)
+		results, err := client.runBatch(ctx, "CPP", source, langCfg, limits, true, executableFileID, nil, batch, batchIndexBase*10+batchIndex)
 		record.BatchWall = append(record.BatchWall, time.Since(batchStarted))
 		record.BatchCommandCounts = append(record.BatchCommandCounts, len(batch))
 		record.BatchResultCounts = append(record.BatchResultCounts, len(results))

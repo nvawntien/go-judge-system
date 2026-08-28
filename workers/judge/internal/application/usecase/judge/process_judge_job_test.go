@@ -102,6 +102,9 @@ func TestProcessJudgeJobUsesOfficialLoaderSharedExecutorAndSanitizesResult(t *te
 	if !executor.req.StopOnFirstFailure {
 		t.Fatal("StopOnFirstFailure = false, want true for submission")
 	}
+	if executor.req.TestcaseDataset == nil || executor.req.TestcaseDataset.ProblemID != 42 || executor.req.TestcaseDataset.Version != 1 || executor.req.TestcaseDataset.DatasetChecksum != "checksum-test" {
+		t.Fatalf("testcase dataset identity = %#v, want authoritative loader provenance", executor.req.TestcaseDataset)
+	}
 	if publisher.result.TestCases[0].Input != nil || publisher.result.TestCases[0].ExpectedOutput != nil {
 		t.Fatalf("hidden testcase data leaked in result: %#v", publisher.result.TestCases[0])
 	}

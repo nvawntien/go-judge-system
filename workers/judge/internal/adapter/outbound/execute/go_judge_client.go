@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"go-judge-system/pkg/config"
 	"go-judge-system/pkg/gojudge"
 	"go-judge-system/workers/judge/internal/application/port/outbound"
 	workerdomain "go-judge-system/workers/judge/internal/domain"
@@ -27,15 +28,30 @@ const (
 // Worker. The production implementation is judgepb.ExecutorClient.
 type executorRPC interface {
 	Exec(context.Context, *judgepb.Request, ...grpc.CallOption) (*judgepb.Response, error)
+	sandboxFileRPC
 }
 
 type GoJudgeClient struct {
-	client executorRPC
-	logger *zap.Logger
+	client        executorRPC
+	logger        *zap.Logger
+	testcaseCache *sandboxTestcaseCache
 }
 
-func NewGoJudgeClient(client executorRPC, logger *zap.Logger) *GoJudgeClient {
-	return &GoJudgeClient{client: client, logger: logger}
+func NewGoJudgeClient(client executorRPC, logger *zap.Logger, testcaseCacheConfigs ...config.TestcaseCacheConfig) *GoJudgeClient {
+	testcaseCacheCfg := config.TestcaseCacheConfig{}
+	if len(testcaseCacheConfigs) > 0 {
+		testcaseCacheCfg = testcaseCacheConfigs[0]
+	}
+	cache, err := newConfiguredSandboxTestcaseCache(client, logger, testcaseCacheCfg)
+	if err != nil {
+		// Production construction validates configuration before this point. Keep
+		// direct callers safe: a disabled cache preserves MemoryFile judging.
+		if logger != nil {
+			logger.Warn("sandbox testcase cache disabled because its configuration is invalid", zap.Error(err))
+		}
+		cache, _ = newConfiguredSandboxTestcaseCache(client, logger, config.TestcaseCacheConfig{})
+	}
+	return &GoJudgeClient{client: client, logger: logger, testcaseCache: cache}
 }
 
 func (c *GoJudgeClient) Execute(ctx context.Context, req outbound.ExecutionRequest) (*outbound.ExecutionResult, error) {
@@ -89,7 +105,7 @@ func (c *GoJudgeClient) Execute(ctx context.Context, req outbound.ExecutionReque
 		}
 
 		batch := req.TestCases[start:end]
-		runResp, err := c.runBatch(ctx, req.Language, req.SourceCode, langCfg, limits, hasCompile, exeFileID, batch, batchIndex)
+		runResp, err := c.runBatch(ctx, req.Language, req.SourceCode, langCfg, limits, hasCompile, exeFileID, req.TestcaseDataset, batch, batchIndex)
 		if err != nil {
 			return nil, err
 		}
@@ -199,17 +215,63 @@ func (c *GoJudgeClient) runBatch(
 	limits outbound.ExecutionLimits,
 	hasCompile bool,
 	exeFileID string,
+	testcaseDataset *outbound.TestcaseDatasetIdentity,
 	testCases []outbound.ExecutionTestCase,
 	batchIndex int,
 ) ([]*judgepb.Response_Result, error) {
+	runReq, bindings, err := c.newRunBatchRequest(ctx, language, sourceCode, langCfg, limits, hasCompile, exeFileID, testcaseDataset, testCases)
+	if err != nil {
+		return nil, err
+	}
+	runResp, err := c.exec(ctx, "run_batch", len(testCases), batchIndex, runReq)
+	c.testcaseCache.release(bindings)
+	if err != nil {
+		return nil, err
+	}
+	if hasFileErrors(runResp) && c.testcaseCache.invalidateMissing(ctx, bindings) {
+		c.logger.Debug("sandbox testcase cache stale FileID recovered; retrying batch once", zap.String("operation", "testcase_cache"), zap.String("event", "stale"), zap.Int("batch_index", batchIndex))
+		var retryBindings []testcaseCacheBinding
+		runReq, retryBindings, err = c.newRunBatchRequest(ctx, language, sourceCode, langCfg, limits, hasCompile, exeFileID, testcaseDataset, testCases)
+		if err != nil {
+			return nil, err
+		}
+		runResp, err = c.exec(ctx, "run_batch", len(testCases), batchIndex, runReq)
+		c.testcaseCache.release(retryBindings)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return runResp.GetResults(), nil
+}
+
+func (c *GoJudgeClient) newRunBatchRequest(
+	ctx context.Context,
+	language string,
+	sourceCode string,
+	langCfg *gojudge.LanguageConfig,
+	limits outbound.ExecutionLimits,
+	hasCompile bool,
+	exeFileID string,
+	testcaseDataset *outbound.TestcaseDatasetIdentity,
+	testCases []outbound.ExecutionTestCase,
+) (*judgepb.Request, []testcaseCacheBinding, error) {
 	runReq := &judgepb.Request{Cmd: make([]*judgepb.Request_CmdType, 0, len(testCases))}
+	bindings := make([]testcaseCacheBinding, 0, len(testCases))
 
 	for _, testCase := range testCases {
+		stdin := memoryFile([]byte(testCase.Stdin))
+		if binding, cached, err := c.testcaseCache.getOrAdd(ctx, testcaseDataset, testCase); err != nil {
+			c.testcaseCache.release(bindings)
+			return nil, nil, err
+		} else if cached {
+			stdin = cachedFile(binding.fileID)
+			bindings = append(bindings, binding)
+		}
 		runCmd := &judgepb.Request_CmdType{
 			Args: langCfg.Run.Command,
 			Env:  langCfg.Run.Env,
 			Files: []*judgepb.Request_File{
-				memoryFile([]byte(testCase.Stdin)),
+				stdin,
 				pipeCollector("stdout", limits.OutputLimitBytes),
 				pipeCollector("stderr", limits.OutputLimitBytes),
 			},
@@ -230,12 +292,16 @@ func (c *GoJudgeClient) runBatch(
 		}
 		runReq.Cmd = append(runReq.Cmd, runCmd)
 	}
+	return runReq, bindings, nil
+}
 
-	runResp, err := c.exec(ctx, "run_batch", len(testCases), batchIndex, runReq)
-	if err != nil {
-		return nil, err
+func hasFileErrors(response *judgepb.Response) bool {
+	for _, result := range response.GetResults() {
+		if result != nil && len(result.GetFileError()) > 0 {
+			return true
+		}
 	}
-	return runResp.GetResults(), nil
+	return false
 }
 
 func (c *GoJudgeClient) exec(

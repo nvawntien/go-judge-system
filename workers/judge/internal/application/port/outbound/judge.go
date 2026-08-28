@@ -26,6 +26,15 @@ type OfficialTestCaseBundle struct {
 	DatasetChecksum string
 }
 
+// TestcaseDatasetIdentity is authoritative Worker-side dataset provenance for
+// sandbox testcase-input cache entries. It deliberately contains no expected
+// output and no sandbox-specific FileID.
+type TestcaseDatasetIdentity struct {
+	ProblemID       int64
+	Version         int
+	DatasetChecksum string
+}
+
 type ExecutionTestCase struct {
 	Index          int
 	ID             string
@@ -40,6 +49,7 @@ type ExecutionRequest struct {
 	TestCases          []ExecutionTestCase
 	Limits             ExecutionLimits
 	StopOnFirstFailure bool
+	TestcaseDataset    *TestcaseDatasetIdentity
 }
 
 // ExecutionResult represents the result of code execution

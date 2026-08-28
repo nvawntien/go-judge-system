@@ -17,12 +17,16 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 type fakeExecutorRPC struct {
-	mu      sync.Mutex
-	calls   []*judgepb.Request
-	handler func(context.Context, *judgepb.Request) (*judgepb.Response, error)
+	mu         sync.Mutex
+	calls      []*judgepb.Request
+	handler    func(context.Context, *judgepb.Request) (*judgepb.Response, error)
+	fileAdd    func(context.Context, *judgepb.FileContent) (*judgepb.FileID, error)
+	fileList   func(context.Context, *emptypb.Empty) (*judgepb.FileListType, error)
+	fileDelete func(context.Context, *judgepb.FileID) (*emptypb.Empty, error)
 }
 
 type unaryExecutorServer struct {
@@ -46,6 +50,27 @@ func (f *fakeExecutorRPC) requests() []*judgepb.Request {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]*judgepb.Request(nil), f.calls...)
+}
+
+func (f *fakeExecutorRPC) FileAdd(ctx context.Context, file *judgepb.FileContent, _ ...grpc.CallOption) (*judgepb.FileID, error) {
+	if f.fileAdd == nil {
+		return nil, errors.New("unexpected FileAdd")
+	}
+	return f.fileAdd(ctx, file)
+}
+
+func (f *fakeExecutorRPC) FileList(ctx context.Context, empty *emptypb.Empty, _ ...grpc.CallOption) (*judgepb.FileListType, error) {
+	if f.fileList == nil {
+		return &judgepb.FileListType{}, nil
+	}
+	return f.fileList(ctx, empty)
+}
+
+func (f *fakeExecutorRPC) FileDelete(ctx context.Context, fileID *judgepb.FileID, _ ...grpc.CallOption) (*emptypb.Empty, error) {
+	if f.fileDelete == nil {
+		return &emptypb.Empty{}, nil
+	}
+	return f.fileDelete(ctx, fileID)
 }
 
 func TestGoJudgeClientCompileAndRunRequestsUseProtobufSemantics(t *testing.T) {
