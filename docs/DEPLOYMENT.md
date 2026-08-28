@@ -255,6 +255,63 @@ runtime configuration are external and node-owned:
 /etc/astracode/judge/config.yaml
 ```
 
+### Judge gRPC and testcase-cache rollout contract
+
+The Judge Worker now calls the sandbox through native gRPC at the fixed private
+Compose address `judge_sandbox:5051`. Before deploying this Worker release,
+the node-owned sandbox Compose must set both of these non-secret environment
+values:
+
+```yaml
+ES_ENABLE_GRPC: "true"
+ES_GRPC_ADDR: "0.0.0.0:5051"
+```
+
+The existing production sandbox has gRPC disabled. Changing these values only
+in the node-owned Compose does not change an already-running process: the
+deployment must recreate `go-judge` (and `judge-worker`) so the sandbox starts
+with the gRPC listener enabled. `scripts/deploy-judge-node.sh` already uses
+`docker compose up -d --force-recreate` for exactly those two services.
+
+The initial node-sized testcase-cache policy belongs in the node-owned Worker
+configuration at `/etc/astracode/judge/config.yaml`, not in a repository
+default or environment file:
+
+```yaml
+testcase_cache:
+  enabled: true
+  max_bytes: 25165824       # 24 MiB
+  max_entries: 256
+  idle_ttl: 10m
+  cleanup_interval: 30s
+```
+
+This budget is derived from the current 64 MiB sandbox `/dev/shm`: the cache
+may use at most 24 MiB, leaving roughly 40 MiB for submission-scoped compiled
+executables, executor filesystem overhead, transient work, and safety headroom.
+The byte limit is authoritative; the entry limit is a secondary guard. The
+cache is derived and ephemeral, and a cache failure falls back to sending the
+testcase input as a `MemoryFile` without changing judging correctness.
+
+Do not set global `ES_FILE_TIMEOUT` for this policy. Executorserver's file
+store also holds `CopyOutCached` compiled executable FileIDs. The Worker owns
+their short lifecycle and deletes each executable after its submission's final
+batch; testcase-cache eviction deletes only its own `astracode-tc-v1-*` files.
+
+After recreation, verify the running sandbox has gRPC enabled without exposing
+the listener publicly:
+
+```bash
+docker inspect judge_sandbox --format '{{range .Config.Env}}{{println .}}{{end}}' \
+  | grep -E '^ES_(ENABLE_GRPC|GRPC_ADDR)='
+
+docker exec judge_sandbox sh -ec \
+  "awk 'NR > 1 { split(\$2, address, \":\"); if (toupper(address[2]) == \"13BB\" && \$4 == \"0A\") found = 1 } END { exit !found }' /proc/net/tcp /proc/net/tcp6"
+```
+
+The expected listener is TCP port `5051` (`0x13BB`) and the environment must
+show `ES_ENABLE_GRPC=true` and `ES_GRPC_ADDR=0.0.0.0:5051`.
+
 `scripts/deploy-judge-node.sh` does not edit either file. For each release it
 creates a secure temporary Compose override containing only these two image
 fields:

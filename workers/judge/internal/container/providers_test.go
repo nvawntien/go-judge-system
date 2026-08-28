@@ -16,6 +16,13 @@ func TestProvideTestcaseCacheConfig(t *testing.T) {
 		t.Fatalf("valid testcase cache config = %#v/%v", got, err)
 	}
 
+	productionInitial := config.TestcaseCacheConfig{
+		Enabled: true, MaxBytes: 25_165_824, MaxEntries: 256, IdleTTL: 10 * time.Minute, CleanupInterval: 30 * time.Second,
+	}
+	if got, err := ProvideTestcaseCacheConfig(&config.Config{TestcaseCache: productionInitial}); err != nil || got != productionInitial {
+		t.Fatalf("initial production testcase cache config = %#v/%v", got, err)
+	}
+
 	for _, tt := range []struct {
 		name string
 		cfg  config.TestcaseCacheConfig
