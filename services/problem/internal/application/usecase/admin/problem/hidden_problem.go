@@ -14,12 +14,19 @@ import (
 
 type hiddenProblemUseCase struct {
 	problemRepo outbound.ProblemRepository
+	cache       outbound.SubmissionProblemCache
 }
 
 func NewHiddenProblemUseCase(problemRepo outbound.ProblemRepository) inbound.HiddenProblemUseCase {
-	return &hiddenProblemUseCase{
-		problemRepo: problemRepo,
-	}
+	return newHiddenProblemUseCase(problemRepo, nil)
+}
+
+func NewCachedHiddenProblemUseCase(problemRepo outbound.ProblemRepository, cache outbound.SubmissionProblemCache) inbound.HiddenProblemUseCase {
+	return newHiddenProblemUseCase(problemRepo, cache)
+}
+
+func newHiddenProblemUseCase(problemRepo outbound.ProblemRepository, cache outbound.SubmissionProblemCache) inbound.HiddenProblemUseCase {
+	return &hiddenProblemUseCase{problemRepo: problemRepo, cache: cache}
 }
 
 func (uc *hiddenProblemUseCase) Execute(ctx context.Context, claims auth.Claims, params dto.ProblemIDRequest) (dto.ProblemDetailResponse, error) {
@@ -40,6 +47,7 @@ func (uc *hiddenProblemUseCase) Execute(ctx context.Context, claims auth.Claims,
 	if err := uc.problemRepo.Update(ctx, problem); err != nil {
 		return dto.ProblemDetailResponse{}, domain.ErrInternalServer.Wrap(err)
 	}
+	invalidateSubmissionProblemCache(ctx, uc.cache, problem.ID)
 
 	return dto.ProblemDetailResponse{
 		ProblemResponse: usecase.MapProblemToResponse(problem, true),

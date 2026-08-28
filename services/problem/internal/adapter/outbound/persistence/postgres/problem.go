@@ -149,9 +149,55 @@ func (ProblemDAO) TableName() string { return "problems" }
 
 type problemRepository struct{ db *gorm.DB }
 
+type submissionProblemRepository struct{ db *gorm.DB }
+
 func NewProblemRepository(db *gorm.DB) outbound.ProblemRepository {
 	_ = db.AutoMigrate(&ProblemDAO{})
 	return &problemRepository{db: db}
+}
+
+// NewSubmissionProblemRepository reads only the canonical fields needed by
+// synchronous submission eligibility. It intentionally does not migrate or
+// load tags/statement content.
+func NewSubmissionProblemRepository(db *gorm.DB) outbound.SubmissionProblemRepository {
+	return &submissionProblemRepository{db: db}
+}
+
+func (r *submissionProblemRepository) GetSubmissionProblem(
+	ctx context.Context,
+	id int64,
+) (outbound.SubmissionProblemMetadata, error) {
+	var row struct {
+		ID          int64
+		Title       string
+		TitleSlug   string
+		TimeLimit   float64
+		MemoryLimit int
+		AuthorID    string
+		IsHidden    bool
+	}
+
+	err := r.db.WithContext(ctx).
+		Model(&ProblemDAO{}).
+		Select("id", "title", "title_slug", "time_limit", "memory_limit", "author_id", "is_hidden").
+		Where("id = ?", id).
+		First(&row).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return outbound.SubmissionProblemMetadata{}, domain.ErrProblemNotFound
+		}
+		return outbound.SubmissionProblemMetadata{}, err
+	}
+
+	return outbound.SubmissionProblemMetadata{
+		ID:          row.ID,
+		Title:       row.Title,
+		Slug:        row.TitleSlug,
+		TimeLimit:   row.TimeLimit,
+		MemoryLimit: row.MemoryLimit,
+		AuthorID:    row.AuthorID,
+		IsHidden:    row.IsHidden,
+	}, nil
 }
 
 func (r *problemRepository) Create(ctx context.Context, problem *entity.Problem) error {

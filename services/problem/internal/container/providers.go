@@ -18,6 +18,7 @@ import (
 	admintestcasehandler "go-judge-system/services/problem/internal/adapter/inbound/http/handler/admin/testcase"
 	userproblemhandler "go-judge-system/services/problem/internal/adapter/inbound/http/handler/user/problem"
 	usertaghandler "go-judge-system/services/problem/internal/adapter/inbound/http/handler/user/tag"
+	submissionproblemcache "go-judge-system/services/problem/internal/adapter/outbound/cache"
 	"go-judge-system/services/problem/internal/adapter/outbound/persistence/postgres"
 	testcasestorage "go-judge-system/services/problem/internal/adapter/outbound/storage/minio"
 	adminproblemusecase "go-judge-system/services/problem/internal/application/usecase/admin/problem"
@@ -40,8 +41,10 @@ var InfrastructureProviderSet = wire.NewSet(
 
 var OutboundProviderSet = wire.NewSet(
 	postgres.NewProblemRepository,
+	postgres.NewSubmissionProblemRepository,
 	postgres.NewTagRepository,
 	postgres.NewTestCaseRepository,
+	submissionproblemcache.NewSubmissionProblemCache,
 	testcasestorage.NewTestCaseStorage,
 	auth.NewRedisLogoutAllIATStore,
 )
@@ -53,11 +56,11 @@ var MiddlewareProviderSet = wire.NewSet(
 var UseCaseProviderSet = wire.NewSet(
 	adminproblemusecase.NewCreateProblemUseCase,
 	adminproblemusecase.NewListProblemsUseCase,
-	adminproblemusecase.NewUpdateProblemUseCase,
+	adminproblemusecase.NewCachedUpdateProblemUseCase,
 	adminproblemusecase.NewGetProblemUseCase,
-	adminproblemusecase.NewPublishProblemUseCase,
-	adminproblemusecase.NewHiddenProblemUseCase,
-	adminproblemusecase.NewDeleteProblemUseCase,
+	adminproblemusecase.NewCachedPublishProblemUseCase,
+	adminproblemusecase.NewCachedHiddenProblemUseCase,
+	adminproblemusecase.NewCachedDeleteProblemUseCase,
 
 	admintagusecase.NewListTagsUseCase,
 	admintagusecase.NewCreateTagUseCase,
@@ -74,7 +77,7 @@ var UseCaseProviderSet = wire.NewSet(
 	usertagusecase.NewListTagsUseCase,
 
 	workertestcaseusecase.NewGetTestCaseUseCase,
-	grpcproblemusecase.NewGetProblemUseCase,
+	grpcproblemusecase.NewCachedGetProblemUseCase,
 )
 
 var InboundProviderSet = wire.NewSet(

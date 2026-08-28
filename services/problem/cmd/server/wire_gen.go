@@ -25,6 +25,7 @@ import (
 	testcase2 "go-judge-system/services/problem/internal/adapter/inbound/http/handler/admin/testcase"
 	problem2 "go-judge-system/services/problem/internal/adapter/inbound/http/handler/user/problem"
 	tag2 "go-judge-system/services/problem/internal/adapter/inbound/http/handler/user/tag"
+	cache2 "go-judge-system/services/problem/internal/adapter/outbound/cache"
 	"go-judge-system/services/problem/internal/adapter/outbound/persistence/postgres"
 	minio2 "go-judge-system/services/problem/internal/adapter/outbound/storage/minio"
 	problem3 "go-judge-system/services/problem/internal/application/usecase/admin/problem"
@@ -60,16 +61,26 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	createProblemHandler := problem4.NewCreateProblemHandler(createProblemUseCase)
 	adminListProblemsUseCase := problem3.NewListProblemsUseCase(problemRepository)
 	problemListProblemsHandler := problem4.NewListProblemsHandler(adminListProblemsUseCase)
-	updateProblemUseCase := problem3.NewUpdateProblemUseCase(problemRepository, tagRepository)
+	redisConfig := cfg.Redis
+	client, err := cache.ConnectRedis(redisConfig)
+	if err != nil {
+		return nil, err
+	}
+	loggerConfig := cfg.Logger
+	serverConfig := cfg.Server
+	string2 := provideServerMode(serverConfig)
+	zapLogger := logger.NewLogger(loggerConfig, string2)
+	submissionProblemCache := cache2.NewSubmissionProblemCache(client, zapLogger)
+	updateProblemUseCase := problem3.NewCachedUpdateProblemUseCase(problemRepository, tagRepository, submissionProblemCache)
 	updateProblemHandler := problem4.NewUpdateProblemHandler(updateProblemUseCase)
 	testCaseRepository := postgres.NewTestCaseRepository(db)
 	adminGetProblemUseCase := problem3.NewGetProblemUseCase(problemRepository, testCaseRepository)
 	problemGetProblemHandler := problem4.NewGetProblemHandler(adminGetProblemUseCase)
-	publishProblemUseCase := problem3.NewPublishProblemUseCase(problemRepository)
+	publishProblemUseCase := problem3.NewCachedPublishProblemUseCase(problemRepository, submissionProblemCache)
 	publishProblemHandler := problem4.NewPublishProblemHandler(publishProblemUseCase)
-	hiddenProblemUseCase := problem3.NewHiddenProblemUseCase(problemRepository)
+	hiddenProblemUseCase := problem3.NewCachedHiddenProblemUseCase(problemRepository, submissionProblemCache)
 	hiddenProblemHandler := problem4.NewHiddenProblemHandler(hiddenProblemUseCase)
-	deleteProblemUseCase := problem3.NewDeleteProblemUseCase(problemRepository)
+	deleteProblemUseCase := problem3.NewCachedDeleteProblemUseCase(problemRepository, submissionProblemCache)
 	deleteProblemHandler := problem4.NewDeleteProblemHandler(deleteProblemUseCase)
 	adminListTagsUseCase := tag3.NewListTagsUseCase(tagRepository)
 	tagListTagsHandler := tag4.NewListTagsHandler(adminListTagsUseCase)
@@ -82,12 +93,12 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	getTestCaseUseCase := testcase.NewGetTestCaseUseCase(problemRepository, testCaseRepository)
 	getTestCaseHandler := testcase2.NewGetTestCaseHandler(getTestCaseUseCase)
 	minIOConfig := &cfg.MinIO
-	client, err := minio.NewMinioClient(minIOConfig)
+	minioClient, err := minio.NewMinioClient(minIOConfig)
 	if err != nil {
 		return nil, err
 	}
 	configMinIOConfig := cfg.MinIO
-	testCaseStorage, err := minio2.NewTestCaseStorage(client, configMinIOConfig)
+	testCaseStorage, err := minio2.NewTestCaseStorage(minioClient, configMinIOConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -96,23 +107,15 @@ func InitializeApp(cfg *config.Config) (*container.App, error) {
 	deleteTestCaseUseCase := testcase.NewDeleteTestCaseUseCase(problemRepository, testCaseRepository, testCaseStorage)
 	deleteTestCaseHandler := testcase2.NewDeleteTestCaseHandler(deleteTestCaseUseCase)
 	adminHandler := handler.NewAdminHandler(createProblemHandler, problemListProblemsHandler, updateProblemHandler, problemGetProblemHandler, publishProblemHandler, hiddenProblemHandler, deleteProblemHandler, tagListTagsHandler, createTagHandler, updateTagHandler, deleteTagHandler, getTestCaseHandler, uploadTestCaseHandler, deleteTestCaseHandler)
-	redisConfig := cfg.Redis
-	redisClient, err := cache.ConnectRedis(redisConfig)
-	if err != nil {
-		return nil, err
-	}
 	jwtConfig := cfg.JWT
-	logoutAllIATStore := auth.NewRedisLogoutAllIATStore(redisClient, jwtConfig)
+	logoutAllIATStore := auth.NewRedisLogoutAllIATStore(client, jwtConfig)
 	handlerFunc := middleware.NewAuthMiddleware(logoutAllIATStore)
-	loggerConfig := cfg.Logger
-	serverConfig := cfg.Server
-	string2 := provideServerMode(serverConfig)
-	zapLogger := logger.NewLogger(loggerConfig, string2)
 	router := http.NewRouter(userHandler, adminHandler, handlerFunc, zapLogger)
 	workerGetTestCaseUseCase := worker.NewGetTestCaseUseCase(testCaseRepository, testCaseStorage)
 	testcaseGetTestCaseHandler := testcase3.NewGetTestCaseHandler(workerGetTestCaseUseCase)
 	workerHandler := handler2.NewWorkerHandler(testcaseGetTestCaseHandler)
-	inboundGetProblemUseCase := problem5.NewGetProblemUseCase(problemRepository)
+	submissionProblemRepository := postgres.NewSubmissionProblemRepository(db)
+	inboundGetProblemUseCase := problem5.NewCachedGetProblemUseCase(submissionProblemRepository, submissionProblemCache, zapLogger)
 	getProblemHandler2 := problem6.NewGetProblemHandler(inboundGetProblemUseCase)
 	problemHandler := handler2.NewProblemHandler(getProblemHandler2)
 	problemServer := grpc.NewProblemServer(workerHandler, problemHandler)

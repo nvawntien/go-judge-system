@@ -18,13 +18,23 @@ import (
 type updateProblemUseCase struct {
 	problemRepo outbound.ProblemRepository
 	tagRepo     outbound.TagRepository
+	cache       outbound.SubmissionProblemCache
 }
 
 func NewUpdateProblemUseCase(problemRepo outbound.ProblemRepository, tagRepo outbound.TagRepository) inbound.UpdateProblemUseCase {
-	return &updateProblemUseCase{
-		problemRepo: problemRepo,
-		tagRepo:     tagRepo,
-	}
+	return newUpdateProblemUseCase(problemRepo, tagRepo, nil)
+}
+
+func NewCachedUpdateProblemUseCase(
+	problemRepo outbound.ProblemRepository,
+	tagRepo outbound.TagRepository,
+	cache outbound.SubmissionProblemCache,
+) inbound.UpdateProblemUseCase {
+	return newUpdateProblemUseCase(problemRepo, tagRepo, cache)
+}
+
+func newUpdateProblemUseCase(problemRepo outbound.ProblemRepository, tagRepo outbound.TagRepository, cache outbound.SubmissionProblemCache) inbound.UpdateProblemUseCase {
+	return &updateProblemUseCase{problemRepo: problemRepo, tagRepo: tagRepo, cache: cache}
 }
 
 func (uc *updateProblemUseCase) Execute(ctx context.Context, claims auth.Claims, params dto.ProblemIDRequest, req dto.UpdateProblemRequest) (dto.ProblemDetailResponse, error) {
@@ -126,6 +136,7 @@ func (uc *updateProblemUseCase) Execute(ctx context.Context, claims auth.Claims,
 		}
 		return dto.ProblemDetailResponse{}, domain.ErrInternalServer.Wrap(err)
 	}
+	invalidateSubmissionProblemCache(ctx, uc.cache, problem.ID)
 
 	return dto.ProblemDetailResponse{
 		ProblemResponse: usecase.MapProblemToResponse(problem, true),

@@ -14,12 +14,19 @@ import (
 
 type deleteProblemUseCase struct {
 	problemRepo outbound.ProblemRepository
+	cache       outbound.SubmissionProblemCache
 }
 
 func NewDeleteProblemUseCase(problemRepo outbound.ProblemRepository) inbound.DeleteProblemUseCase {
-	return &deleteProblemUseCase{
-		problemRepo: problemRepo,
-	}
+	return newDeleteProblemUseCase(problemRepo, nil)
+}
+
+func NewCachedDeleteProblemUseCase(problemRepo outbound.ProblemRepository, cache outbound.SubmissionProblemCache) inbound.DeleteProblemUseCase {
+	return newDeleteProblemUseCase(problemRepo, cache)
+}
+
+func newDeleteProblemUseCase(problemRepo outbound.ProblemRepository, cache outbound.SubmissionProblemCache) inbound.DeleteProblemUseCase {
+	return &deleteProblemUseCase{problemRepo: problemRepo, cache: cache}
 }
 
 func (uc *deleteProblemUseCase) Execute(ctx context.Context, claims auth.Claims, params dto.ProblemIDRequest) error {
@@ -47,6 +54,7 @@ func (uc *deleteProblemUseCase) Execute(ctx context.Context, claims auth.Claims,
 	if err := uc.problemRepo.Delete(ctx, params.ID); err != nil {
 		return domain.ErrInternalServer.Wrap(err)
 	}
+	invalidateSubmissionProblemCache(ctx, uc.cache, params.ID)
 
 	return nil
 }
