@@ -14,10 +14,19 @@ import (
 
 type publishProblemUseCase struct {
 	problemRepo outbound.ProblemRepository
+	cache       outbound.SubmissionProblemCache
 }
 
 func NewPublishProblemUseCase(problemRepo outbound.ProblemRepository) inbound.PublishProblemUseCase {
-	return &publishProblemUseCase{problemRepo: problemRepo}
+	return newPublishProblemUseCase(problemRepo, nil)
+}
+
+func NewCachedPublishProblemUseCase(problemRepo outbound.ProblemRepository, cache outbound.SubmissionProblemCache) inbound.PublishProblemUseCase {
+	return newPublishProblemUseCase(problemRepo, cache)
+}
+
+func newPublishProblemUseCase(problemRepo outbound.ProblemRepository, cache outbound.SubmissionProblemCache) inbound.PublishProblemUseCase {
+	return &publishProblemUseCase{problemRepo: problemRepo, cache: cache}
 }
 
 func (uc *publishProblemUseCase) Execute(ctx context.Context, claims auth.Claims, params dto.ProblemIDRequest) (dto.ProblemDetailResponse, error) {
@@ -42,6 +51,7 @@ func (uc *publishProblemUseCase) Execute(ctx context.Context, claims auth.Claims
 	if err := uc.problemRepo.Update(ctx, problem); err != nil {
 		return dto.ProblemDetailResponse{}, domain.ErrInternalServer.Wrap(err)
 	}
+	invalidateSubmissionProblemCache(ctx, uc.cache, problem.ID)
 
 	return dto.ProblemDetailResponse{
 		ProblemResponse: usecase.MapProblemToResponse(problem, true),

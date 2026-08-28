@@ -24,7 +24,7 @@ Problem persistence stores statement prose in `description`, `input_format`, and
 
 ## Redis
 
-Redis is configured globally in Compose with AOF and an allkeys-LRU 128 MB policy. The confirmed application use is Auth's `LogoutAllIATStore`, which lets downstream shared auth middleware reject access tokens issued on or before a logout-all timestamp. Auth writes this cutoff for logout-all and before persisting an administrative suspension; it does not clear the cutoff on unsuspension, so prior tokens cannot become valid again. Problem and Submission Wire configs receive Redis settings, but no active cache adapter was found under those services.
+Redis is configured globally in Compose with AOF and an allkeys-LRU 128 MB policy. Auth uses `LogoutAllIATStore`, which lets downstream shared auth middleware reject access tokens issued on or before a logout-all timestamp. Auth writes this cutoff for logout-all and before persisting an administrative suspension; it does not clear the cutoff on unsuspension, so prior tokens cannot become valid again. Problem Service also maintains a short-lived, explicitly invalidated cache of canonical submission-eligibility metadata; authorization remains per-request in Problem Service and PostgreSQL remains the source of truth. Submission does not own a Problem cache.
 
 ## MinIO and filesystem cache
 
