@@ -36,11 +36,15 @@ type TestcaseDatasetIdentity struct {
 }
 
 type ExecutionTestCase struct {
-	Index          int
-	ID             string
-	Kind           string
-	Stdin          string
-	ExpectedOutput *string
+	Index int
+	ID    string
+	Kind  string
+	Stdin string
+	// SandboxInputPath is populated only by the official testcase loader. It
+	// identifies the same read-only shared-volume file inside judge_sandbox and
+	// permits an oversized official stdin to avoid unary gRPC payload limits.
+	SandboxInputPath string
+	ExpectedOutput   *string
 }
 
 type ExecutionRequest struct {

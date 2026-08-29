@@ -127,7 +127,11 @@ func ProvideSandboxGRPCAddress() SandboxGRPCAddress {
 }
 
 func ProvideSandboxClientConn(address SandboxGRPCAddress) (*SandboxClientConn, error) {
-	conn, err := sharedgrpc.NewClientConn(string(address), sharedgrpc.WithInsecureTransport())
+	conn, err := sharedgrpc.NewClientConn(
+		string(address),
+		sharedgrpc.WithInsecureTransport(),
+		sharedgrpc.WithDefaultCallOptions(googlegrpc.MaxCallRecvMsgSize(execute.SandboxGRPCMaxReceiveBytes)),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("create go-judge sandbox gRPC connection: %w", err)
 	}

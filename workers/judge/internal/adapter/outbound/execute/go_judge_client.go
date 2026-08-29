@@ -3,6 +3,7 @@ package execute
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -17,11 +18,21 @@ import (
 )
 
 const (
-	defaultBatchSize                  = 50
-	officialBatchSize                 = 4
-	expectedOutputHeadroomBytes       = 64 * 1024
-	minCompileLimitMS           int64 = 30_000
-	sandboxRPCTimeout                 = 120 * time.Second
+	defaultBatchSize            = 50
+	officialBatchSize           = 4
+	expectedOutputHeadroomBytes = 64 * 1024
+	// Executorserver v1.7.1 receives unary messages at grpc-go's 4 MiB
+	// default. Keep request payloads well below it rather than using
+	// ResourceExhausted as normal flow.
+	sandboxGRPCSafeRequestBytes = 3 * 1024 * 1024
+	// Generic execution may contain up to 50 commands, each with independent
+	// stdout and stderr collectors limited to 1 MiB by AstraCode's run-code
+	// configuration. 128 MiB is the bounded 100 MiB envelope plus protobuf
+	// headroom, not an unlimited client receive setting.
+	SandboxGRPCMaxReceiveBytes       = 128 * 1024 * 1024
+	officialTestcaseRoot             = "/cache/testcases"
+	minCompileLimitMS          int64 = 30_000
+	sandboxRPCTimeout                = 120 * time.Second
 	// Cleanup is best-effort and must not dominate a finished submission when
 	// the private sandbox is unavailable. Normal local Docker RPCs are far
 	// below this; the bound is deliberately independent of job cancellation.
@@ -285,14 +296,30 @@ func (c *GoJudgeClient) newRunBatchRequest(
 	runReq := &judgepb.Request{Cmd: make([]*judgepb.Request_CmdType, 0, len(testCases))}
 	bindings := make([]testcaseCacheBinding, 0, len(testCases))
 
+	memoryBytes := int64(0)
 	for _, testCase := range testCases {
 		stdin := memoryFile([]byte(testCase.Stdin))
-		if binding, cached, err := c.testcaseCache.getOrAdd(ctx, testcaseDataset, testCase); err != nil {
+		inputBytes := int64(len(testCase.Stdin))
+		localPath, hasLocalPath := officialSandboxInputPath(testCase)
+		if hasLocalPath && inputBytes > sandboxGRPCSafeRequestBytes {
+			// A FileAdd uses the same unary server receive limit as Exec. This is
+			// an intentional normal bypass, rather than a failed cache attempt.
+			stdin = localFile(localPath)
+			c.logger.Debug("sandbox testcase cache bypassed", zap.String("operation", "testcase_cache"), zap.String("event", "cache_bypass"), zap.String("reason", "transport_size"), zap.Int64("input_size_bytes", inputBytes))
+		} else if binding, cached, err := c.testcaseCache.getOrAdd(ctx, testcaseDataset, testCase); err != nil {
 			c.testcaseCache.release(bindings)
 			return nil, nil, err
 		} else if cached {
 			stdin = cachedFile(binding.fileID)
 			bindings = append(bindings, binding)
+		} else if hasLocalPath && memoryBytes+inputBytes > sandboxGRPCSafeRequestBytes {
+			// Intentional normal bypass: FileAdd cannot safely carry a large
+			// unary payload, and LocalFile is restricted to the worker-owned,
+			// read-only official testcase volume.
+			stdin = localFile(localPath)
+			c.logger.Debug("sandbox testcase cache bypassed", zap.String("operation", "testcase_cache"), zap.String("event", "cache_bypass"), zap.String("reason", "transport_size"), zap.Int64("input_size_bytes", inputBytes))
+		} else {
+			memoryBytes += inputBytes
 		}
 		runCmd := &judgepb.Request_CmdType{
 			Args: langCfg.Run.Command,
@@ -320,6 +347,21 @@ func (c *GoJudgeClient) newRunBatchRequest(
 		runReq.Cmd = append(runReq.Cmd, runCmd)
 	}
 	return runReq, bindings, nil
+}
+
+// officialSandboxInputPath adds a second Worker-side guard before the
+// executorserver's ES_SRC_PREFIX check. Only paths emitted by OfficialLoader
+// beneath its shared, read-only cache root can become LocalFile stdin.
+func officialSandboxInputPath(testCase outbound.ExecutionTestCase) (string, bool) {
+	if testCase.Kind != "official" || strings.TrimSpace(testCase.SandboxInputPath) == "" {
+		return "", false
+	}
+	path := filepath.Clean(testCase.SandboxInputPath)
+	rel, err := filepath.Rel(officialTestcaseRoot, path)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return "", false
+	}
+	return path, true
 }
 
 func hasFileErrors(response *judgepb.Response) bool {
@@ -385,6 +427,10 @@ func memoryFile(content []byte) *judgepb.Request_File {
 
 func cachedFile(fileID string) *judgepb.Request_File {
 	return &judgepb.Request_File{File: &judgepb.Request_File_Cached{Cached: &judgepb.Request_CachedFile{FileID: fileID}}}
+}
+
+func localFile(path string) *judgepb.Request_File {
+	return &judgepb.Request_File{File: &judgepb.Request_File_Local{Local: &judgepb.Request_LocalFile{Src: path}}}
 }
 
 func pipeCollector(name string, max int64) *judgepb.Request_File {

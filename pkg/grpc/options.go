@@ -65,6 +65,13 @@ func WithDialOption(option googlegrpc.DialOption) ClientOption {
 	}
 }
 
+// WithDefaultCallOptions applies bounded grpc-go call options to every RPC
+// made through the connection. Callers should use this only when a protocol's
+// documented response envelope exceeds grpc-go's conservative defaults.
+func WithDefaultCallOptions(options ...googlegrpc.CallOption) ClientOption {
+	return WithDialOption(googlegrpc.WithDefaultCallOptions(options...))
+}
+
 // WithUnaryClientInterceptor appends unary client interceptors in call order.
 func WithUnaryClientInterceptor(interceptors ...googlegrpc.UnaryClientInterceptor) ClientOption {
 	return WithDialOption(googlegrpc.WithChainUnaryInterceptor(interceptors...))

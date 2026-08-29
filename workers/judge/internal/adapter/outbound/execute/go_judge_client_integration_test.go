@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -90,6 +91,77 @@ int main() {
 			t.Fatalf("testcase %s stdout = %v, want %q", testCases[index].ID, result.ActualOutput, *testCases[index].ExpectedOutput)
 		}
 		t.Logf("run RPC testcase=%s status=%s stdout=%q", testCases[index].ID, result.Status, *result.ActualOutput)
+	}
+}
+
+func TestGoJudgeClientGRPCIntegrationSupportedLanguages(t *testing.T) {
+	address := os.Getenv("GO_JUDGE_GRPC_INTEGRATION_ADDR")
+	if address == "" {
+		t.Skip("set GO_JUDGE_GRPC_INTEGRATION_ADDR to run against a local go-judge sandbox")
+	}
+	conn, err := sharedgrpc.NewClientConn(address, sharedgrpc.WithInsecureTransport())
+	if err != nil {
+		t.Fatalf("create go-judge gRPC connection: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+	client := NewGoJudgeClient(judgepb.NewExecutorClient(conn), zap.NewNop())
+	programs := map[string]string{
+		"CPP":    "#include <iostream>\nint main(){long long a,b;std::cin>>a>>b;std::cout<<a+b<<'\\n';}",
+		"GO":     "package main\nimport \"fmt\"\nfunc main(){var a,b int64; fmt.Scan(&a,&b); fmt.Println(a+b)}",
+		"PYTHON": "a,b=map(int,input().split())\nprint(a+b)",
+		"JAVA":   "import java.util.*; public class Main { public static void main(String[] a){ Scanner s=new Scanner(System.in); System.out.println(s.nextLong()+s.nextLong()); } }",
+	}
+	for language, source := range programs {
+		t.Run(language, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+			defer cancel()
+			result, err := client.Execute(ctx, outbound.ExecutionRequest{Language: language, SourceCode: source, StopOnFirstFailure: true, Limits: outbound.ExecutionLimits{TimeLimitMS: 5_000, MemoryLimitKB: 256 * 1024, OutputLimitBytes: 1024 * 1024}, TestCases: []outbound.ExecutionTestCase{{Index: 1, ID: "sum", Stdin: "1 2\n", ExpectedOutput: stringPtr("3\n")}}})
+			if err != nil || result.Status != "ACCEPTED" || len(result.TestCases) != 1 || result.TestCases[0].ActualOutput == nil || *result.TestCases[0].ActualOutput != "3\n" {
+				if result != nil && result.CompileOutput != nil {
+					t.Logf("%s compile diagnostic: %s", language, *result.CompileOutput)
+				}
+				t.Fatalf("Execute(%s) result/error = %#v/%v", language, result, err)
+			}
+		})
+	}
+}
+
+func TestGoJudgeClientGRPCIntegrationLargeOfficialLocalFile(t *testing.T) {
+	address := os.Getenv("GO_JUDGE_GRPC_INTEGRATION_ADDR")
+	localPath := os.Getenv("GO_JUDGE_LOCALFILE_INTEGRATION_PATH")
+	if address == "" || localPath == "" {
+		t.Skip("set GO_JUDGE_GRPC_INTEGRATION_ADDR and GO_JUDGE_LOCALFILE_INTEGRATION_PATH for LocalFile integration")
+	}
+	conn, err := sharedgrpc.NewClientConn(address, sharedgrpc.WithInsecureTransport())
+	if err != nil {
+		t.Fatalf("create go-judge gRPC connection: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+	client := NewGoJudgeClient(judgepb.NewExecutorClient(conn), zap.NewNop())
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	langCfg, ok := gojudge.GetLanguageConfig("CPP", gojudge.GetSourceFileName("CPP"), gojudge.GetExeFileName("CPP"))
+	if !ok || langCfg.Compile == nil {
+		t.Fatal("CPP compiler configuration unavailable")
+	}
+	limits := normalizeLimits(outbound.ExecutionLimits{TimeLimitMS: 2_000, MemoryLimitKB: 256 * 1024, OutputLimitBytes: 1024})
+	const source = `#include <iostream>
+int main() { char c; long long n = 0; while (std::cin.get(c)) n++; std::cout << n << '\n'; }`
+	compileResult, executableFileID, err := client.compile(ctx, "CPP", source, langCfg, limits)
+	if err != nil || compileResult != nil || executableFileID == "" {
+		t.Fatalf("compile result/fileID/error = %#v/%q/%v", compileResult, executableFileID, err)
+	}
+	defer client.cleanupExecutableFile(executableFileID)
+	input := strings.Repeat("x", sandboxGRPCSafeRequestBytes+1)
+	results, err := client.runBatch(ctx, "CPP", source, langCfg, limits, true, executableFileID, nil, []outbound.ExecutionTestCase{{
+		Index: 1, ID: "large", Kind: "official", Stdin: input, SandboxInputPath: localPath, ExpectedOutput: stringPtr(fmt.Sprintf("%d\n", len(input))),
+	}}, 0)
+	if err != nil || len(results) != 1 {
+		t.Fatalf("large LocalFile run results/error = %#v/%v", results, err)
+	}
+	result := mapTestCaseResult("CPP", outbound.ExecutionTestCase{Index: 1, ID: "large", ExpectedOutput: stringPtr(fmt.Sprintf("%d\n", len(input)))}, results[0], false)
+	if result.Status != "ACCEPTED" {
+		t.Fatalf("large LocalFile result = %#v", result)
 	}
 }
 
