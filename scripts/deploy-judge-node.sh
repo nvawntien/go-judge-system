@@ -10,6 +10,8 @@ readonly STATE_DIR="${ASTRACODE_JUDGE_STATE_DIR:-/opt/astracode/.deploy/judge}"
 readonly CURRENT_TAG_FILE="$STATE_DIR/current-image-tag"
 readonly PREVIOUS_TAG_FILE="$STATE_DIR/previous-image-tag"
 readonly JUDGE_SERVICES=(go-judge judge-worker)
+readonly SANDBOX_GRPC_READY_ATTEMPTS="${ASTRACODE_SANDBOX_GRPC_READY_ATTEMPTS:-30}"
+readonly SANDBOX_GRPC_READY_INTERVAL_SECONDS="${ASTRACODE_SANDBOX_GRPC_READY_INTERVAL_SECONDS:-1}"
 
 usage() {
   echo "usage: $0 <vX.Y.Z> | --rollback" >&2
@@ -170,6 +172,32 @@ verify_listening_tcp_port() {
     "awk -v port='$port_hex' 'NR > 1 { split(\$2, address, \":\"); if (toupper(address[2]) == port && \$4 == \"0A\") found = 1 } END { exit !found }' /proc/net/tcp /proc/net/tcp6"
 }
 
+wait_for_listening_tcp_port() {
+  local container_id="$1"
+  local port="$2"
+  local attempt
+  if [[ ! "$SANDBOX_GRPC_READY_ATTEMPTS" =~ ^[1-9][0-9]*$ ]] || [[ ! "$SANDBOX_GRPC_READY_INTERVAL_SECONDS" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+    echo "Invalid sandbox gRPC readiness retry configuration" >&2
+    return 1
+  fi
+  for ((attempt = 1; attempt <= SANDBOX_GRPC_READY_ATTEMPTS; attempt++)); do
+    if verify_listening_tcp_port "$container_id" "$port"; then
+      return 0
+    fi
+    if ((attempt < SANDBOX_GRPC_READY_ATTEMPTS)); then
+      sleep "$SANDBOX_GRPC_READY_INTERVAL_SECONDS"
+    fi
+  done
+  echo "Sandbox gRPC port did not become ready: port=$port attempts=$SANDBOX_GRPC_READY_ATTEMPTS" >&2
+  return 1
+}
+
+# Shell tests source only the readiness functions. Normal execution never sets
+# this flag, so deployment behavior and ownership checks remain unchanged.
+if [[ "${ASTRACODE_JUDGE_DEPLOY_TEST_LIB:-0}" == "1" && "${BASH_SOURCE[0]}" != "$0" ]]; then
+  return 0
+fi
+
 verify_sandbox_http() {
   local sandbox_id
   sandbox_id="$(compose ps -q go-judge)"
@@ -180,11 +208,20 @@ verify_sandbox_http() {
     'wget -S -T 5 -O /dev/null http://127.0.0.1:5050/ >/dev/null 2>&1 || test "$?" -eq 8'
 }
 
+verify_sandbox_grpc() {
+  local sandbox_id
+  sandbox_id="$(compose ps -q go-judge)"
+  # executorserver v1.7.1 does not expose grpc_health_v1. A listening private
+  # TCP socket is the strongest dependency-free readiness primitive available.
+  wait_for_listening_tcp_port "$sandbox_id" 5051
+}
+
 verify_services() {
   local worker_id grpc_port
   container_is_running go-judge
   container_is_running judge-worker
   verify_sandbox_http
+  verify_sandbox_grpc
 
   worker_id="$(compose ps -q judge-worker)"
   grpc_port="$(read_grpc_port)"

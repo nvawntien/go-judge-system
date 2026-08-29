@@ -25,7 +25,13 @@ Classification: **%s**
 - Terminal completions during load: %d
 - Client outstanding at load end: %d
 - Burst POST-start spread: %v ms
-- Attempted / accepted / completion rate: %.3f / %.3f / %.3f per second
+- Attempted / accepted / observed pipeline-terminal rate: %.3f / %.3f / %.3f per second
+
+## Compile and Judge Core
+
+- Compile overhead: %s
+- Judge Core service time: %s
+- Judge Core throughput: %s
 
 ## Drain
 
@@ -40,7 +46,8 @@ Classification: **%s**
 `, summary.RunID, summary.Classification,
 		summary.Counts.Intended, summary.Counts.Intended, summary.Counts.Attempted, summary.LoadWindow.Accepted, summary.LoadWindow.BoundaryAcceptedAfterLoad,
 		summary.LoadWindow.Completed, summary.LoadWindow.OutstandingAtEnd, optionalInt(summary.LoadWindow.BurstSpreadMS),
-		summary.Rates.LoadAttemptedPerSecond, summary.Rates.LoadAcceptedPerSecond, summary.Rates.LoadTerminalCompletionSecond,
+		summary.Rates.LoadAttemptedPerSecond, summary.Rates.LoadAcceptedPerSecond, summary.Rates.LoadPipelineTerminalCompletionSecond,
+		availability(summary.Compile.Availability, summary.Compile.Reason), availability(summary.JudgeCore.Availability, summary.JudgeCore.Reason), availability(summary.JudgeCore.Availability, summary.JudgeCore.Reason),
 		summary.Drain.OutstandingAtStart, summary.Drain.Completed, summary.Drain.Remaining, summary.Drain.DurationMS,
 		summary.QualityFlags)
 }
@@ -67,10 +74,17 @@ Classification: **%s**
 - Peak logical in-flight: %d
 - Peak active SSE observers: %d
 
-## Judge / E2E
+## Compile and Judge Core
+
+- Compile overhead: %s
+- Judge Core service time / throughput: %s / %s
+
+## Pipeline terminal and E2E
 
 - Terminal completed / accepted: %d / %d
-- Effective terminal throughput: %s submissions/s
+- Observed pipeline-terminal throughput: %s submissions/s
+- Terminal observation coverage: %s
+- E2E sample status: %s
 - Remaining backlog after drain: %d
 - Drain duration: %d ms
 - E2E p50 / p95 / p99: %s / %s / %s ms
@@ -87,7 +101,8 @@ Classification: **%s**
 		optionalInt(summary.LoadWindow.BurstSpreadMS), optionalFloat(burst.PostStartOffsetMS.P50), optionalFloat(burst.PostStartOffsetMS.P95), optionalFloat(burst.PostStartOffsetMS.P99),
 		optionalFloat(summary.Latencies.ScheduleDelayMS.P50), optionalFloat(summary.Latencies.ScheduleDelayMS.P95), optionalFloat(summary.Latencies.ScheduleDelayMS.P99),
 		burst.PeakLogicalInFlight, burst.PeakActiveObservers,
-		summary.Counts.Terminal, summary.Counts.Accepted, optionalFloat(burst.TerminalThroughputPerSec), summary.Drain.Remaining, summary.Drain.DurationMS,
+		availability(summary.Compile.Availability, summary.Compile.Reason), availability(summary.JudgeCore.Availability, summary.JudgeCore.Reason), availability(summary.JudgeCore.Availability, summary.JudgeCore.Reason),
+		summary.Counts.Terminal, summary.Counts.Accepted, optionalFloat(burst.PipelineTerminalThroughputPerSec), optionalPercent(summary.Pipeline.TerminalObservationCoverage), e2eSampleStatus(summary.Pipeline.RightCensored), summary.Drain.Remaining, summary.Drain.DurationMS,
 		optionalFloat(summary.Latencies.EndToEndMS.P50), optionalFloat(summary.Latencies.EndToEndMS.P95), optionalFloat(summary.Latencies.EndToEndMS.P99),
 		summary.Observer.SSECompletions, summary.Observer.SSEFailures, summary.Observer.GETReconciliations,
 		summary.QualityFlags)
@@ -105,4 +120,28 @@ func optionalFloat(value *float64) string {
 		return "unavailable"
 	}
 	return fmt.Sprintf("%.3f", *value)
+}
+
+func availability(state, reason string) string {
+	if state == "" || state == "AVAILABLE" {
+		return "available"
+	}
+	if reason == "" {
+		return state
+	}
+	return state + " — " + reason
+}
+
+func optionalPercent(value *float64) string {
+	if value == nil {
+		return "unavailable"
+	}
+	return fmt.Sprintf("%.1f%%", *value*100)
+}
+
+func e2eSampleStatus(rightCensored bool) string {
+	if rightCensored {
+		return "PARTIAL / right-censored; p95/p99 cover observed terminal samples only"
+	}
+	return "complete for accepted submissions observed by this run"
 }

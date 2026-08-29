@@ -26,12 +26,25 @@ type OfficialTestCaseBundle struct {
 	DatasetChecksum string
 }
 
+// TestcaseDatasetIdentity is authoritative Worker-side dataset provenance for
+// sandbox testcase-input cache entries. It deliberately contains no expected
+// output and no sandbox-specific FileID.
+type TestcaseDatasetIdentity struct {
+	ProblemID       int64
+	Version         int
+	DatasetChecksum string
+}
+
 type ExecutionTestCase struct {
-	Index          int
-	ID             string
-	Kind           string
-	Stdin          string
-	ExpectedOutput *string
+	Index int
+	ID    string
+	Kind  string
+	Stdin string
+	// SandboxInputPath is populated only by the official testcase loader. It
+	// identifies the same read-only shared-volume file inside judge_sandbox and
+	// permits an oversized official stdin to avoid unary gRPC payload limits.
+	SandboxInputPath string
+	ExpectedOutput   *string
 }
 
 type ExecutionRequest struct {
@@ -40,6 +53,7 @@ type ExecutionRequest struct {
 	TestCases          []ExecutionTestCase
 	Limits             ExecutionLimits
 	StopOnFirstFailure bool
+	TestcaseDataset    *TestcaseDatasetIdentity
 }
 
 // ExecutionResult represents the result of code execution

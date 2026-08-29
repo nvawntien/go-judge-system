@@ -8,52 +8,53 @@ import (
 )
 
 type Config struct {
-	App         AppConfig         `mapstructure:"app"`
-	Server      ServerConfig      `mapstructure:"server"`
-	Database    DatabaseConfig    `mapstructure:"database"`
-	Redis       RedisConfig       `mapstructure:"redis"`
-	Logger      LoggerConfig      `mapstructure:"logger"`
-	SMTP        SMTPConfig        `mapstructure:"smtp"`
-	JWT         JWTConfig         `mapstructure:"jwt"`
-	Kafka       KafkaConfig       `mapstructure:"kafka"`
-	MinIO       MinIOConfig       `mapstructure:"minio"`
-	AuthGRPC    AuthGRPCConfig    `mapstructure:"auth_grpc"`
-	ProblemGRPC ProblemGRPCConfig `mapstructure:"problem_grpc"`
-	JudgeGRPC   JudgeGRPCConfig   `mapstructure:"judge_grpc"`
-	Submission  SubmissionConfig  `mapstructure:"submission"`
-	RunCode     RunCodeConfig     `mapstructure:"run_code"`
-	SSE         SSEConfig         `mapstructure:"sse"`
-	AuthAbuse   AuthAbuseConfig   `mapstructure:"auth_abuse"`
+	App           AppConfig           `mapstructure:"app"`
+	Server        ServerConfig        `mapstructure:"server"`
+	Database      DatabaseConfig      `mapstructure:"database"`
+	Redis         RedisConfig         `mapstructure:"redis"`
+	Logger        LoggerConfig        `mapstructure:"logger"`
+	SMTP          SMTPConfig          `mapstructure:"smtp"`
+	JWT           JWTConfig           `mapstructure:"jwt"`
+	Kafka         KafkaConfig         `mapstructure:"kafka"`
+	MinIO         MinIOConfig         `mapstructure:"minio"`
+	AuthGRPC      AuthGRPCConfig      `mapstructure:"auth_grpc"`
+	ProblemGRPC   ProblemGRPCConfig   `mapstructure:"problem_grpc"`
+	JudgeGRPC     JudgeGRPCConfig     `mapstructure:"judge_grpc"`
+	Submission    SubmissionConfig    `mapstructure:"submission"`
+	RunCode       RunCodeConfig       `mapstructure:"run_code"`
+	TestcaseCache TestcaseCacheConfig `mapstructure:"testcase_cache"`
+	SSE           SSEConfig           `mapstructure:"sse"`
+	AuthAbuse     AuthAbuseConfig     `mapstructure:"auth_abuse"`
 }
 
 // AuthAbuseConfig is deliberately owned by Auth although it lives in the
 // shared config package. Durations are fixed-window Redis TTLs.
 type AuthAbuseConfig struct {
-	LoginIPIdentifierLimit   int           `mapstructure:"login_ip_identifier_limit"`
-	LoginIdentifierRiskLimit int           `mapstructure:"login_identifier_risk_limit"`
-	LoginIdentifierRiskDelay time.Duration `mapstructure:"login_identifier_risk_delay"`
-	LoginBroadIPLimit        int           `mapstructure:"login_broad_ip_limit"`
-	LoginWindow              time.Duration `mapstructure:"login_window"`
+	LoginIPIdentifierLimit     int           `mapstructure:"login_ip_identifier_limit"`
+	LoginIdentifierRiskLimit   int           `mapstructure:"login_identifier_risk_limit"`
+	LoginIdentifierRiskDelay   time.Duration `mapstructure:"login_identifier_risk_delay"`
+	LoginBroadIPLimit          int           `mapstructure:"login_broad_ip_limit"`
+	LoginWindow                time.Duration `mapstructure:"login_window"`
 	RegisterIPEmailLimit       int           `mapstructure:"register_ip_email_limit"`
 	RegisterBroadIPHourlyLimit int           `mapstructure:"register_broad_ip_hourly_limit"`
 	RegisterBroadIPDailyLimit  int           `mapstructure:"register_broad_ip_daily_limit"`
-	MailHourlyWindow            time.Duration `mapstructure:"mail_hourly_window"`
-	MailDailyWindow             time.Duration `mapstructure:"mail_daily_window"`
-	ResendAccountHourlyLimit    int           `mapstructure:"resend_account_hourly_limit"`
-	ResendAccountDailyLimit     int           `mapstructure:"resend_account_daily_limit"`
-	ResendIPAccountLimit        int           `mapstructure:"resend_ip_account_limit"`
-	ResendBroadIPHourlyLimit    int           `mapstructure:"resend_broad_ip_hourly_limit"`
-	ResendBroadIPDailyLimit     int           `mapstructure:"resend_broad_ip_daily_limit"`
-	ForgotAccountHourlyLimit    int           `mapstructure:"forgot_account_hourly_limit"`
-	ForgotAccountDailyLimit     int           `mapstructure:"forgot_account_daily_limit"`
-	ForgotIPAccountLimit        int           `mapstructure:"forgot_ip_account_limit"`
-	ForgotBroadIPHourlyLimit    int           `mapstructure:"forgot_broad_ip_hourly_limit"`
-	ForgotBroadIPDailyLimit     int           `mapstructure:"forgot_broad_ip_daily_limit"`
-	EmailCooldown            time.Duration `mapstructure:"email_cooldown"`
-	TokenIPLimit             int           `mapstructure:"token_ip_limit"`
-	TokenWindow              time.Duration `mapstructure:"token_window"`
-	RefreshIPLimit           int           `mapstructure:"refresh_ip_limit"`
-	RefreshWindow            time.Duration `mapstructure:"refresh_window"`
+	MailHourlyWindow           time.Duration `mapstructure:"mail_hourly_window"`
+	MailDailyWindow            time.Duration `mapstructure:"mail_daily_window"`
+	ResendAccountHourlyLimit   int           `mapstructure:"resend_account_hourly_limit"`
+	ResendAccountDailyLimit    int           `mapstructure:"resend_account_daily_limit"`
+	ResendIPAccountLimit       int           `mapstructure:"resend_ip_account_limit"`
+	ResendBroadIPHourlyLimit   int           `mapstructure:"resend_broad_ip_hourly_limit"`
+	ResendBroadIPDailyLimit    int           `mapstructure:"resend_broad_ip_daily_limit"`
+	ForgotAccountHourlyLimit   int           `mapstructure:"forgot_account_hourly_limit"`
+	ForgotAccountDailyLimit    int           `mapstructure:"forgot_account_daily_limit"`
+	ForgotIPAccountLimit       int           `mapstructure:"forgot_ip_account_limit"`
+	ForgotBroadIPHourlyLimit   int           `mapstructure:"forgot_broad_ip_hourly_limit"`
+	ForgotBroadIPDailyLimit    int           `mapstructure:"forgot_broad_ip_daily_limit"`
+	EmailCooldown              time.Duration `mapstructure:"email_cooldown"`
+	TokenIPLimit               int           `mapstructure:"token_ip_limit"`
+	TokenWindow                time.Duration `mapstructure:"token_window"`
+	RefreshIPLimit             int           `mapstructure:"refresh_ip_limit"`
+	RefreshWindow              time.Duration `mapstructure:"refresh_window"`
 }
 
 type AppConfig struct {
@@ -151,6 +152,17 @@ type RunCodeConfig struct {
 	CompileTimeLimit        time.Duration `mapstructure:"compile_time_limit"`
 	CompileMemoryLimitKB    int64         `mapstructure:"compile_memory_limit_kb"`
 	RequestTimeout          time.Duration `mapstructure:"request_timeout"`
+}
+
+// TestcaseCacheConfig controls the optional, derived sandbox-side cache for
+// official testcase inputs. It deliberately has no default capacity: enabling
+// it requires an explicit, node-sized budget.
+type TestcaseCacheConfig struct {
+	Enabled         bool          `mapstructure:"enabled"`
+	MaxBytes        int64         `mapstructure:"max_bytes"`
+	MaxEntries      int           `mapstructure:"max_entries"`
+	IdleTTL         time.Duration `mapstructure:"idle_ttl"`
+	CleanupInterval time.Duration `mapstructure:"cleanup_interval"`
 }
 
 type SSEConfig struct {

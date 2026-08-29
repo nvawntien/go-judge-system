@@ -3,34 +3,78 @@ package execute
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"go-judge-system/pkg/config"
 	"go-judge-system/pkg/gojudge"
 	"go-judge-system/workers/judge/internal/application/port/outbound"
 	workerdomain "go-judge-system/workers/judge/internal/domain"
 
-	resty "github.com/go-resty/resty/v2"
+	judgepb "github.com/criyle/go-judge/pb"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
 )
 
 const (
-	defaultBatchSize                  = 50
-	officialBatchSize                 = 4
-	expectedOutputHeadroomBytes       = 64 * 1024
-	minCompileLimitMS           int64 = 30_000
+	defaultBatchSize            = 50
+	officialBatchSize           = 4
+	expectedOutputHeadroomBytes = 64 * 1024
+	// Executorserver v1.7.1 receives unary messages at grpc-go's 4 MiB
+	// default. Keep request payloads well below it rather than using
+	// ResourceExhausted as normal flow.
+	sandboxGRPCSafeRequestBytes = 3 * 1024 * 1024
+	// Generic execution may contain up to 50 commands, each with independent
+	// stdout and stderr collectors limited to 1 MiB by AstraCode's run-code
+	// configuration. 128 MiB is the bounded 100 MiB envelope plus protobuf
+	// headroom, not an unlimited client receive setting.
+	SandboxGRPCMaxReceiveBytes       = 128 * 1024 * 1024
+	officialTestcaseRoot             = "/cache/testcases"
+	minCompileLimitMS          int64 = 30_000
+	sandboxRPCTimeout                = 120 * time.Second
+	// Cleanup is best-effort and must not dominate a finished submission when
+	// the private sandbox is unavailable. Normal local Docker RPCs are far
+	// below this; the bound is deliberately independent of job cancellation.
+	executableCleanupRPCTimeout = 500 * time.Millisecond
 )
 
-type GoJudgeClient struct {
-	client *resty.Client
-	logger *zap.Logger
+// executorRPC is deliberately limited to the unary operation used by the
+// Worker. The production implementation is judgepb.ExecutorClient.
+type executorRPC interface {
+	Exec(context.Context, *judgepb.Request, ...grpc.CallOption) (*judgepb.Response, error)
+	sandboxFileRPC
 }
 
-func NewGoJudgeClient(baseURL string, logger *zap.Logger) *GoJudgeClient {
-	return &GoJudgeClient{
-		client: resty.New().SetBaseURL(baseURL).SetTimeout(120 * time.Second),
-		logger: logger,
+type GoJudgeClient struct {
+	client        executorRPC
+	logger        *zap.Logger
+	testcaseCache *sandboxTestcaseCache
+}
+
+// Close stops adapter-owned best-effort cache lifecycle work. Submission work
+// is stopped by the owning application before this method is called.
+func (c *GoJudgeClient) Close() {
+	if c != nil && c.testcaseCache != nil {
+		c.testcaseCache.Close()
 	}
+}
+
+func NewGoJudgeClient(client executorRPC, logger *zap.Logger, testcaseCacheConfigs ...config.TestcaseCacheConfig) *GoJudgeClient {
+	testcaseCacheCfg := config.TestcaseCacheConfig{}
+	if len(testcaseCacheConfigs) > 0 {
+		testcaseCacheCfg = testcaseCacheConfigs[0]
+	}
+	cache, err := newConfiguredSandboxTestcaseCache(client, logger, testcaseCacheCfg)
+	if err != nil {
+		// Production construction validates configuration before this point. Keep
+		// direct callers safe: a disabled cache preserves MemoryFile judging.
+		if logger != nil {
+			logger.Warn("sandbox testcase cache disabled because its configuration is invalid", zap.Error(err))
+		}
+		cache, _ = newConfiguredSandboxTestcaseCache(client, logger, config.TestcaseCacheConfig{})
+	}
+	return &GoJudgeClient{client: client, logger: logger, testcaseCache: cache}
 }
 
 func (c *GoJudgeClient) Execute(ctx context.Context, req outbound.ExecutionRequest) (*outbound.ExecutionResult, error) {
@@ -63,6 +107,11 @@ func (c *GoJudgeClient) Execute(ctx context.Context, req outbound.ExecutionReque
 			return compileResult, nil
 		}
 		exeFileID = fileID
+		// CopyOutCached creates a sandbox-owned executable that is only valid
+		// for this submission. Keep it through every testcase batch, then
+		// release it on every terminal path below. This is deliberately
+		// separate from testcase-cache lifecycle management.
+		defer c.cleanupExecutableFile(exeFileID)
 	}
 
 	result := &outbound.ExecutionResult{
@@ -77,14 +126,14 @@ func (c *GoJudgeClient) Execute(ctx context.Context, req outbound.ExecutionReque
 		currentBatchSize = officialBatchSize
 	}
 
-	for start := 0; start < len(req.TestCases); start += currentBatchSize {
+	for start, batchIndex := 0, 0; start < len(req.TestCases); start, batchIndex = start+currentBatchSize, batchIndex+1 {
 		end := start + currentBatchSize
 		if end > len(req.TestCases) {
 			end = len(req.TestCases)
 		}
 
 		batch := req.TestCases[start:end]
-		runResp, err := c.runBatch(ctx, req.Language, req.SourceCode, langCfg, limits, hasCompile, exeFileID, batch)
+		runResp, err := c.runBatch(ctx, req.Language, req.SourceCode, langCfg, limits, hasCompile, exeFileID, req.TestcaseDataset, batch, batchIndex)
 		if err != nil {
 			return nil, err
 		}
@@ -93,6 +142,9 @@ func (c *GoJudgeClient) Execute(ctx context.Context, req outbound.ExecutionReque
 		}
 
 		for i, raw := range runResp {
+			if raw == nil {
+				return nil, fmt.Errorf("go-judge returned an incomplete result for testcase %d", batch[i].Index)
+			}
 			tcResult := mapTestCaseResult(req.Language, batch[i], raw, req.StopOnFirstFailure)
 			result.TestCases = append(result.TestCases, tcResult)
 			if tcResult.ExecutionTime > result.ExecutionTime {
@@ -121,6 +173,24 @@ func (c *GoJudgeClient) Execute(ctx context.Context, req outbound.ExecutionReque
 	return result, nil
 }
 
+// cleanupExecutableFile is best-effort housekeeping for a submission-scoped
+// CopyOutCached executable. It intentionally uses a small independent context:
+// the job context may already be canceled when a batch fails, but cleanup must
+// still have one bounded chance to release the sandbox file. A deletion failure
+// must never replace the execution result or trigger a retry.
+func (c *GoJudgeClient) cleanupExecutableFile(fileID string) {
+	if fileID == "" || c == nil || c.client == nil {
+		return
+	}
+	rpcCtx, cancel := context.WithTimeout(context.Background(), executableCleanupRPCTimeout)
+	defer cancel()
+	if _, err := c.client.FileDelete(rpcCtx, &judgepb.FileID{FileID: fileID}); err != nil {
+		if c.logger != nil {
+			c.logger.Warn("sandbox executable cleanup failed", zap.String("operation", "executable_cleanup"), zap.String("transport", "grpc"), zap.Error(err))
+		}
+	}
+}
+
 func (c *GoJudgeClient) compile(
 	ctx context.Context,
 	language string,
@@ -130,51 +200,42 @@ func (c *GoJudgeClient) compile(
 ) (*outbound.ExecutionResult, string, error) {
 	compileLimitMS := maxInt64(limits.TimeLimitMS, minCompileLimitMS)
 	compileMemoryKB := maxInt64(limits.MemoryLimitKB, 512*1024)
-	compileReq := gojudge.Request{
-		Cmd: []*gojudge.Cmd{
-			{
-				Args: langCfg.Compile.Command,
-				Env:  langCfg.Compile.Env,
-				Files: []*gojudge.File{
-					{Content: stringPtr("")},
-					{Name: stringPtr("stdout"), Max: int64Ptr(limits.OutputLimitBytes)},
-					{Name: stringPtr("stderr"), Max: int64Ptr(limits.OutputLimitBytes)},
-				},
-				CopyIn: map[string]*gojudge.File{
-					gojudge.GetSourceFileName(language): {Content: &sourceCode},
-				},
-				CopyOut:       []string{"stdout", "stderr"},
-				CopyOutCached: []string{gojudge.GetExeFileName(language)},
-				MemoryLimit:   uint64(compileMemoryKB * 1024),
-				CPULimit:      uint64(compileLimitMS * int64(time.Millisecond)),
-				ClockLimit:    uint64(compileLimitMS * int64(time.Millisecond) * 2),
-				ProcLimit:     500,
-			},
+	compileReq := &judgepb.Request{Cmd: []*judgepb.Request_CmdType{{
+		Args: langCfg.Compile.Command,
+		Env:  langCfg.Compile.Env,
+		Files: []*judgepb.Request_File{
+			memoryFile([]byte{}),
+			pipeCollector("stdout", limits.OutputLimitBytes),
+			pipeCollector("stderr", limits.OutputLimitBytes),
 		},
-	}
+		CopyIn: map[string]*judgepb.Request_File{
+			gojudge.GetSourceFileName(language): memoryFile([]byte(sourceCode)),
+		},
+		CopyOut: []*judgepb.Request_CmdCopyOutFile{{Name: "stdout"}, {Name: "stderr"}},
+		CopyOutCached: []*judgepb.Request_CmdCopyOutFile{{
+			Name: gojudge.GetExeFileName(language),
+		}},
+		MemoryLimit:    uint64(compileMemoryKB * 1024),
+		CpuTimeLimit:   uint64(compileLimitMS * int64(time.Millisecond)),
+		ClockTimeLimit: uint64(compileLimitMS * int64(time.Millisecond) * 2),
+		ProcLimit:      500,
+	}}}
 
-	var compileResp gojudge.Response
-	resp, err := c.client.R().
-		SetContext(ctx).
-		SetBody(compileReq).
-		SetResult(&compileResp).
-		Post("/run")
+	compileResp, err := c.exec(ctx, "compile", 0, -1, compileReq)
 	if err != nil {
-		c.logger.Error("failed to call go-judge API for compilation", zap.Error(err))
-		return nil, "", fmt.Errorf("call go-judge compile API: %w", err)
+		return nil, "", err
 	}
-	if resp.IsError() || len(compileResp) == 0 {
-		return nil, "", fmt.Errorf("go-judge compile returned status: %d", resp.StatusCode())
+	if len(compileResp.GetResults()) == 0 || compileResp.GetResults()[0] == nil {
+		return nil, "", fmt.Errorf("go-judge compile response did not contain a result")
 	}
-	c.logger.Debug("go-judge compile request completed")
 
-	res := compileResp[0]
-	if res.Status != "Accepted" {
-		compileOutput := res.Error
-		if f, ok := res.Files["stderr"]; ok && f != "" {
-			compileOutput = f
-		} else if f, ok := res.Files["stdout"]; ok && f != "" {
-			compileOutput = f
+	res := compileResp.GetResults()[0]
+	if res.GetStatus() != judgepb.Response_Result_Accepted {
+		compileOutput := res.GetError()
+		if stderr := string(res.GetFiles()["stderr"]); stderr != "" {
+			compileOutput = stderr
+		} else if stdout := string(res.GetFiles()["stdout"]); stdout != "" {
+			compileOutput = stdout
 		}
 		compileOutput = sanitizeOutput(compileOutput)
 		return &outbound.ExecutionResult{
@@ -185,9 +246,9 @@ func (c *GoJudgeClient) compile(
 		}, "", nil
 	}
 
-	fileID, ok := res.FileIDs[gojudge.GetExeFileName(language)]
-	if !ok {
-		return nil, "", fmt.Errorf("compile succeeded but exe fileId not found in response")
+	fileID := res.GetFileIDs()[gojudge.GetExeFileName(language)]
+	if fileID == "" {
+		return nil, "", fmt.Errorf("compile succeeded but executable file ID was absent from response")
 	}
 	return nil, fileID, nil
 }
@@ -200,69 +261,232 @@ func (c *GoJudgeClient) runBatch(
 	limits outbound.ExecutionLimits,
 	hasCompile bool,
 	exeFileID string,
+	testcaseDataset *outbound.TestcaseDatasetIdentity,
 	testCases []outbound.ExecutionTestCase,
-) (gojudge.Response, error) {
-	runReq := gojudge.Request{
-		Cmd: make([]*gojudge.Cmd, 0, len(testCases)),
+	batchIndex int,
+) ([]*judgepb.Response_Result, error) {
+	runReq, bindings, err := c.newRunBatchRequest(ctx, language, sourceCode, langCfg, limits, hasCompile, exeFileID, testcaseDataset, testCases)
+	if err != nil {
+		return nil, err
 	}
+	runResp, err := c.exec(ctx, "run_batch", len(testCases), batchIndex, runReq)
+	c.testcaseCache.release(bindings)
+	if err != nil {
+		return nil, err
+	}
+	if hasFileErrors(runResp) && c.testcaseCache.invalidateMissing(ctx, bindings) {
+		c.logger.Debug("sandbox testcase cache stale FileID recovered; retrying batch once", zap.String("operation", "testcase_cache"), zap.String("event", "stale"), zap.Int("batch_index", batchIndex))
+		var retryBindings []testcaseCacheBinding
+		runReq, retryBindings, err = c.newRunBatchRequest(ctx, language, sourceCode, langCfg, limits, hasCompile, exeFileID, testcaseDataset, testCases)
+		if err != nil {
+			return nil, err
+		}
+		runResp, err = c.exec(ctx, "run_batch", len(testCases), batchIndex, runReq)
+		c.testcaseCache.release(retryBindings)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return runResp.GetResults(), nil
+}
 
+func (c *GoJudgeClient) newRunBatchRequest(
+	ctx context.Context,
+	language string,
+	sourceCode string,
+	langCfg *gojudge.LanguageConfig,
+	limits outbound.ExecutionLimits,
+	hasCompile bool,
+	exeFileID string,
+	testcaseDataset *outbound.TestcaseDatasetIdentity,
+	testCases []outbound.ExecutionTestCase,
+) (*judgepb.Request, []testcaseCacheBinding, error) {
+	runReq := &judgepb.Request{Cmd: make([]*judgepb.Request_CmdType, 0, len(testCases))}
+	bindings := make([]testcaseCacheBinding, 0, len(testCases))
+
+	memoryBytes := int64(0)
 	for _, testCase := range testCases {
-		stdin := testCase.Stdin
-		runCmd := &gojudge.Cmd{
+		stdin := memoryFile([]byte(testCase.Stdin))
+		inputBytes := int64(len(testCase.Stdin))
+		localPath, hasLocalPath := officialSandboxInputPath(testCase)
+		if inputBytes > sandboxGRPCSafeRequestBytes && !hasLocalPath {
+			c.testcaseCache.release(bindings)
+			return nil, nil, workerdomain.MarkNonRetryable(fmt.Errorf("official testcase input exceeds the safe sandbox gRPC request budget and has no safe LocalFile path"))
+		}
+		if hasLocalPath && inputBytes > sandboxGRPCSafeRequestBytes {
+			// A FileAdd uses the same unary server receive limit as Exec. This is
+			// an intentional normal bypass, rather than a failed cache attempt.
+			stdin = localFile(localPath)
+			c.logger.Debug("sandbox testcase cache bypassed", zap.String("operation", "testcase_cache"), zap.String("event", "cache_bypass"), zap.String("reason", "transport_size"), zap.Int64("input_size_bytes", inputBytes))
+		} else if binding, cached, err := c.testcaseCache.getOrAdd(ctx, testcaseDataset, testCase); err != nil {
+			c.testcaseCache.release(bindings)
+			return nil, nil, err
+		} else if cached {
+			stdin = cachedFile(binding.fileID)
+			bindings = append(bindings, binding)
+		} else if hasLocalPath && memoryBytes+inputBytes > sandboxGRPCSafeRequestBytes {
+			// Intentional normal bypass: FileAdd cannot safely carry a large
+			// unary payload, and LocalFile is restricted to the worker-owned,
+			// read-only official testcase volume.
+			stdin = localFile(localPath)
+			c.logger.Debug("sandbox testcase cache bypassed", zap.String("operation", "testcase_cache"), zap.String("event", "cache_bypass"), zap.String("reason", "transport_size"), zap.Int64("input_size_bytes", inputBytes))
+		} else {
+			if memoryBytes+inputBytes > sandboxGRPCSafeRequestBytes {
+				c.testcaseCache.release(bindings)
+				return nil, nil, workerdomain.MarkNonRetryable(fmt.Errorf("official testcase batch exceeds the safe sandbox gRPC request budget and has no safe LocalFile path"))
+			}
+			memoryBytes += inputBytes
+		}
+		runCmd := &judgepb.Request_CmdType{
 			Args: langCfg.Run.Command,
 			Env:  langCfg.Run.Env,
-			Files: []*gojudge.File{
-				{Content: &stdin},
-				{Name: stringPtr("stdout"), Max: int64Ptr(limits.OutputLimitBytes)},
-				{Name: stringPtr("stderr"), Max: int64Ptr(limits.OutputLimitBytes)},
+			Files: []*judgepb.Request_File{
+				stdin,
+				pipeCollector("stdout", limits.OutputLimitBytes),
+				pipeCollector("stderr", limits.OutputLimitBytes),
 			},
-			CopyOut:     []string{"stdout", "stderr"},
-			MemoryLimit: uint64(limits.MemoryLimitKB * 1024),
-			CPULimit:    uint64(limits.TimeLimitMS * int64(time.Millisecond)),
-			ClockLimit:  uint64(limits.TimeLimitMS * int64(time.Millisecond) * 2),
-			ProcLimit:   50,
+			CopyOut:        []*judgepb.Request_CmdCopyOutFile{{Name: "stdout"}, {Name: "stderr"}},
+			MemoryLimit:    uint64(limits.MemoryLimitKB * 1024),
+			CpuTimeLimit:   uint64(limits.TimeLimitMS * int64(time.Millisecond)),
+			ClockTimeLimit: uint64(limits.TimeLimitMS * int64(time.Millisecond) * 2),
+			ProcLimit:      50,
 		}
 		if hasCompile {
-			runCmd.CopyIn = map[string]*gojudge.File{
-				gojudge.GetExeFileName(language): {FileID: stringPtr(exeFileID)},
+			runCmd.CopyIn = map[string]*judgepb.Request_File{
+				gojudge.GetExeFileName(language): cachedFile(exeFileID),
 			}
 		} else {
-			runCmd.CopyIn = map[string]*gojudge.File{
-				gojudge.GetSourceFileName(language): {Content: &sourceCode},
+			runCmd.CopyIn = map[string]*judgepb.Request_File{
+				gojudge.GetSourceFileName(language): memoryFile([]byte(sourceCode)),
 			}
 		}
 		runReq.Cmd = append(runReq.Cmd, runCmd)
 	}
+	return runReq, bindings, nil
+}
 
-	var runResp gojudge.Response
-	resp, err := c.client.R().
-		SetContext(ctx).
-		SetBody(runReq).
-		SetResult(&runResp).
-		Post("/run")
+// officialSandboxInputPath adds a second Worker-side guard before the
+// executorserver's ES_SRC_PREFIX check. Only paths emitted by OfficialLoader
+// beneath its shared, read-only cache root can become LocalFile stdin.
+func officialSandboxInputPath(testCase outbound.ExecutionTestCase) (string, bool) {
+	if testCase.Kind != "official" || strings.TrimSpace(testCase.SandboxInputPath) == "" {
+		return "", false
+	}
+	return containedLocalFilePath(officialTestcaseRoot, testCase.SandboxInputPath)
+}
+
+// containedLocalFilePath validates both lexical and resolved containment. The
+// first check rejects path traversal before touching the filesystem; the
+// second prevents a path under the shared testcase root from escaping through
+// a symlink. The returned path is the original cleaned path because that is
+// the path namespace mounted read-only into executorserver.
+func containedLocalFilePath(root, candidate string) (string, bool) {
+	root = filepath.Clean(root)
+	path := filepath.Clean(candidate)
+	if !isContainedPath(root, path) {
+		return "", false
+	}
+	resolvedRoot, err := filepath.EvalSymlinks(root)
 	if err != nil {
-		c.logger.Error("failed to call go-judge API", zap.Error(err))
-		return nil, fmt.Errorf("call go-judge run API: %w", err)
+		return "", false
 	}
-	if resp.IsError() {
-		return nil, fmt.Errorf("go-judge run returned status: %d", resp.StatusCode())
+	resolvedPath, err := filepath.EvalSymlinks(path)
+	if err != nil || !isContainedPath(resolvedRoot, resolvedPath) {
+		return "", false
 	}
-	c.logger.Debug("go-judge run request completed", zap.Int("testcases", len(testCases)))
-	return runResp, nil
+	return path, true
+}
+
+func isContainedPath(root, path string) bool {
+	rel, err := filepath.Rel(root, path)
+	return err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
+}
+
+func hasFileErrors(response *judgepb.Response) bool {
+	for _, result := range response.GetResults() {
+		if result != nil && len(result.GetFileError()) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *GoJudgeClient) exec(
+	ctx context.Context,
+	operation string,
+	testcaseCount int,
+	batchIndex int,
+	req *judgepb.Request,
+) (*judgepb.Response, error) {
+	if c.client == nil {
+		return nil, fmt.Errorf("go-judge gRPC client is not configured")
+	}
+
+	rpcCtx, cancel := context.WithTimeout(ctx, sandboxRPCTimeout)
+	defer cancel()
+
+	started := time.Now()
+	resp, err := c.client.Exec(rpcCtx, req)
+	fields := []zap.Field{
+		zap.String("operation", operation),
+		zap.String("transport", "grpc"),
+		zap.Int("testcase_count", testcaseCount),
+		zap.Int64("duration_ms", time.Since(started).Milliseconds()),
+	}
+	if batchIndex >= 0 {
+		fields = append(fields, zap.Int("batch_index", batchIndex))
+	}
+	if err != nil {
+		fields = append(fields, zap.String("status", "error"))
+		c.logger.Debug("go-judge sandbox RPC failed", fields...)
+		if ctxErr := rpcCtx.Err(); ctxErr != nil {
+			return nil, fmt.Errorf("go-judge %s RPC canceled or timed out: %w", operation, ctxErr)
+		}
+		return nil, fmt.Errorf("go-judge %s gRPC transport failure: %w", operation, err)
+	}
+	if resp == nil {
+		fields = append(fields, zap.String("status", "incomplete_response"))
+		c.logger.Debug("go-judge sandbox RPC completed", fields...)
+		return nil, fmt.Errorf("go-judge %s RPC returned an empty response", operation)
+	}
+	if resp.GetError() != "" && len(resp.GetResults()) == 0 {
+		fields = append(fields, zap.String("status", "response_error"))
+		c.logger.Debug("go-judge sandbox RPC completed", fields...)
+		return nil, fmt.Errorf("go-judge %s RPC returned an execution error", operation)
+	}
+	fields = append(fields, zap.String("status", "ok"))
+	c.logger.Debug("go-judge sandbox RPC completed", fields...)
+	return resp, nil
+}
+
+func memoryFile(content []byte) *judgepb.Request_File {
+	return &judgepb.Request_File{File: &judgepb.Request_File_Memory{Memory: &judgepb.Request_MemoryFile{Content: content}}}
+}
+
+func cachedFile(fileID string) *judgepb.Request_File {
+	return &judgepb.Request_File{File: &judgepb.Request_File_Cached{Cached: &judgepb.Request_CachedFile{FileID: fileID}}}
+}
+
+func localFile(path string) *judgepb.Request_File {
+	return &judgepb.Request_File{File: &judgepb.Request_File_Local{Local: &judgepb.Request_LocalFile{Src: path}}}
+}
+
+func pipeCollector(name string, max int64) *judgepb.Request_File {
+	return &judgepb.Request_File{File: &judgepb.Request_File_Pipe{Pipe: &judgepb.Request_PipeCollector{Name: name, Max: max}}}
 }
 
 func mapTestCaseResult(
 	language string,
 	testCase outbound.ExecutionTestCase,
-	res gojudge.Result,
+	res *judgepb.Response_Result,
 	officialSubmission bool,
 ) outbound.TestCaseResult {
-	status := mapJudgeStatus(res.Status, res.ExitStatus)
+	status := mapJudgeStatus(res.GetStatus(), res.GetExitStatus())
 	if officialSubmission {
 		status = mapOfficialSubmissionStatus(status)
 	}
-	stdout := res.Files["stdout"]
-	stderr := sanitizeOutput(res.Files["stderr"])
+	stdout := string(res.GetFiles()["stdout"])
+	stderr := sanitizeOutput(string(res.GetFiles()["stderr"]))
 	diagnostics := parseRuntimeDiagnostics(language, testCase.ID, stderr)
 
 	if status == "ACCEPTED" && testCase.ExpectedOutput != nil && !workerdomain.OutputEqual(stdout, *testCase.ExpectedOutput) {
@@ -287,8 +511,8 @@ func mapTestCaseResult(
 		ActualOutput:   actualOutput,
 		Stderr:         stderrOutput,
 		ExpectedOutput: testCase.ExpectedOutput,
-		ExecutionTime:  int(res.Time / uint64(time.Millisecond)),
-		MemoryUsed:     int(res.Memory / 1024),
+		ExecutionTime:  int(res.GetTime() / uint64(time.Millisecond)),
+		MemoryUsed:     int(res.GetMemory() / 1024),
 		Diagnostics:    diagnostics,
 	}
 }
@@ -315,22 +539,22 @@ func errorMessageForTestCase(testCase outbound.TestCaseResult) *string {
 	return &message
 }
 
-func mapJudgeStatus(status string, exitStatus int) string {
+func mapJudgeStatus(status judgepb.Response_Result_StatusType, exitStatus int32) string {
 	switch status {
-	case "Accepted":
+	case judgepb.Response_Result_Accepted:
 		if exitStatus != 0 {
 			return "RUNTIME_ERROR"
 		}
 		return "ACCEPTED"
-	case "Memory Limit Exceeded":
+	case judgepb.Response_Result_MemoryLimitExceeded:
 		return "MEMORY_LIMIT_EXCEEDED"
-	case "Time Limit Exceeded":
+	case judgepb.Response_Result_TimeLimitExceeded:
 		return "TIME_LIMIT_EXCEEDED"
-	case "Output Limit Exceeded":
+	case judgepb.Response_Result_OutputLimitExceeded:
 		return "OUTPUT_LIMIT_EXCEEDED"
-	case "File Error", "Nonzero Exit Status", "Signalled", "Run Error", "Runtime Error":
+	case judgepb.Response_Result_FileError, judgepb.Response_Result_NonZeroExitStatus, judgepb.Response_Result_Signalled:
 		return "RUNTIME_ERROR"
-	case "Internal Error":
+	case judgepb.Response_Result_InternalError:
 		return "SYSTEM_ERROR"
 	default:
 		return "SYSTEM_ERROR"
@@ -377,12 +601,4 @@ func maxInt64(a, b int64) int64 {
 		return a
 	}
 	return b
-}
-
-func stringPtr(s string) *string {
-	return &s
-}
-
-func int64Ptr(i int64) *int64 {
-	return &i
 }

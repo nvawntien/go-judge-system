@@ -11,6 +11,7 @@ import (
 	"go-judge-system/pkg/config"
 	grpcin "go-judge-system/workers/judge/internal/adapter/inbound/grpc"
 	kafkain "go-judge-system/workers/judge/internal/adapter/inbound/kafka"
+	"go-judge-system/workers/judge/internal/adapter/outbound/execute"
 
 	"github.com/IBM/sarama"
 	"go.uber.org/zap"
@@ -18,12 +19,19 @@ import (
 )
 
 type App struct {
-	Config        *config.Config
-	JobConsumer   *kafkain.JudgeJobConsumer
-	GRPC          *grpcin.Server
-	Logger        *zap.Logger
-	KafkaProducer sarama.SyncProducer
-	ProblemConn   *googlegrpc.ClientConn
+	Config          *config.Config
+	JobConsumer     *kafkain.JudgeJobConsumer
+	GRPC            *grpcin.Server
+	Logger          *zap.Logger
+	KafkaProducer   sarama.SyncProducer
+	ProblemConn     *googlegrpc.ClientConn
+	SandboxConn     *SandboxClientConn
+	SandboxExecutor *execute.GoJudgeClient
+	closeHooks      *appCloseHooks // test-only seam; nil in production.
+}
+
+type appCloseHooks struct {
+	grpcStop, consumerClose, cacheClose, sandboxClose, problemClose, producerClose func() error
 }
 
 func NewApp(
@@ -33,14 +41,18 @@ func NewApp(
 	logger *zap.Logger,
 	producer sarama.SyncProducer,
 	problemConn *googlegrpc.ClientConn,
+	sandboxConn *SandboxClientConn,
+	sandboxExecutor *execute.GoJudgeClient,
 ) *App {
 	return &App{
-		Config:        cfg,
-		JobConsumer:   jobConsumer,
-		GRPC:          grpcServer,
-		Logger:        logger,
-		KafkaProducer: producer,
-		ProblemConn:   problemConn,
+		Config:          cfg,
+		JobConsumer:     jobConsumer,
+		GRPC:            grpcServer,
+		Logger:          logger,
+		KafkaProducer:   producer,
+		ProblemConn:     problemConn,
+		SandboxConn:     sandboxConn,
+		SandboxExecutor: sandboxExecutor,
 	}
 }
 
@@ -114,20 +126,43 @@ func (a *App) Close() error {
 		closeErr = errors.Join(closeErr, err)
 	}
 
-	if a.KafkaProducer != nil {
-		addCloseErr("kafka producer", a.KafkaProducer.Close())
+	// Stop public RunCode requests before closing the sandbox dependency they
+	// may use. ConsumerGroup.Close then prevents further Kafka job intake; it
+	// waits for Sarama's active consumption loops before returning.
+	if a.closeHooks != nil && a.closeHooks.grpcStop != nil {
+		addCloseErr("inbound gRPC server", a.closeHooks.grpcStop())
+	} else if a.GRPC != nil {
+		a.GRPC.Stop()
 	}
-
-	if a.JobConsumer != nil {
+	if a.closeHooks != nil && a.closeHooks.consumerClose != nil {
+		addCloseErr("judge job consumer", a.closeHooks.consumerClose())
+	} else if a.JobConsumer != nil {
 		addCloseErr("judge job consumer", a.JobConsumer.Close())
 	}
 
-	if a.ProblemConn != nil {
+	// The testcase cache owns best-effort FileDelete lifecycle RPCs. It must
+	// finish (or cancel) those before the sandbox ClientConn is closed.
+	if a.closeHooks != nil && a.closeHooks.cacheClose != nil {
+		addCloseErr("testcase cache lifecycle", a.closeHooks.cacheClose())
+	} else if a.SandboxExecutor != nil {
+		a.SandboxExecutor.Close()
+	}
+	if a.closeHooks != nil && a.closeHooks.sandboxClose != nil {
+		addCloseErr("go-judge sandbox gRPC connection", a.closeHooks.sandboxClose())
+	} else if a.SandboxConn != nil {
+		addCloseErr("go-judge sandbox gRPC connection", a.SandboxConn.ClientConn.Close())
+	}
+
+	if a.closeHooks != nil && a.closeHooks.problemClose != nil {
+		addCloseErr("problem gRPC connection", a.closeHooks.problemClose())
+	} else if a.ProblemConn != nil {
 		addCloseErr("problem gRPC connection", a.ProblemConn.Close())
 	}
 
-	if a.GRPC != nil {
-		a.GRPC.Stop()
+	if a.closeHooks != nil && a.closeHooks.producerClose != nil {
+		addCloseErr("kafka producer", a.closeHooks.producerClose())
+	} else if a.KafkaProducer != nil {
+		addCloseErr("kafka producer", a.KafkaProducer.Close())
 	}
 
 	if a.Logger != nil {

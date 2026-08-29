@@ -28,22 +28,22 @@ def single_run(charts: Path, submissions: pd.DataFrame, windows: pd.DataFrame, m
     if len(latency):
         plt.figure(figsize=(8, 4.5)); plt.hist(latency, bins=min(30, max(5, len(latency))), color="#6a5acd", alpha=.8)
         for label, color in [("p50", "#2a9d8f"), ("p95", "#e76f51"), ("p99", "#d62828")]: _line(metrics["latency_ms"]["end_to_end"][label], label, color)
-        plt.title(f"End-to-end latency distribution (n={len(latency)})"); plt.xlabel("milliseconds"); plt.ylabel("submissions"); plt.legend()
+        plt.title(f"Pipeline E2E latency distribution (observed terminals, n={len(latency)})"); plt.xlabel("milliseconds"); plt.ylabel("submissions"); plt.legend()
         path = charts / "01_latency_distribution.png"; _save(path); output.append(path.name)
         values = np.sort(latency); plt.figure(figsize=(8, 4.5)); plt.step(values, np.arange(1, len(values)+1)/len(values), where="post")
         for label, color in [("p50", "#2a9d8f"), ("p95", "#e76f51"), ("p99", "#d62828")]: _line(metrics["latency_ms"]["end_to_end"][label], label, color)
-        plt.title("End-to-end latency ECDF"); plt.xlabel("milliseconds"); plt.ylabel("fraction completed"); plt.ylim(0, 1.02); plt.legend()
+        plt.title("Pipeline E2E latency ECDF (observed terminals)"); plt.xlabel("milliseconds"); plt.ylabel("fraction completed"); plt.ylim(0, 1.02); plt.legend()
         path = charts / "02_latency_ecdf.png"; _save(path); output.append(path.name)
         observed = submissions.dropna(subset=["terminal_observed_at", "end_to_end_latency_ms"]).copy()
         origin = observed.terminal_observed_at.min(); plt.figure(figsize=(8, 4.5)); plt.scatter((observed.terminal_observed_at-origin).dt.total_seconds(), observed.end_to_end_latency_ms, s=18, alpha=.7)
-        plt.title("End-to-end latency over time"); plt.xlabel("seconds from first terminal observation"); plt.ylabel("milliseconds")
+        plt.title("Pipeline E2E latency over time (observed terminals)"); plt.xlabel("seconds from first terminal observation"); plt.ylabel("milliseconds")
         path = charts / "03_latency_over_time.png"; _save(path); output.append(path.name)
     if len(windows):
         series = windows.sort_values("window_start").copy(); origin = series.window_start.min(); x = (series.window_start-origin).dt.total_seconds()
         plt.figure(figsize=(8, 4.5));
-        for column, label in [("target_arrival_rate_per_sec", "target arrival"), ("accepted_rate_per_sec", "accepted"), ("completion_rate_per_sec", "completed")]:
+        for column, label in [("target_arrival_rate_per_sec", "target arrival"), ("accepted_rate_per_sec", "accepted"), ("completion_rate_per_sec", "pipeline terminal observed")]:
             if column in series: plt.plot(x, series[column], marker="o", label=label)
-        plt.title("Throughput over time"); plt.xlabel("seconds from run windows start"); plt.ylabel("submissions / second"); plt.legend()
+        plt.title("Intake and observed pipeline-terminal rate over time"); plt.xlabel("seconds from run windows start"); plt.ylabel("submissions / second"); plt.legend()
         path = charts / "04_throughput_over_time.png"; _save(path); output.append(path.name)
         plt.figure(figsize=(8, 4.5)); plt.step(x, series.client_outstanding, where="post", label="client outstanding"); plt.axhline(metrics["queue"]["max_client_outstanding"], color="#e76f51", linestyle="--", label="peak")
         plt.title("Client-observed outstanding work"); plt.xlabel("seconds from run windows start"); plt.ylabel("accepted minus terminal"); plt.legend()
@@ -68,7 +68,7 @@ def single_run(charts: Path, submissions: pd.DataFrame, windows: pd.DataFrame, m
             for _, row in window.iterrows():
                 samples = judge[(judge.timestamp >= row.window_start) & (judge.timestamp < row.window_end)]
                 cpu.append(samples.cpu_percent.mean() if len(samples) else np.nan)
-            plt.figure(figsize=(8, 4.5)); plt.scatter(cpu, window.completion_rate_per_sec, label="window mean CPU"); plt.title("Completion throughput vs Judge CPU (correlation only)"); plt.xlabel("Judge CPU %"); plt.ylabel("completed / second"); plt.legend()
+            plt.figure(figsize=(8, 4.5)); plt.scatter(cpu, window.completion_rate_per_sec, label="window mean CPU"); plt.title("Pipeline terminal rate vs Judge CPU (correlation only)"); plt.xlabel("Judge CPU %"); plt.ylabel("terminal observed / second"); plt.legend()
             path = charts / "09_resource_overlay.png"; _save(path); output.append(path.name)
     verdicts = submissions[submissions.terminal_status.fillna("").ne("")].terminal_status.value_counts()
     if len(verdicts):
@@ -100,11 +100,11 @@ def comparison(charts: Path, experiments: pd.DataFrame) -> list[str]:
             plt.title("Burst size vs Kafka lag at end"); plt.xlabel("distinct submissions"); plt.ylabel("messages")
             path = charts / "burst_size_vs_kafka_lag.png"; _save(path); output.append(path.name)
         return output
-    plots = [("throughput_vs_rate.png", "requested_rate", "throughput_mean", "Requested rate vs completed throughput", "requested sub/s", "completed sub/s"),
+    plots = [("throughput_vs_rate.png", "requested_rate", "throughput_mean", "Requested rate vs observed pipeline terminal rate", "requested sub/s", "pipeline terminal sub/s"),
              ("p95_latency_vs_rate.png", "requested_rate", "p95_mean", "Requested rate vs E2E p95", "requested sub/s", "milliseconds"),
              ("p99_latency_vs_rate.png", "requested_rate", "p99_mean", "Requested rate vs E2E p99", "requested sub/s", "milliseconds"),
-             ("cpu_vs_throughput.png", "throughput_mean", "judge_cpu_p95_mean", "Completed throughput vs Judge CPU", "completed sub/s", "CPU %"),
-             ("memory_vs_throughput.png", "throughput_mean", "judge_memory_max_mean", "Completed throughput vs Judge memory", "completed sub/s", "MiB")]
+             ("cpu_vs_throughput.png", "throughput_mean", "judge_cpu_p95_mean", "Pipeline terminal rate vs Judge CPU", "pipeline terminal sub/s", "CPU %"),
+             ("memory_vs_throughput.png", "throughput_mean", "judge_memory_max_mean", "Pipeline terminal rate vs Judge memory", "pipeline terminal sub/s", "MiB")]
     for filename, x, y, title, xlabel, ylabel in plots:
         view = experiments.dropna(subset=[x, y])
         if not len(view): continue
@@ -124,9 +124,9 @@ def comparison(charts: Path, experiments: pd.DataFrame) -> list[str]:
     efficiency = experiments.dropna(subset=["requested_rate", "throughput_mean"]).copy()
     if len(efficiency):
         efficiency["efficiency"] = efficiency.throughput_mean / efficiency.requested_rate.replace(0, np.nan)
-        plt.figure(figsize=(7, 4.5)); plt.plot(efficiency.requested_rate, efficiency.efficiency, marker="o"); plt.title("Throughput efficiency"); plt.xlabel("requested sub/s"); plt.ylabel("completed / requested")
+        plt.figure(figsize=(7, 4.5)); plt.plot(efficiency.requested_rate, efficiency.efficiency, marker="o"); plt.title("Observed pipeline-terminal efficiency"); plt.xlabel("requested sub/s"); plt.ylabel("pipeline terminal / requested")
         path = charts / "throughput_efficiency.png"; _save(path); output.append(path.name)
-        plt.figure(figsize=(7, 4.5)); plt.plot(efficiency.requested_rate, efficiency.throughput_mean, marker="o", label="observed"); plt.title("Capacity frontier from tested configurations"); plt.xlabel("requested sub/s"); plt.ylabel("completed sub/s"); plt.legend()
+        plt.figure(figsize=(7, 4.5)); plt.plot(efficiency.requested_rate, efficiency.throughput_mean, marker="o", label="observed pipeline terminal"); plt.title("Pipeline evidence frontier from tested configurations"); plt.xlabel("requested sub/s"); plt.ylabel("pipeline terminal sub/s"); plt.legend()
         path = charts / "capacity_frontier.png"; _save(path); output.append(path.name)
     return output
 

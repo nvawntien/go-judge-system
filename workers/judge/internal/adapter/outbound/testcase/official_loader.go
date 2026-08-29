@@ -403,11 +403,12 @@ func (l *OfficialLoader) loadFromDir(dir string, testCount int) ([]outbound.Exec
 		}
 		expected := string(expectedBytes)
 		testCases = append(testCases, outbound.ExecutionTestCase{
-			Index:          sequence + 1,
-			ID:             strconv.Itoa(index),
-			Kind:           "official",
-			Stdin:          string(stdinBytes),
-			ExpectedOutput: &expected,
+			Index:            sequence + 1,
+			ID:               strconv.Itoa(index),
+			Kind:             "official",
+			Stdin:            string(stdinBytes),
+			SandboxInputPath: inputs[index],
+			ExpectedOutput:   &expected,
 		})
 	}
 	return testCases, nil

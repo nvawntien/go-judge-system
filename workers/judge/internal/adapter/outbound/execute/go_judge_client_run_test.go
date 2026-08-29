@@ -2,332 +2,723 @@ package execute
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
+	"net"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
-	"go-judge-system/pkg/gojudge"
+	judgepb "github.com/criyle/go-judge/pb"
 	"go-judge-system/workers/judge/internal/application/port/outbound"
 
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/test/bufconn"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
-func TestRunCodeCompilesOnceAndRunsAllCases(t *testing.T) {
-	var compileCalls int
-	var runCalls int
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		var req gojudge.Request
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Fatalf("decode request: %v", err)
-		}
-		if len(req.Cmd) == 1 && req.Cmd[0].CopyOutCached != nil {
-			compileCalls++
-			_ = json.NewEncoder(w).Encode(gojudge.Response{{Status: "Accepted", FileIDs: map[string]string{"main": "exe-1"}}})
-			return
-		}
+type fakeExecutorRPC struct {
+	mu         sync.Mutex
+	calls      []*judgepb.Request
+	handler    func(context.Context, *judgepb.Request) (*judgepb.Response, error)
+	fileAdd    func(context.Context, *judgepb.FileContent) (*judgepb.FileID, error)
+	fileList   func(context.Context, *emptypb.Empty) (*judgepb.FileListType, error)
+	fileDelete func(context.Context, *judgepb.FileID) (*emptypb.Empty, error)
+	deleted    []string
+}
 
-		runCalls++
-		if len(req.Cmd) != 3 {
-			t.Fatalf("run command count = %d, want 3", len(req.Cmd))
-		}
-		_ = json.NewEncoder(w).Encode(gojudge.Response{
-			{Status: "Accepted", Files: map[string]string{"stdout": "1\n", "stderr": ""}, Time: 1_000_000, Memory: 1024},
-			{Status: "Runtime Error", ExitStatus: 1, Files: map[string]string{"stdout": "", "stderr": "panic: boom\nmain.main()\n\t/tmp/run/main.go:9 +0x1"}, Time: 2_000_000, Memory: 2048},
-			{Status: "Accepted", Files: map[string]string{"stdout": "3\n", "stderr": ""}, Time: 3_000_000, Memory: 3072},
-		})
-	}))
-	defer server.Close()
+type unaryExecutorServer struct {
+	judgepb.UnimplementedExecutorServer
+	requests chan *judgepb.Request
+}
 
-	client := NewGoJudgeClient(server.URL, zap.NewNop())
-	res, err := client.Execute(context.Background(), outbound.ExecutionRequest{
-		Language:           "GO",
-		SourceCode:         "package main\nfunc main() {}\n",
-		StopOnFirstFailure: false,
+func (s *unaryExecutorServer) Exec(_ context.Context, req *judgepb.Request) (*judgepb.Response, error) {
+	s.requests <- req
+	return acceptedResults("ok\n"), nil
+}
+
+func (f *fakeExecutorRPC) Exec(ctx context.Context, req *judgepb.Request, _ ...grpc.CallOption) (*judgepb.Response, error) {
+	f.mu.Lock()
+	f.calls = append(f.calls, req)
+	f.mu.Unlock()
+	return f.handler(ctx, req)
+}
+
+func (f *fakeExecutorRPC) requests() []*judgepb.Request {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]*judgepb.Request(nil), f.calls...)
+}
+
+func (f *fakeExecutorRPC) FileAdd(ctx context.Context, file *judgepb.FileContent, _ ...grpc.CallOption) (*judgepb.FileID, error) {
+	if f.fileAdd == nil {
+		return nil, errors.New("unexpected FileAdd")
+	}
+	return f.fileAdd(ctx, file)
+}
+
+func (f *fakeExecutorRPC) FileList(ctx context.Context, empty *emptypb.Empty, _ ...grpc.CallOption) (*judgepb.FileListType, error) {
+	if f.fileList == nil {
+		return &judgepb.FileListType{}, nil
+	}
+	return f.fileList(ctx, empty)
+}
+
+func (f *fakeExecutorRPC) FileDelete(ctx context.Context, fileID *judgepb.FileID, _ ...grpc.CallOption) (*emptypb.Empty, error) {
+	f.mu.Lock()
+	f.deleted = append(f.deleted, fileID.GetFileID())
+	f.mu.Unlock()
+	if f.fileDelete == nil {
+		return &emptypb.Empty{}, nil
+	}
+	return f.fileDelete(ctx, fileID)
+}
+
+func (f *fakeExecutorRPC) deletedFileIDs() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.deleted...)
+}
+
+func TestContainedLocalFilePathRejectsTraversalAndSymlinkEscapes(t *testing.T) {
+	root := t.TempDir()
+	inside := filepath.Join(root, "problem", "input.txt")
+	if err := os.MkdirAll(filepath.Dir(inside), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(inside, []byte("safe\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(t.TempDir(), "secret.txt")
+	if err := os.WriteFile(outside, []byte("secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	escape := filepath.Join(root, "problem", "escape")
+	if err := os.Symlink(outside, escape); err != nil {
+		t.Fatal(err)
+	}
+
+	if got, ok := containedLocalFilePath(root, inside); !ok || got != inside {
+		t.Fatalf("valid contained path = %q/%t", got, ok)
+	}
+	for _, candidate := range []string{
+		filepath.Join(root, "..", "secret"),
+		filepath.Join(root, "problem", "..", "..", "etc", "passwd"),
+		"/etc/passwd",
+		root + "-evil/input",
+		escape,
+	} {
+		if got, ok := containedLocalFilePath(root, candidate); ok {
+			t.Fatalf("unsafe path %q accepted as %q", candidate, got)
+		}
+	}
+	if got, ok := containedLocalFilePath(root, filepath.Join(root, "problem", ".", "input.txt")); !ok || got != inside {
+		t.Fatalf("normalized contained path = %q/%t", got, ok)
+	}
+}
+
+func TestGoJudgeClientCompileAndRunRequestsUseProtobufSemantics(t *testing.T) {
+	var phase int
+	rpc := &fakeExecutorRPC{handler: func(_ context.Context, req *judgepb.Request) (*judgepb.Response, error) {
+		phase++
+		if phase == 1 {
+			assertCompileRequest(t, req)
+			return compileAccepted("exe-1"), nil
+		}
+		assertOfficialRunRequest(t, req, "exe-1", []string{"1\n", "2\n"})
+		return acceptedResults("1\n", "2\n"), nil
+	}}
+
+	result, err := NewGoJudgeClient(rpc, zap.NewNop()).Execute(context.Background(), outbound.ExecutionRequest{
+		Language:           "CPP",
+		SourceCode:         "int main() {}",
+		StopOnFirstFailure: true,
+		Limits: outbound.ExecutionLimits{
+			TimeLimitMS:      1_000,
+			MemoryLimitKB:    64 * 1024,
+			OutputLimitBytes: 4 * 1024,
+		},
 		TestCases: []outbound.ExecutionTestCase{
-			{Index: 1, ID: "sample-1", Kind: "sample", Stdin: "1\n", ExpectedOutput: stringPtr("1\n")},
-			{Index: 2, ID: "sample-2", Kind: "sample", Stdin: "2\n", ExpectedOutput: stringPtr("2\n")},
-			{Index: 3, ID: "custom-1", Kind: "custom", Stdin: "3\n"},
+			{Index: 1, ID: "1", Kind: "official", Stdin: "1\n", ExpectedOutput: stringPtr("1\n")},
+			{Index: 2, ID: "2", Kind: "official", Stdin: "2\n", ExpectedOutput: stringPtr("2\n")},
 		},
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	if compileCalls != 1 || runCalls != 1 {
-		t.Fatalf("compile/run calls = %d/%d, want 1/1", compileCalls, runCalls)
+	if phase != 2 {
+		t.Fatalf("Exec calls = %d, want compile plus one batch", phase)
 	}
-	if got := []string{res.TestCases[0].Status, res.TestCases[1].Status, res.TestCases[2].Status}; got[0] != "ACCEPTED" || got[1] != "RUNTIME_ERROR" || got[2] != "ACCEPTED" {
-		t.Fatalf("statuses = %v, want [ACCEPTED RUNTIME_ERROR ACCEPTED]", got)
-	}
-	if len(res.TestCases[1].Diagnostics) != 1 || res.TestCases[1].Diagnostics[0].Line != 9 {
-		t.Fatalf("runtime diagnostics = %+v, want line 9", res.TestCases[1].Diagnostics)
-	}
-	if res.ErrorMessage == nil || *res.ErrorMessage != "panic: boom" {
-		t.Fatalf("error message = %v, want runtime panic headline", res.ErrorMessage)
+	if result.Status != "ACCEPTED" || len(result.TestCases) != 2 {
+		t.Fatalf("result = %#v, want two accepted testcases", result)
 	}
 }
 
-func TestOfficialExecutionBatchesAtMostFourAndCompilesOnce(t *testing.T) {
-	tests := []struct {
-		name        string
-		testCount   int
-		wantBatches []int
-	}{
-		{name: "one testcase", testCount: 1, wantBatches: []int{1}},
-		{name: "four testcases", testCount: 4, wantBatches: []int{4}},
-		{name: "five testcases", testCount: 5, wantBatches: []int{4, 1}},
-		{name: "twenty four testcases", testCount: 24, wantBatches: []int{4, 4, 4, 4, 4, 4}},
-		{name: "fifty testcases", testCount: 50, wantBatches: []int{4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 2}},
+func TestGoJudgeClientUsesOfficialUnaryGRPCExecutor(t *testing.T) {
+	listener := bufconn.Listen(1024 * 1024)
+	server := grpc.NewServer()
+	executor := &unaryExecutorServer{requests: make(chan *judgepb.Request, 1)}
+	judgepb.RegisterExecutorServer(server, executor)
+	go func() { _ = server.Serve(listener) }()
+	defer server.Stop()
+
+	conn, err := grpc.NewClient(
+		"passthrough:///go-judge-test",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatalf("create bufconn client: %v", err)
 	}
+	defer func() { _ = conn.Close() }()
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var compileCalls int
-			var batches []int
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", "application/json")
-				var req gojudge.Request
-				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-					t.Fatalf("decode request: %v", err)
-				}
-				if len(req.Cmd) == 1 && req.Cmd[0].CopyOutCached != nil {
-					compileCalls++
-					_ = json.NewEncoder(w).Encode(gojudge.Response{{Status: "Accepted", FileIDs: map[string]string{"main": "exe-1"}}})
-					return
-				}
+	result, err := NewGoJudgeClient(judgepb.NewExecutorClient(conn), zap.NewNop()).Execute(context.Background(), outbound.ExecutionRequest{
+		Language: "PYTHON", SourceCode: "print('ok')", TestCases: []outbound.ExecutionTestCase{{Index: 1, ID: "case", Stdin: "input\n"}},
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if result.Status != "ACCEPTED" || len(result.TestCases) != 1 {
+		t.Fatalf("result = %#v", result)
+	}
+	select {
+	case req := <-executor.requests:
+		if got := string(req.GetCmd()[0].GetCopyIn()["main.py"].GetMemory().GetContent()); got != "print('ok')" {
+			t.Fatalf("protobuf source = %q", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("official gRPC Executor.Exec did not receive a request")
+	}
+}
 
-				batches = append(batches, len(req.Cmd))
-				response := make(gojudge.Response, 0, len(req.Cmd))
-				for _, cmd := range req.Cmd {
-					file := cmd.CopyIn["main"]
-					if file == nil || file.FileID == nil || *file.FileID != "exe-1" {
-						t.Fatalf("compiled command did not reuse executable file ID: %#v", file)
-					}
-					response = append(response, acceptedResponseForCommand(t, cmd))
-				}
-				_ = json.NewEncoder(w).Encode(response)
-			}))
+func TestGoJudgeClientCompileErrorPreservesDiagnostics(t *testing.T) {
+	rpc := &fakeExecutorRPC{handler: func(_ context.Context, _ *judgepb.Request) (*judgepb.Response, error) {
+		return &judgepb.Response{Results: []*judgepb.Response_Result{{
+			Status: judgepb.Response_Result_NonZeroExitStatus,
+			Files:  map[string][]byte{"stderr": []byte("./main.go:19:9: make (built-in) must be called")},
+		}}}, nil
+	}}
 
-			client := NewGoJudgeClient(server.URL, zap.NewNop())
-			result, err := client.Execute(context.Background(), outbound.ExecutionRequest{
-				Language:           "CPP",
-				SourceCode:         "int main(){}",
-				StopOnFirstFailure: true,
-				TestCases:          officialTestCases(tt.testCount),
+	result, err := NewGoJudgeClient(rpc, zap.NewNop()).Execute(context.Background(), outbound.ExecutionRequest{
+		Language:   "GO",
+		SourceCode: "bad",
+		TestCases:  []outbound.ExecutionTestCase{{Index: 1, ID: "sample", Kind: "sample"}},
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if result.Status != "COMPILATION_ERROR" || result.CompileOutput == nil || *result.CompileOutput != "main.go:19:9: make (built-in) must be called" {
+		t.Fatalf("compile result = %#v", result)
+	}
+	if len(result.Diagnostics) != 1 || result.Diagnostics[0].Line != 19 || result.Diagnostics[0].Column != 9 {
+		t.Fatalf("compile diagnostics = %#v", result.Diagnostics)
+	}
+}
+
+func TestGoJudgeClientOfficialBatchingAndEarlyTermination(t *testing.T) {
+	t.Run("24 accepted testcases use six batches of four", func(t *testing.T) {
+		var batchSizes []int
+		rpc := &fakeExecutorRPC{handler: func(_ context.Context, req *judgepb.Request) (*judgepb.Response, error) {
+			if isCompileRequest(req) {
+				return compileAccepted("exe-1"), nil
+			}
+			batchSizes = append(batchSizes, len(req.GetCmd()))
+			return acceptedForRequest(req), nil
+		}}
+		result, err := NewGoJudgeClient(rpc, zap.NewNop()).Execute(context.Background(), outbound.ExecutionRequest{
+			Language: "CPP", SourceCode: "int main(){}", StopOnFirstFailure: true, TestCases: officialTestCases(24),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := fmt.Sprint(batchSizes), "[4 4 4 4 4 4]"; got != want {
+			t.Fatalf("batch sizes = %s, want %s", got, want)
+		}
+		if result.Status != "ACCEPTED" || len(result.TestCases) != 24 {
+			t.Fatalf("result = %#v", result)
+		}
+	})
+
+	t.Run("failure prevents later batches", func(t *testing.T) {
+		var batchCount int
+		rpc := &fakeExecutorRPC{handler: func(_ context.Context, req *judgepb.Request) (*judgepb.Response, error) {
+			if isCompileRequest(req) {
+				return compileAccepted("exe-1"), nil
+			}
+			batchCount++
+			response := acceptedForRequest(req)
+			if batchCount == 2 {
+				response.Results[1].Files["stdout"] = []byte("wrong\n")
+			}
+			return response, nil
+		}}
+		result, err := NewGoJudgeClient(rpc, zap.NewNop()).Execute(context.Background(), outbound.ExecutionRequest{
+			Language: "CPP", SourceCode: "int main(){}", StopOnFirstFailure: true, TestCases: officialTestCases(24),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if batchCount != 2 || result.Status != "WRONG_ANSWER" || len(result.TestCases) != 6 {
+			t.Fatalf("batches/result = %d/%#v, want 2 batches and ordered testcase 6 failure", batchCount, result)
+		}
+	})
+}
+
+func TestGoJudgeClientNonEarlyStopPreservesFiftyCommandBatch(t *testing.T) {
+	for _, tt := range []struct {
+		count int
+		want  string
+	}{{24, "[24]"}, {50, "[50]"}, {51, "[50 1]"}} {
+		t.Run(fmt.Sprintf("%d testcases", tt.count), func(t *testing.T) {
+			var batchSizes []int
+			rpc := &fakeExecutorRPC{handler: func(_ context.Context, req *judgepb.Request) (*judgepb.Response, error) {
+				if isCompileRequest(req) {
+					return compileAccepted("exe-1"), nil
+				}
+				batchSizes = append(batchSizes, len(req.GetCmd()))
+				return acceptedForRequest(req), nil
+			}}
+			result, err := NewGoJudgeClient(rpc, zap.NewNop()).Execute(context.Background(), outbound.ExecutionRequest{
+				Language: "CPP", SourceCode: "int main(){}", TestCases: officialTestCases(tt.count),
 			})
-			server.Close()
 			if err != nil {
-				t.Fatalf("Execute() error = %v", err)
+				t.Fatal(err)
 			}
-			if compileCalls != 1 {
-				t.Fatalf("compile calls = %d, want 1", compileCalls)
+			if got := fmt.Sprint(batchSizes); got != tt.want {
+				t.Fatalf("batch sizes = %s, want %s", got, tt.want)
 			}
-			if fmt.Sprint(batches) != fmt.Sprint(tt.wantBatches) {
-				t.Fatalf("batch sizes = %v, want %v", batches, tt.wantBatches)
-			}
-			if result.Status != "ACCEPTED" || len(result.TestCases) != tt.testCount {
-				t.Fatalf("result = %#v, want %d accepted test cases", result, tt.testCount)
+			if len(result.TestCases) != tt.count {
+				t.Fatalf("testcase count = %d, want %d", len(result.TestCases), tt.count)
 			}
 		})
 	}
 }
 
-func TestOfficialExecutionStopsAfterFailingBatchInTestcaseOrder(t *testing.T) {
-	var batches [][]int
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		var req gojudge.Request
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Fatalf("decode request: %v", err)
+func TestGoJudgeClientDeletesSubmissionExecutableAfterFinalBatch(t *testing.T) {
+	var events []string
+	rpc := &fakeExecutorRPC{handler: func(_ context.Context, req *judgepb.Request) (*judgepb.Response, error) {
+		if isCompileRequest(req) {
+			events = append(events, "compile")
+			return compileAccepted("submission-exe"), nil
 		}
-		if len(req.Cmd) == 1 && req.Cmd[0].CopyOutCached != nil {
-			_ = json.NewEncoder(w).Encode(gojudge.Response{{Status: "Accepted", FileIDs: map[string]string{"main": "exe-1"}}})
-			return
-		}
+		events = append(events, fmt.Sprintf("run-%d", len(events)))
+		return acceptedForRequest(req), nil
+	}, fileDelete: func(_ context.Context, fileID *judgepb.FileID) (*emptypb.Empty, error) {
+		events = append(events, "delete-"+fileID.GetFileID())
+		return &emptypb.Empty{}, nil
+	}}
 
-		indexes := commandIndexes(t, req.Cmd)
-		batches = append(batches, indexes)
-		response := make(gojudge.Response, 0, len(indexes))
-		for _, index := range indexes {
-			if index == 6 {
-				response = append(response, gojudge.Result{Status: "Accepted", Files: map[string]string{"stdout": "wrong\n", "stderr": ""}})
-				continue
-			}
-			if index == 7 {
-				response = append(response, gojudge.Result{Status: "Time Limit Exceeded", Files: map[string]string{"stdout": "", "stderr": ""}})
-				continue
-			}
-			response = append(response, acceptedResponse(index))
-		}
-		_ = json.NewEncoder(w).Encode(response)
-	}))
-	defer server.Close()
-
-	result, err := NewGoJudgeClient(server.URL, zap.NewNop()).Execute(context.Background(), outbound.ExecutionRequest{
-		Language:           "CPP",
-		SourceCode:         "int main(){}",
-		StopOnFirstFailure: true,
-		TestCases:          officialTestCases(24),
+	result, err := NewGoJudgeClient(rpc, zap.NewNop()).Execute(context.Background(), outbound.ExecutionRequest{
+		Language: "CPP", SourceCode: "int main(){}", StopOnFirstFailure: true, TestCases: officialTestCases(5),
 	})
-	if err != nil {
-		t.Fatalf("Execute() error = %v", err)
+	if err != nil || result.Status != "ACCEPTED" {
+		t.Fatalf("Execute() result/error = %#v/%v", result, err)
 	}
-	if fmt.Sprint(batches) != "[[1 2 3 4] [5 6 7 8]]" {
-		t.Fatalf("submitted batches = %v, want [[1 2 3 4] [5 6 7 8]]", batches)
+	if got, want := fmt.Sprint(events), "[compile run-1 run-2 delete-submission-exe]"; got != want {
+		t.Fatalf("operation order = %s, want %s", got, want)
 	}
-	if result.Status != "WRONG_ANSWER" || len(result.TestCases) != 6 || result.TestCases[5].ID != "6" {
-		t.Fatalf("result = %#v, want first ordered failure at testcase 6", result)
+	if got := rpc.deletedFileIDs(); fmt.Sprint(got) != "[submission-exe]" {
+		t.Fatalf("deleted FileIDs = %v, want executable exactly once", got)
 	}
 }
 
-func TestOfficialExecutionDoesNotSubmitBatchesAfterLaterFailure(t *testing.T) {
-	var batches [][]int
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		var req gojudge.Request
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Fatalf("decode request: %v", err)
-		}
-		if len(req.Cmd) == 1 && req.Cmd[0].CopyOutCached != nil {
-			_ = json.NewEncoder(w).Encode(gojudge.Response{{Status: "Accepted", FileIDs: map[string]string{"main": "exe-1"}}})
-			return
-		}
-
-		indexes := commandIndexes(t, req.Cmd)
-		batches = append(batches, indexes)
-		response := make(gojudge.Response, 0, len(indexes))
-		for _, index := range indexes {
-			if index == 10 {
-				response = append(response, gojudge.Result{Status: "Accepted", Files: map[string]string{"stdout": "wrong\n", "stderr": ""}})
-				continue
+func TestGoJudgeClientDeletesExecutableAfterEarlyStopAndExecutionError(t *testing.T) {
+	t.Run("early stop", func(t *testing.T) {
+		var runs int
+		rpc := &fakeExecutorRPC{handler: func(_ context.Context, req *judgepb.Request) (*judgepb.Response, error) {
+			if isCompileRequest(req) {
+				return compileAccepted("early-stop-exe"), nil
 			}
-			response = append(response, acceptedResponse(index))
+			runs++
+			response := acceptedForRequest(req)
+			response.Results[0].Files["stdout"] = []byte("wrong\n")
+			return response, nil
+		}}
+		result, err := NewGoJudgeClient(rpc, zap.NewNop()).Execute(context.Background(), outbound.ExecutionRequest{
+			Language: "CPP", SourceCode: "int main(){}", StopOnFirstFailure: true, TestCases: officialTestCases(8),
+		})
+		if err != nil || result.Status != "WRONG_ANSWER" || runs != 1 {
+			t.Fatalf("result/error/runs = %#v/%v/%d", result, err, runs)
 		}
-		_ = json.NewEncoder(w).Encode(response)
-	}))
-	defer server.Close()
-
-	result, err := NewGoJudgeClient(server.URL, zap.NewNop()).Execute(context.Background(), outbound.ExecutionRequest{
-		Language:           "CPP",
-		SourceCode:         "int main(){}",
-		StopOnFirstFailure: true,
-		TestCases:          officialTestCases(24),
+		if got := rpc.deletedFileIDs(); fmt.Sprint(got) != "[early-stop-exe]" {
+			t.Fatalf("deleted FileIDs = %v, want early-stop executable exactly once", got)
+		}
 	})
-	if err != nil {
-		t.Fatalf("Execute() error = %v", err)
-	}
-	if fmt.Sprint(batches) != "[[1 2 3 4] [5 6 7 8] [9 10 11 12]]" {
-		t.Fatalf("submitted batches = %v, want batches through testcase 12 only", batches)
-	}
-	if result.Status != "WRONG_ANSWER" || len(result.TestCases) != 10 || result.TestCases[9].ID != "10" {
-		t.Fatalf("result = %#v, want first ordered failure at testcase 10", result)
-	}
+
+	t.Run("execution error", func(t *testing.T) {
+		rpc := &fakeExecutorRPC{handler: func(_ context.Context, req *judgepb.Request) (*judgepb.Response, error) {
+			if isCompileRequest(req) {
+				return compileAccepted("error-exe"), nil
+			}
+			return nil, errors.New("sandbox unavailable")
+		}}
+		_, err := NewGoJudgeClient(rpc, zap.NewNop()).Execute(context.Background(), outbound.ExecutionRequest{
+			Language: "CPP", SourceCode: "int main(){}", TestCases: officialTestCases(1),
+		})
+		if err == nil {
+			t.Fatal("Execute() error = nil, want execution failure")
+		}
+		if got := rpc.deletedFileIDs(); fmt.Sprint(got) != "[error-exe]" {
+			t.Fatalf("deleted FileIDs = %v, want error executable exactly once", got)
+		}
+	})
 }
 
-func TestOfficialExecutionDoesNotSubmitLaterBatchesAfterFirstBatchFailure(t *testing.T) {
-	var batches [][]int
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		var req gojudge.Request
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Fatalf("decode request: %v", err)
-		}
-		if len(req.Cmd) == 1 && req.Cmd[0].CopyOutCached != nil {
-			_ = json.NewEncoder(w).Encode(gojudge.Response{{Status: "Accepted", FileIDs: map[string]string{"main": "exe-1"}}})
-			return
-		}
-
-		indexes := commandIndexes(t, req.Cmd)
-		batches = append(batches, indexes)
-		response := make(gojudge.Response, 0, len(indexes))
-		for _, index := range indexes {
-			if index == 2 {
-				response = append(response, gojudge.Result{Status: "Accepted", Files: map[string]string{"stdout": "wrong\n", "stderr": ""}})
-				continue
-			}
-			response = append(response, acceptedResponse(index))
-		}
-		_ = json.NewEncoder(w).Encode(response)
-	}))
-	defer server.Close()
-
-	result, err := NewGoJudgeClient(server.URL, zap.NewNop()).Execute(context.Background(), outbound.ExecutionRequest{
-		Language:           "CPP",
-		SourceCode:         "int main(){}",
-		StopOnFirstFailure: true,
-		TestCases:          officialTestCases(24),
-	})
-	if err != nil {
-		t.Fatalf("Execute() error = %v", err)
-	}
-	if fmt.Sprint(batches) != "[[1 2 3 4]]" {
-		t.Fatalf("submitted batches = %v, want only the first batch", batches)
-	}
-	if result.Status != "WRONG_ANSWER" || len(result.TestCases) != 2 || result.TestCases[1].ID != "2" {
-		t.Fatalf("result = %#v, want first ordered failure at testcase 2", result)
-	}
-}
-
-func TestExecutionWithoutEarlyStopProcessesAllBatches(t *testing.T) {
-	tests := []struct {
-		name        string
-		testCount   int
-		wantBatches []int
+func TestGoJudgeClientDeletesExecutableAfterTerminalSandboxVerdicts(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		status judgepb.Response_Result_StatusType
+		want   string
 	}{
-		{name: "twenty four testcases", testCount: 24, wantBatches: []int{24}},
-		{name: "fifty testcases", testCount: 50, wantBatches: []int{50}},
-		{name: "fifty one testcases", testCount: 51, wantBatches: []int{50, 1}},
-	}
-
-	for _, tt := range tests {
+		{name: "time limit", status: judgepb.Response_Result_TimeLimitExceeded, want: "TIME_LIMIT_EXCEEDED"},
+		{name: "memory limit", status: judgepb.Response_Result_MemoryLimitExceeded, want: "MEMORY_LIMIT_EXCEEDED"},
+		{name: "output limit", status: judgepb.Response_Result_OutputLimitExceeded, want: "OUTPUT_LIMIT_EXCEEDED"},
+		{name: "runtime error", status: judgepb.Response_Result_NonZeroExitStatus, want: "RUNTIME_ERROR"},
+	} {
 		t.Run(tt.name, func(t *testing.T) {
-			var compileCalls int
-			var batches []int
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", "application/json")
-				var req gojudge.Request
-				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-					t.Fatalf("decode request: %v", err)
+			executableID := "terminal-" + strings.ReplaceAll(tt.name, " ", "-")
+			rpc := &fakeExecutorRPC{handler: func(_ context.Context, req *judgepb.Request) (*judgepb.Response, error) {
+				if isCompileRequest(req) {
+					return compileAccepted(executableID), nil
 				}
-				if len(req.Cmd) == 1 && req.Cmd[0].CopyOutCached != nil {
-					compileCalls++
-					_ = json.NewEncoder(w).Encode(gojudge.Response{{Status: "Accepted", FileIDs: map[string]string{"main": "exe-1"}}})
-					return
-				}
-
-				batches = append(batches, len(req.Cmd))
-				response := make(gojudge.Response, 0, len(req.Cmd))
-				for _, cmd := range req.Cmd {
-					response = append(response, acceptedResponseForCommand(t, cmd))
-				}
-				_ = json.NewEncoder(w).Encode(response)
-			}))
-
-			result, err := NewGoJudgeClient(server.URL, zap.NewNop()).Execute(context.Background(), outbound.ExecutionRequest{
-				Language:           "CPP",
-				SourceCode:         "int main(){}",
-				StopOnFirstFailure: false,
-				TestCases:          officialTestCases(tt.testCount),
+				return &judgepb.Response{Results: []*judgepb.Response_Result{{Status: tt.status}}}, nil
+			}}
+			result, err := NewGoJudgeClient(rpc, zap.NewNop()).Execute(context.Background(), outbound.ExecutionRequest{
+				Language: "CPP", SourceCode: "int main(){}", StopOnFirstFailure: true, TestCases: officialTestCases(1),
 			})
-			server.Close()
-			if err != nil {
-				t.Fatalf("Execute() error = %v", err)
+			if err != nil || result.Status != tt.want {
+				t.Fatalf("result/error = %#v/%v, want %s", result, err, tt.want)
 			}
-			if compileCalls != 1 {
-				t.Fatalf("compile calls = %d, want 1", compileCalls)
-			}
-			if fmt.Sprint(batches) != fmt.Sprint(tt.wantBatches) {
-				t.Fatalf("batch sizes = %v, want %v", batches, tt.wantBatches)
-			}
-			if result.Status != "ACCEPTED" || len(result.TestCases) != tt.testCount {
-				t.Fatalf("result = %#v, want %d accepted test cases", result, tt.testCount)
+			if got := rpc.deletedFileIDs(); fmt.Sprint(got) != fmt.Sprintf("[%s]", executableID) {
+				t.Fatalf("deleted FileIDs = %v, want executable exactly once", got)
 			}
 		})
 	}
+}
+
+func TestGoJudgeClientExecutableCleanupSurvivesCancellationAndDeleteFailure(t *testing.T) {
+	t.Run("cancellation uses independent bounded cleanup context", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		cleanupContextWasLive := false
+		rpc := &fakeExecutorRPC{handler: func(_ context.Context, req *judgepb.Request) (*judgepb.Response, error) {
+			if isCompileRequest(req) {
+				return compileAccepted("cancelled-exe"), nil
+			}
+			cancel()
+			return nil, context.Canceled
+		}, fileDelete: func(cleanupCtx context.Context, _ *judgepb.FileID) (*emptypb.Empty, error) {
+			cleanupContextWasLive = cleanupCtx.Err() == nil
+			deadline, hasDeadline := cleanupCtx.Deadline()
+			if !hasDeadline || time.Until(deadline) > executableCleanupRPCTimeout || time.Until(deadline) <= 0 {
+				t.Fatalf("cleanup deadline = %v/%t, want bounded live context", deadline, hasDeadline)
+			}
+			return &emptypb.Empty{}, nil
+		}}
+		_, err := NewGoJudgeClient(rpc, zap.NewNop()).Execute(ctx, outbound.ExecutionRequest{
+			Language: "CPP", SourceCode: "int main(){}", TestCases: officialTestCases(1),
+		})
+		if !errors.Is(err, context.Canceled) || !cleanupContextWasLive {
+			t.Fatalf("Execute() error/cleanup context = %v/%t", err, cleanupContextWasLive)
+		}
+		if got := rpc.deletedFileIDs(); fmt.Sprint(got) != "[cancelled-exe]" {
+			t.Fatalf("deleted FileIDs = %v, want cancelled executable exactly once", got)
+		}
+	})
+
+	t.Run("delete failure preserves valid verdict", func(t *testing.T) {
+		rpc := &fakeExecutorRPC{handler: func(_ context.Context, req *judgepb.Request) (*judgepb.Response, error) {
+			if isCompileRequest(req) {
+				return compileAccepted("delete-failure-exe"), nil
+			}
+			return acceptedForRequest(req), nil
+		}, fileDelete: func(context.Context, *judgepb.FileID) (*emptypb.Empty, error) {
+			return nil, errors.New("delete unavailable")
+		}}
+		result, err := NewGoJudgeClient(rpc, zap.NewNop()).Execute(context.Background(), outbound.ExecutionRequest{
+			Language: "CPP", SourceCode: "int main(){}", TestCases: officialTestCases(1),
+		})
+		if err != nil || result.Status != "ACCEPTED" {
+			t.Fatalf("delete failure changed result/error = %#v/%v", result, err)
+		}
+		if got := rpc.deletedFileIDs(); fmt.Sprint(got) != "[delete-failure-exe]" {
+			t.Fatalf("deleted FileIDs = %v, want one best-effort cleanup", got)
+		}
+	})
+}
+
+func TestGoJudgeClientExecutableCleanupHasTightBoundedLatency(t *testing.T) {
+	rpc := &fakeExecutorRPC{
+		handler: func(_ context.Context, req *judgepb.Request) (*judgepb.Response, error) {
+			if isCompileRequest(req) {
+				return compileAccepted("blocked-cleanup-exe"), nil
+			}
+			return acceptedForRequest(req), nil
+		},
+		fileDelete: func(ctx context.Context, _ *judgepb.FileID) (*emptypb.Empty, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	}
+
+	started := time.Now()
+	result, err := NewGoJudgeClient(rpc, zap.NewNop()).Execute(context.Background(), outbound.ExecutionRequest{
+		Language: "CPP", SourceCode: "int main(){}", TestCases: officialTestCases(1),
+	})
+	elapsed := time.Since(started)
+	if err != nil || result.Status != "ACCEPTED" {
+		t.Fatalf("Execute() result/error = %#v/%v", result, err)
+	}
+	// Leave scheduling headroom while making a regression to the prior 5 s
+	// cleanup timeout unmistakable.
+	if elapsed > 1500*time.Millisecond {
+		t.Fatalf("blocked cleanup delayed Execute for %s, want below 1.5s", elapsed)
+	}
+	if elapsed < executableCleanupRPCTimeout/2 {
+		t.Fatalf("blocked cleanup returned in %s, expected it to honor its bounded context", elapsed)
+	}
+}
+
+func TestGoJudgeClientExecutableCleanupDoesNotDeleteTestcaseCacheFiles(t *testing.T) {
+	identity := testDatasetIdentity(42, 1, "a")
+	testCase := cachedOfficialTestCase(1, "case", "input\n", "ok\n")
+	rpc := &fakeExecutorRPC{
+		fileList: emptyFileList,
+		fileAdd: func(context.Context, *judgepb.FileContent) (*judgepb.FileID, error) {
+			return &judgepb.FileID{FileID: "testcase-cache-file"}, nil
+		},
+		handler: func(_ context.Context, req *judgepb.Request) (*judgepb.Response, error) {
+			if isCompileRequest(req) {
+				return compileAccepted("submission-exe"), nil
+			}
+			assertCachedOfficialStdin(t, req, "testcase-cache-file")
+			return acceptedResults("ok\n"), nil
+		},
+	}
+	result, err := NewGoJudgeClient(rpc, zap.NewNop(), enabledTestcaseCacheConfig()).Execute(context.Background(), outbound.ExecutionRequest{
+		Language: "CPP", SourceCode: "int main(){}", StopOnFirstFailure: true, TestcaseDataset: identity, TestCases: []outbound.ExecutionTestCase{testCase},
+	})
+	if err != nil || result.Status != "ACCEPTED" {
+		t.Fatalf("Execute() result/error = %#v/%v", result, err)
+	}
+	if got := rpc.deletedFileIDs(); fmt.Sprint(got) != "[submission-exe]" {
+		t.Fatalf("deleted FileIDs = %v, testcase cache FileID must remain untouched", got)
+	}
+}
+
+func TestGoJudgeClientMapsExecutionResponses(t *testing.T) {
+	testCase := outbound.ExecutionTestCase{Index: 1, ID: "case", Kind: "custom"}
+	for _, tt := range []struct {
+		name       string
+		status     judgepb.Response_Result_StatusType
+		exitStatus int32
+		want       string
+	}{
+		{"accepted", judgepb.Response_Result_Accepted, 0, "ACCEPTED"},
+		{"accepted nonzero exit", judgepb.Response_Result_Accepted, 1, "RUNTIME_ERROR"},
+		{"tle", judgepb.Response_Result_TimeLimitExceeded, 0, "TIME_LIMIT_EXCEEDED"},
+		{"mle", judgepb.Response_Result_MemoryLimitExceeded, 0, "MEMORY_LIMIT_EXCEEDED"},
+		{"output limit", judgepb.Response_Result_OutputLimitExceeded, 0, "OUTPUT_LIMIT_EXCEEDED"},
+		{"runtime", judgepb.Response_Result_NonZeroExitStatus, 1, "RUNTIME_ERROR"},
+		{"internal", judgepb.Response_Result_InternalError, 0, "SYSTEM_ERROR"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got := mapTestCaseResult("CPP", testCase, &judgepb.Response_Result{Status: tt.status, ExitStatus: tt.exitStatus}, false)
+			if got.Status != tt.want {
+				t.Fatalf("status = %s, want %s", got.Status, tt.want)
+			}
+		})
+	}
+
+	accepted := mapTestCaseResult("CPP", outbound.ExecutionTestCase{Index: 1, ID: "wa", ExpectedOutput: stringPtr("expected\n")}, &judgepb.Response_Result{
+		Status: judgepb.Response_Result_Accepted,
+		Files:  map[string][]byte{"stdout": []byte("actual\n")},
+	}, true)
+	if accepted.Status != "WRONG_ANSWER" {
+		t.Fatalf("output comparison status = %s, want WRONG_ANSWER", accepted.Status)
+	}
+}
+
+func TestGoJudgeClientPropagatesCancellationToUnaryRPC(t *testing.T) {
+	called := make(chan struct{})
+	rpc := &fakeExecutorRPC{handler: func(ctx context.Context, _ *judgepb.Request) (*judgepb.Response, error) {
+		close(called)
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := NewGoJudgeClient(rpc, zap.NewNop()).Execute(ctx, outbound.ExecutionRequest{
+		Language: "GO", SourceCode: "package main", TestCases: []outbound.ExecutionTestCase{{Index: 1, ID: "case"}},
+	})
+	if err == nil || !errors.Is(err, context.Canceled) {
+		t.Fatalf("Execute() error = %v, want wrapped context cancellation", err)
+	}
+	select {
+	case <-called:
+	case <-time.After(time.Second):
+		t.Fatal("cancelled context was not passed to unary RPC")
+	}
+}
+
+func TestGoJudgeClientRejectsMalformedResponses(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		resp *judgepb.Response
+		want string
+	}{
+		{"missing executable file ID", compileAccepted(""), "executable file ID"},
+		{"nil compile result", &judgepb.Response{Results: []*judgepb.Response_Result{nil}}, "did not contain a result"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			rpc := &fakeExecutorRPC{handler: func(_ context.Context, _ *judgepb.Request) (*judgepb.Response, error) { return tt.resp, nil }}
+			_, err := NewGoJudgeClient(rpc, zap.NewNop()).Execute(context.Background(), outbound.ExecutionRequest{
+				Language: "CPP", SourceCode: "int main(){}", TestCases: []outbound.ExecutionTestCase{{Index: 1, ID: "case"}},
+			})
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error = %v, want %q", err, tt.want)
+			}
+		})
+	}
+
+	t.Run("run result count mismatch", func(t *testing.T) {
+		var calls int
+		rpc := &fakeExecutorRPC{handler: func(_ context.Context, _ *judgepb.Request) (*judgepb.Response, error) {
+			calls++
+			if calls == 1 {
+				return compileAccepted("exe-1"), nil
+			}
+			return &judgepb.Response{Results: []*judgepb.Response_Result{}}, nil
+		}}
+		_, err := NewGoJudgeClient(rpc, zap.NewNop()).Execute(context.Background(), outbound.ExecutionRequest{
+			Language: "CPP", SourceCode: "int main(){}", TestCases: []outbound.ExecutionTestCase{{Index: 1, ID: "case"}},
+		})
+		if err == nil || !strings.Contains(err.Error(), "returned 0 results") {
+			t.Fatalf("error = %v, want result count mismatch", err)
+		}
+	})
+}
+
+func TestGoJudgeClientRaisesOutputLimitForLargeExpectedOutput(t *testing.T) {
+	expected := strings.Repeat("7 ", 600*1024)
+	var compile bool
+	rpc := &fakeExecutorRPC{handler: func(_ context.Context, req *judgepb.Request) (*judgepb.Response, error) {
+		if isCompileRequest(req) {
+			compile = true
+			return compileAccepted("exe-1"), nil
+		}
+		if req.GetCmd()[0].GetFiles()[1].GetPipe().GetMax() < int64(len(expected)+expectedOutputHeadroomBytes) {
+			t.Fatalf("stdout collector max = %d, want expected-output headroom", req.GetCmd()[0].GetFiles()[1].GetPipe().GetMax())
+		}
+		return acceptedResults(expected), nil
+	}}
+	result, err := NewGoJudgeClient(rpc, zap.NewNop()).Execute(context.Background(), outbound.ExecutionRequest{
+		Language: "CPP", SourceCode: "int main(){}", StopOnFirstFailure: true,
+		TestCases: []outbound.ExecutionTestCase{{Index: 1, ID: "large", ExpectedOutput: &expected}},
+	})
+	if err != nil || !compile || result.Status != "ACCEPTED" {
+		t.Fatalf("result/error/compile = %#v/%v/%t", result, err, compile)
+	}
+}
+
+func assertCompileRequest(t *testing.T, req *judgepb.Request) {
+	t.Helper()
+	if len(req.GetCmd()) != 1 {
+		t.Fatalf("compile command count = %d, want 1", len(req.GetCmd()))
+	}
+	cmd := req.GetCmd()[0]
+	if got, want := fmt.Sprint(cmd.GetArgs()), "[/usr/bin/g++ -O3 -std=c++17 main.cpp -o main]"; got != want {
+		t.Fatalf("compile args = %s, want %s", got, want)
+	}
+	if got, want := fmt.Sprint(cmd.GetEnv()), "[PATH=/usr/bin:/bin]"; got != want {
+		t.Fatalf("compile env = %s, want %s", got, want)
+	}
+	if got := string(cmd.GetCopyIn()["main.cpp"].GetMemory().GetContent()); got != "int main() {}" {
+		t.Fatalf("compile source = %q", got)
+	}
+	if cmd.GetFiles()[1].GetPipe().GetName() != "stdout" || cmd.GetFiles()[2].GetPipe().GetName() != "stderr" {
+		t.Fatalf("compile collectors = %#v", cmd.GetFiles())
+	}
+	if got, want := cmd.GetCopyOutCached()[0].GetName(), "main"; got != want {
+		t.Fatalf("copy-out cached = %q, want %q", got, want)
+	}
+	if got, want := cmd.GetCpuTimeLimit(), uint64(30*time.Second); got != want {
+		t.Fatalf("compile cpu limit = %v, want %v", time.Duration(got), time.Duration(want))
+	}
+	if got, want := cmd.GetClockTimeLimit(), uint64(60*time.Second); got != want {
+		t.Fatalf("compile clock limit = %v, want %v", time.Duration(got), time.Duration(want))
+	}
+	if got, want := cmd.GetMemoryLimit(), uint64(512*1024*1024); got != want {
+		t.Fatalf("compile memory limit = %d, want %d", got, want)
+	}
+	if got, want := cmd.GetProcLimit(), uint64(500); got != want {
+		t.Fatalf("compile proc limit = %d, want %d", got, want)
+	}
+}
+
+func assertOfficialRunRequest(t *testing.T, req *judgepb.Request, fileID string, stdin []string) {
+	t.Helper()
+	if len(req.GetCmd()) != len(stdin) {
+		t.Fatalf("run command count = %d, want %d", len(req.GetCmd()), len(stdin))
+	}
+	for index, cmd := range req.GetCmd() {
+		if got := string(cmd.GetFiles()[0].GetMemory().GetContent()); got != stdin[index] {
+			t.Fatalf("stdin[%d] = %q, want %q", index, got, stdin[index])
+		}
+		if got := cmd.GetCopyIn()["main"].GetCached().GetFileID(); got != fileID {
+			t.Fatalf("cached executable file ID = %q, want %q", got, fileID)
+		}
+		if cmd.GetFiles()[1].GetPipe().GetName() != "stdout" || cmd.GetFiles()[2].GetPipe().GetName() != "stderr" {
+			t.Fatalf("run collectors = %#v", cmd.GetFiles())
+		}
+		if got, want := cmd.GetCpuTimeLimit(), uint64(time.Second); got != want {
+			t.Fatalf("run cpu limit = %v, want %v", time.Duration(got), time.Duration(want))
+		}
+		if got, want := cmd.GetClockTimeLimit(), uint64(2*time.Second); got != want {
+			t.Fatalf("run clock limit = %v, want %v", time.Duration(got), time.Duration(want))
+		}
+		if got, want := cmd.GetMemoryLimit(), uint64(64*1024*1024); got != want {
+			t.Fatalf("run memory limit = %d, want %d", got, want)
+		}
+		if got, want := cmd.GetProcLimit(), uint64(50); got != want {
+			t.Fatalf("run proc limit = %d, want %d", got, want)
+		}
+	}
+}
+
+func isCompileRequest(req *judgepb.Request) bool {
+	return len(req.GetCmd()) == 1 && len(req.GetCmd()[0].GetCopyOutCached()) == 1
+}
+
+func compileAccepted(fileID string) *judgepb.Response {
+	return &judgepb.Response{Results: []*judgepb.Response_Result{{
+		Status:  judgepb.Response_Result_Accepted,
+		FileIDs: map[string]string{"main": fileID},
+	}}}
+}
+
+func acceptedResults(outputs ...string) *judgepb.Response {
+	response := &judgepb.Response{Results: make([]*judgepb.Response_Result, 0, len(outputs))}
+	for _, output := range outputs {
+		response.Results = append(response.Results, &judgepb.Response_Result{
+			Status: judgepb.Response_Result_Accepted,
+			Files:  map[string][]byte{"stdout": []byte(output), "stderr": []byte{}},
+		})
+	}
+	return response
+}
+
+func acceptedForRequest(req *judgepb.Request) *judgepb.Response {
+	outputs := make([]string, 0, len(req.GetCmd()))
+	for _, cmd := range req.GetCmd() {
+		outputs = append(outputs, string(cmd.GetFiles()[0].GetMemory().GetContent()))
+	}
+	return acceptedResults(outputs...)
 }
 
 func officialTestCases(count int) []outbound.ExecutionTestCase {
@@ -335,264 +726,12 @@ func officialTestCases(count int) []outbound.ExecutionTestCase {
 	for index := 1; index <= count; index++ {
 		output := fmt.Sprintf("%d\n", index)
 		testCases = append(testCases, outbound.ExecutionTestCase{
-			Index:          index,
-			ID:             fmt.Sprintf("%d", index),
-			Kind:           "official",
-			Stdin:          output,
-			ExpectedOutput: &output,
+			Index: index, ID: fmt.Sprintf("%d", index), Kind: "official", Stdin: output, ExpectedOutput: &output,
 		})
 	}
 	return testCases
 }
 
-func commandIndexes(t *testing.T, commands []*gojudge.Cmd) []int {
-	t.Helper()
-	indexes := make([]int, 0, len(commands))
-	for _, command := range commands {
-		if len(command.Files) == 0 || command.Files[0].Content == nil {
-			t.Fatalf("command stdin = %#v, want a testcase index", command.Files)
-		}
-		var index int
-		if _, err := fmt.Sscanf(*command.Files[0].Content, "%d", &index); err != nil {
-			t.Fatalf("parse testcase stdin %q: %v", *command.Files[0].Content, err)
-		}
-		indexes = append(indexes, index)
-	}
-	return indexes
-}
+func stringPtr(value string) *string { return &value }
 
-func acceptedResponseForCommand(t *testing.T, command *gojudge.Cmd) gojudge.Result {
-	t.Helper()
-	indexes := commandIndexes(t, []*gojudge.Cmd{command})
-	return acceptedResponse(indexes[0])
-}
-
-func acceptedResponse(index int) gojudge.Result {
-	return gojudge.Result{Status: "Accepted", Files: map[string]string{"stdout": fmt.Sprintf("%d\n", index), "stderr": ""}}
-}
-
-func TestRunCodeCompileErrorReturnsNoTests(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(gojudge.Response{{Status: "Nonzero Exit Status", Files: map[string]string{"stderr": "./main.go:19:9: make (built-in) must be called"}}})
-	}))
-	defer server.Close()
-
-	client := NewGoJudgeClient(server.URL, zap.NewNop())
-	res, err := client.Execute(context.Background(), outbound.ExecutionRequest{
-		Language:   "GO",
-		SourceCode: "bad",
-		TestCases:  []outbound.ExecutionTestCase{{Index: 1, ID: "sample-1", Kind: "sample", ExpectedOutput: stringPtr("")}},
-	})
-	if err != nil {
-		t.Fatalf("Execute() error = %v", err)
-	}
-	if res.Status != "COMPILATION_ERROR" || len(res.TestCases) != 0 {
-		t.Fatalf("result = %#v, want COMPILATION_ERROR with no tests", res)
-	}
-	if res.CompileOutput == nil || *res.CompileOutput != "main.go:19:9: make (built-in) must be called" {
-		t.Fatalf("compile output = %v, want sanitized compiler output", res.CompileOutput)
-	}
-	if len(res.Diagnostics) != 1 || res.Diagnostics[0].Line != 19 || res.Diagnostics[0].Column != 9 {
-		t.Fatalf("compile diagnostics = %+v, want line 19 column 9", res.Diagnostics)
-	}
-	if res.ErrorMessage != nil {
-		t.Fatalf("compile error message = %q, want nil", *res.ErrorMessage)
-	}
-}
-
-func TestMapJudgeStatusClassifiesUserCodeFailures(t *testing.T) {
-	tests := []struct {
-		name       string
-		status     string
-		exitStatus int
-		want       string
-	}{
-		{name: "runtime error", status: "Runtime Error", want: "RUNTIME_ERROR"},
-		{name: "nonzero exit", status: "Nonzero Exit Status", want: "RUNTIME_ERROR"},
-		{name: "tle", status: "Time Limit Exceeded", want: "TIME_LIMIT_EXCEEDED"},
-		{name: "mle", status: "Memory Limit Exceeded", want: "MEMORY_LIMIT_EXCEEDED"},
-		{name: "ole", status: "Output Limit Exceeded", want: "OUTPUT_LIMIT_EXCEEDED"},
-		{name: "internal", status: "Internal Error", want: "SYSTEM_ERROR"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := mapJudgeStatus(tt.status, tt.exitStatus); got != tt.want {
-				t.Fatalf("mapJudgeStatus(%q) = %q, want %q", tt.status, got, tt.want)
-			}
-		})
-	}
-}
-
-func TestExecutePropagatesContextCancellationToGoJudge(t *testing.T) {
-	release := make(chan struct{})
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		select {
-		case <-r.Context().Done():
-		case <-release:
-		}
-	}))
-	defer func() {
-		close(release)
-		server.Close()
-	}()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
-	defer cancel()
-
-	client := NewGoJudgeClient(server.URL, zap.NewNop())
-	_, err := client.Execute(ctx, outbound.ExecutionRequest{
-		Language:   "GO",
-		SourceCode: "package main\nfunc main() {}\n",
-		TestCases:  []outbound.ExecutionTestCase{{Index: 1, ID: "case-1", Kind: "custom", Stdin: "1\n"}},
-	})
-	if err == nil {
-		t.Fatal("Execute() error = nil, want context cancellation error")
-	}
-	if ctx.Err() == nil {
-		t.Fatal("context was not cancelled")
-	}
-}
-
-func TestSubmissionOutputLimitIsPreserved(t *testing.T) {
-	if got := mapOfficialSubmissionStatus(mapJudgeStatus("Output Limit Exceeded", 0)); got != "OUTPUT_LIMIT_EXCEEDED" {
-		t.Fatalf("submission status = %q, want OUTPUT_LIMIT_EXCEEDED", got)
-	}
-	if got := mapJudgeStatus("Output Limit Exceeded", 0); got != "OUTPUT_LIMIT_EXCEEDED" {
-		t.Fatalf("raw judge status = %q, want OUTPUT_LIMIT_EXCEEDED for run-code mapper", got)
-	}
-}
-
-func TestExecuteRaisesOutputLimitForLargeExpectedOutput(t *testing.T) {
-	expected := strings.Repeat("7 ", 600*1024)
-	var sawRun bool
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		var req gojudge.Request
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Fatalf("decode request: %v", err)
-		}
-		if len(req.Cmd) == 1 && req.Cmd[0].CopyOutCached != nil {
-			_ = json.NewEncoder(w).Encode(gojudge.Response{{Status: "Accepted", FileIDs: map[string]string{"main": "exe-1"}}})
-			return
-		}
-
-		sawRun = true
-		if len(req.Cmd) != 1 {
-			t.Fatalf("run command count = %d, want 1", len(req.Cmd))
-		}
-		stdoutFile := req.Cmd[0].Files[1]
-		if stdoutFile.Max == nil {
-			t.Fatal("stdout max = nil")
-		}
-		wantMin := int64(len(expected) + expectedOutputHeadroomBytes)
-		if *stdoutFile.Max < wantMin {
-			t.Fatalf("stdout max = %d, want at least %d", *stdoutFile.Max, wantMin)
-		}
-		_ = json.NewEncoder(w).Encode(gojudge.Response{{
-			Status: "Accepted",
-			Files:  map[string]string{"stdout": expected, "stderr": ""},
-		}})
-	}))
-	defer server.Close()
-
-	client := NewGoJudgeClient(server.URL, zap.NewNop())
-	res, err := client.Execute(context.Background(), outbound.ExecutionRequest{
-		Language:           "CPP",
-		SourceCode:         "int main(){}",
-		StopOnFirstFailure: true,
-		TestCases: []outbound.ExecutionTestCase{{
-			Index:          1,
-			ID:             "large-output",
-			Kind:           "official",
-			Stdin:          "1\n",
-			ExpectedOutput: &expected,
-		}},
-	})
-	if err != nil {
-		t.Fatalf("Execute() error = %v", err)
-	}
-	if !sawRun {
-		t.Fatal("server did not receive run request")
-	}
-	if res.Status != "ACCEPTED" || len(res.TestCases) != 1 || res.TestCases[0].Status != "ACCEPTED" {
-		t.Fatalf("result = %#v, want accepted large output", res)
-	}
-}
-
-func TestCompileUsesMinimumCompileBudget(t *testing.T) {
-	var sawCompile bool
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-
-		var req gojudge.Request
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Fatalf("decode request: %v", err)
-		}
-
-		if len(req.Cmd) == 1 && req.Cmd[0].CopyOutCached != nil {
-			sawCompile = true
-
-			cmd := req.Cmd[0]
-
-			wantCPU := uint64(30 * time.Second)
-			wantClock := uint64(60 * time.Second)
-
-			if cmd.CPULimit != wantCPU {
-				t.Fatalf(
-					"compile CPU limit = %v, want %v",
-					time.Duration(cmd.CPULimit),
-					time.Duration(wantCPU),
-				)
-			}
-
-			if cmd.ClockLimit != wantClock {
-				t.Fatalf(
-					"compile clock limit = %v, want %v",
-					time.Duration(cmd.ClockLimit),
-					time.Duration(wantClock),
-				)
-			}
-
-			_ = json.NewEncoder(w).Encode(gojudge.Response{{
-				Status:  "Accepted",
-				FileIDs: map[string]string{"main": "exe-1"},
-			}})
-			return
-		}
-
-		_ = json.NewEncoder(w).Encode(gojudge.Response{{
-			Status: "Accepted",
-			Files: map[string]string{
-				"stdout": "42\n",
-				"stderr": "",
-			},
-		}})
-	}))
-	defer server.Close()
-
-	client := NewGoJudgeClient(server.URL, zap.NewNop())
-
-	_, err := client.Execute(context.Background(), outbound.ExecutionRequest{
-		Language:   "GO",
-		SourceCode: "package main\nfunc main() {}\n",
-		Limits: outbound.ExecutionLimits{
-			TimeLimitMS: 1_000,
-		},
-		TestCases: []outbound.ExecutionTestCase{{
-			Index: 1,
-			ID:    "case-1",
-			Kind:  "custom",
-		}},
-	})
-	if err != nil {
-		t.Fatalf("Execute() error = %v", err)
-	}
-
-	if !sawCompile {
-		t.Fatal("compile request was not observed")
-	}
-}
+var _ executorRPC = (*fakeExecutorRPC)(nil)

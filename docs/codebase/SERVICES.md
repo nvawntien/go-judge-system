@@ -33,7 +33,7 @@
 
 * **Entrypoint:** `workers/judge/cmd/server/main.go`; Wire in `cmd/server/wire.go`.
 * **Responsibility:** consume official judge jobs, obtain official testcases, invoke go-judge, publish results; expose synchronous `RunCode` for Submission Service.
-* **Internal layout:** judge use cases; Kafka and gRPC inbound adapters; gRPC Problem metadata client, HTTP go-judge client, Kafka result producer, and filesystem testcase loader outbound adapters.
+* **Internal layout:** judge use cases; Kafka and gRPC inbound adapters; gRPC Problem metadata client, unary go-judge gRPC client, Kafka result producer, and filesystem testcase loader outbound adapters.
 * **Kafka:** consumes `judge.submission.jobs` as group `judge-worker-v1`; publishes results and DLT messages.
 * **gRPC:** `JudgeService.RunCode` from `proto/judge/v1/run.proto`, configured port 9093.
 * **Storage:** no database. It keeps a Docker-volume cache at `/cache/testcases`, validates ZIP SHA-256, then uses a read-only mounted cache from the sandbox.

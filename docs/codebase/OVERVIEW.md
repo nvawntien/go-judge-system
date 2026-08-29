@@ -39,7 +39,7 @@ flowchart LR
   jobs --> worker[Judge Worker]
   worker -->|gRPC GetTestCase| problemgrpc[Problem gRPC :9092]
   problemgrpc --> minio[(MinIO testcase ZIP)]
-  worker --> sandbox[go-judge :5050]
+  worker --> sandbox[go-judge gRPC :5051]
   worker -->|results| results[(Kafka results)]
   results --> submission
   submission -->|SSE| client
