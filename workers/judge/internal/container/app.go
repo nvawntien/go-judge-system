@@ -27,6 +27,11 @@ type App struct {
 	ProblemConn     *googlegrpc.ClientConn
 	SandboxConn     *SandboxClientConn
 	SandboxExecutor *execute.GoJudgeClient
+	closeHooks      *appCloseHooks // test-only seam; nil in production.
+}
+
+type appCloseHooks struct {
+	grpcStop, consumerClose, cacheClose, sandboxClose, problemClose, producerClose func() error
 }
 
 func NewApp(
@@ -124,27 +129,39 @@ func (a *App) Close() error {
 	// Stop public RunCode requests before closing the sandbox dependency they
 	// may use. ConsumerGroup.Close then prevents further Kafka job intake; it
 	// waits for Sarama's active consumption loops before returning.
-	if a.GRPC != nil {
+	if a.closeHooks != nil && a.closeHooks.grpcStop != nil {
+		addCloseErr("inbound gRPC server", a.closeHooks.grpcStop())
+	} else if a.GRPC != nil {
 		a.GRPC.Stop()
 	}
-	if a.JobConsumer != nil {
+	if a.closeHooks != nil && a.closeHooks.consumerClose != nil {
+		addCloseErr("judge job consumer", a.closeHooks.consumerClose())
+	} else if a.JobConsumer != nil {
 		addCloseErr("judge job consumer", a.JobConsumer.Close())
 	}
 
 	// The testcase cache owns best-effort FileDelete lifecycle RPCs. It must
 	// finish (or cancel) those before the sandbox ClientConn is closed.
-	if a.SandboxExecutor != nil {
+	if a.closeHooks != nil && a.closeHooks.cacheClose != nil {
+		addCloseErr("testcase cache lifecycle", a.closeHooks.cacheClose())
+	} else if a.SandboxExecutor != nil {
 		a.SandboxExecutor.Close()
 	}
-	if a.SandboxConn != nil {
+	if a.closeHooks != nil && a.closeHooks.sandboxClose != nil {
+		addCloseErr("go-judge sandbox gRPC connection", a.closeHooks.sandboxClose())
+	} else if a.SandboxConn != nil {
 		addCloseErr("go-judge sandbox gRPC connection", a.SandboxConn.ClientConn.Close())
 	}
 
-	if a.ProblemConn != nil {
+	if a.closeHooks != nil && a.closeHooks.problemClose != nil {
+		addCloseErr("problem gRPC connection", a.closeHooks.problemClose())
+	} else if a.ProblemConn != nil {
 		addCloseErr("problem gRPC connection", a.ProblemConn.Close())
 	}
 
-	if a.KafkaProducer != nil {
+	if a.closeHooks != nil && a.closeHooks.producerClose != nil {
+		addCloseErr("kafka producer", a.closeHooks.producerClose())
+	} else if a.KafkaProducer != nil {
 		addCloseErr("kafka producer", a.KafkaProducer.Close())
 	}
 
