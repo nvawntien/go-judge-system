@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -21,6 +22,36 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
+
+type recordingExecutorRPC struct {
+	executorRPC
+	mu       sync.Mutex
+	compiled string
+	deleted  []string
+}
+
+func (r *recordingExecutorRPC) Exec(ctx context.Context, req *judgepb.Request, opts ...grpc.CallOption) (*judgepb.Response, error) {
+	response, err := r.executorRPC.Exec(ctx, req, opts...)
+	if err == nil && isCompileRequest(req) && len(response.GetResults()) > 0 {
+		r.mu.Lock()
+		r.compiled = response.GetResults()[0].GetFileIDs()[gojudge.GetExeFileName("CPP")]
+		r.mu.Unlock()
+	}
+	return response, err
+}
+
+func (r *recordingExecutorRPC) FileDelete(ctx context.Context, fileID *judgepb.FileID, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	r.mu.Lock()
+	r.deleted = append(r.deleted, fileID.GetFileID())
+	r.mu.Unlock()
+	return r.executorRPC.FileDelete(ctx, fileID, opts...)
+}
+
+func (r *recordingExecutorRPC) snapshot() (string, []string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.compiled, append([]string(nil), r.deleted...)
+}
 
 func TestGoJudgeClientGRPCIntegrationCompileAndRunCPP(t *testing.T) {
 	address := os.Getenv("GO_JUDGE_GRPC_INTEGRATION_ADDR")
@@ -66,6 +97,11 @@ int main() {
 	if executableFileID == "" {
 		t.Fatal("compile returned an empty executable FileID")
 	}
+	// This lower-level mapping test intentionally calls compile/runBatch rather
+	// than the production Execute lifecycle, so it owns the temporary
+	// CopyOutCached executable explicitly. Production jobs use Execute(), which
+	// registers the same cleanup immediately after a successful compile.
+	defer client.cleanupExecutableFile(executableFileID)
 	t.Log("compile RPC accepted; executable FileID present")
 
 	testCases := []outbound.ExecutionTestCase{
@@ -93,6 +129,81 @@ int main() {
 		}
 		t.Logf("run RPC testcase=%s status=%s stdout=%q", testCases[index].ID, result.Status, *result.ActualOutput)
 	}
+}
+
+func TestGoJudgeClientGRPCIntegrationExecutableCleanupLifecycle(t *testing.T) {
+	address := os.Getenv("GO_JUDGE_GRPC_INTEGRATION_ADDR")
+	if address == "" {
+		t.Skip("set GO_JUDGE_GRPC_INTEGRATION_ADDR")
+	}
+	conn, err := sharedgrpc.NewClientConn(address, sharedgrpc.WithInsecureTransport())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	raw := judgepb.NewExecutorClient(conn)
+	before, err := raw.FileList(context.Background(), &emptypb.Empty{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorded := &recordingExecutorRPC{executorRPC: raw}
+	client := NewGoJudgeClient(recorded, zap.NewNop())
+	result, err := client.Execute(context.Background(), outbound.ExecutionRequest{
+		Language: "CPP", SourceCode: "#include <iostream>\nint main(){std::cout << \"ok\\n\";}", StopOnFirstFailure: true,
+		TestCases: []outbound.ExecutionTestCase{{Index: 1, ID: "cleanup", ExpectedOutput: stringPtr("ok\n")}},
+	})
+	if err != nil || result.Status != "ACCEPTED" {
+		t.Fatalf("Execute=%#v/%v", result, err)
+	}
+	compiled, deleted := recorded.snapshot()
+	if compiled == "" || len(deleted) != 1 || deleted[0] != compiled {
+		t.Fatalf("compiled=%q deleted=%v", compiled, deleted)
+	}
+	after, err := raw.FileList(context.Background(), &emptypb.Empty{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := after.GetFileIDs()[compiled]; ok {
+		t.Fatalf("production Execute left executable FileID %q; before=%v after=%v", compiled, before.GetFileIDs(), after.GetFileIDs())
+	}
+	t.Logf("compiled FileID=%s deleted=%s", compiled, deleted[0])
+}
+
+func TestGoJudgeClientGRPCIntegrationDirectFileDeleteControl(t *testing.T) {
+	address := os.Getenv("GO_JUDGE_GRPC_INTEGRATION_ADDR")
+	if address == "" {
+		t.Skip("set GO_JUDGE_GRPC_INTEGRATION_ADDR")
+	}
+	conn, err := sharedgrpc.NewClientConn(address, sharedgrpc.WithInsecureTransport())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	client := NewGoJudgeClient(judgepb.NewExecutorClient(conn), zap.NewNop())
+	lang, _ := gojudge.GetLanguageConfig("CPP", gojudge.GetSourceFileName("CPP"), gojudge.GetExeFileName("CPP"))
+	compileResult, fileID, err := client.compile(context.Background(), "CPP", "#include <iostream>\nint main(){std::cout << \"ok\\n\";}", lang, normalizeLimits(outbound.ExecutionLimits{}))
+	if err != nil || compileResult != nil || fileID == "" {
+		t.Fatalf("compile=%#v/%q/%v", compileResult, fileID, err)
+	}
+	raw := judgepb.NewExecutorClient(conn)
+	list, err := raw.FileList(context.Background(), &emptypb.Empty{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := list.GetFileIDs()[fileID]; !ok {
+		t.Fatalf("compiled FileID %q absent before direct delete: %v", fileID, list.GetFileIDs())
+	}
+	if _, err := raw.FileDelete(context.Background(), &judgepb.FileID{FileID: fileID}); err != nil {
+		t.Fatalf("direct FileDelete(%q): %v", fileID, err)
+	}
+	list, err = raw.FileList(context.Background(), &emptypb.Empty{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := list.GetFileIDs()[fileID]; ok {
+		t.Fatalf("direct FileDelete left %q", fileID)
+	}
+	t.Logf("direct FileDelete removed FileID=%s", fileID)
 }
 
 func TestGoJudgeClientGRPCIntegrationSupportedLanguages(t *testing.T) {
