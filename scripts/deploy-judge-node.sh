@@ -180,11 +180,20 @@ verify_sandbox_http() {
     'wget -S -T 5 -O /dev/null http://127.0.0.1:5050/ >/dev/null 2>&1 || test "$?" -eq 8'
 }
 
+verify_sandbox_grpc() {
+  local sandbox_id
+  sandbox_id="$(compose ps -q go-judge)"
+  # executorserver v1.7.1 does not expose grpc_health_v1. A listening private
+  # TCP socket is the strongest dependency-free readiness primitive available.
+  verify_listening_tcp_port "$sandbox_id" 5051
+}
+
 verify_services() {
   local worker_id grpc_port
   container_is_running go-judge
   container_is_running judge-worker
   verify_sandbox_http
+  verify_sandbox_grpc
 
   worker_id="$(compose ps -q judge-worker)"
   grpc_port="$(read_grpc_port)"

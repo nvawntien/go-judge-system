@@ -18,6 +18,7 @@ import (
 
 	judgepb "github.com/criyle/go-judge/pb"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -162,6 +163,43 @@ int main() { char c; long long n = 0; while (std::cin.get(c)) n++; std::cout << 
 	result := mapTestCaseResult("CPP", outbound.ExecutionTestCase{Index: 1, ID: "large", ExpectedOutput: stringPtr(fmt.Sprintf("%d\n", len(input)))}, results[0], false)
 	if result.Status != "ACCEPTED" {
 		t.Fatalf("large LocalFile result = %#v", result)
+	}
+}
+
+func TestGoJudgeClientGRPCIntegrationAggregateResponseOverFourMiB(t *testing.T) {
+	address := os.Getenv("GO_JUDGE_GRPC_INTEGRATION_ADDR")
+	if address == "" {
+		t.Skip("set GO_JUDGE_GRPC_INTEGRATION_ADDR for large-response integration")
+	}
+	conn, err := sharedgrpc.NewClientConn(address, sharedgrpc.WithInsecureTransport(), sharedgrpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(SandboxGRPCMaxReceiveBytes)))
+	if err != nil {
+		t.Fatalf("create bounded large-response connection: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+	client := NewGoJudgeClient(judgepb.NewExecutorClient(conn), zap.NewNop())
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	langCfg, _ := gojudge.GetLanguageConfig("CPP", gojudge.GetSourceFileName("CPP"), gojudge.GetExeFileName("CPP"))
+	limits := normalizeLimits(outbound.ExecutionLimits{TimeLimitMS: 5_000, MemoryLimitKB: 256 * 1024, OutputLimitBytes: 1 << 20})
+	compileResult, executableFileID, err := client.compile(ctx, "CPP", `#include <iostream>
+int main(){ for(int i=0;i<(1<<20);i++) std::cout << 'x'; }`, langCfg, limits)
+	if err != nil || compileResult != nil || executableFileID == "" {
+		t.Fatalf("compile result/fileID/error = %#v/%q/%v", compileResult, executableFileID, err)
+	}
+	defer client.cleanupExecutableFile(executableFileID)
+	expected := strings.Repeat("x", 1<<20)
+	tests := make([]outbound.ExecutionTestCase, 4)
+	for i := range tests {
+		tests[i] = outbound.ExecutionTestCase{Index: i + 1, ID: fmt.Sprintf("large-%d", i), Stdin: "", ExpectedOutput: &expected}
+	}
+	results, err := client.runBatch(ctx, "CPP", "", langCfg, limits, true, executableFileID, nil, tests, 0)
+	if err != nil || len(results) != 4 {
+		t.Fatalf("4 MiB aggregate response results/error = %d/%v", len(results), err)
+	}
+	for i, result := range results {
+		if got := string(result.GetFiles()["stdout"]); got != expected {
+			t.Fatalf("stdout %d length=%d want=%d", i, len(got), len(expected))
+		}
 	}
 }
 

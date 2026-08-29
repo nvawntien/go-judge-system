@@ -67,7 +67,7 @@ func InitializeApp(cfg *config.Config) (*container.App, func(), error) {
 	runCodeHandler := handler.NewRunCodeHandler(runCodeUseCase)
 	judgeServer := grpc.NewJudgeServer(runCodeHandler)
 	server := grpc.NewServer(serverConfig, judgeServer)
-	app := container.NewApp(cfg, judgeJobConsumer, server, zapLogger, syncProducer, clientConn, sandboxClientConn)
+	app := container.NewApp(cfg, judgeJobConsumer, server, zapLogger, syncProducer, clientConn, sandboxClientConn, goJudgeClient)
 	return app, func() {
 	}, nil
 }

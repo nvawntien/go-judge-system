@@ -11,6 +11,7 @@ import (
 	"go-judge-system/pkg/config"
 	grpcin "go-judge-system/workers/judge/internal/adapter/inbound/grpc"
 	kafkain "go-judge-system/workers/judge/internal/adapter/inbound/kafka"
+	"go-judge-system/workers/judge/internal/adapter/outbound/execute"
 
 	"github.com/IBM/sarama"
 	"go.uber.org/zap"
@@ -18,13 +19,14 @@ import (
 )
 
 type App struct {
-	Config        *config.Config
-	JobConsumer   *kafkain.JudgeJobConsumer
-	GRPC          *grpcin.Server
-	Logger        *zap.Logger
-	KafkaProducer sarama.SyncProducer
-	ProblemConn   *googlegrpc.ClientConn
-	SandboxConn   *SandboxClientConn
+	Config          *config.Config
+	JobConsumer     *kafkain.JudgeJobConsumer
+	GRPC            *grpcin.Server
+	Logger          *zap.Logger
+	KafkaProducer   sarama.SyncProducer
+	ProblemConn     *googlegrpc.ClientConn
+	SandboxConn     *SandboxClientConn
+	SandboxExecutor *execute.GoJudgeClient
 }
 
 func NewApp(
@@ -35,15 +37,17 @@ func NewApp(
 	producer sarama.SyncProducer,
 	problemConn *googlegrpc.ClientConn,
 	sandboxConn *SandboxClientConn,
+	sandboxExecutor *execute.GoJudgeClient,
 ) *App {
 	return &App{
-		Config:        cfg,
-		JobConsumer:   jobConsumer,
-		GRPC:          grpcServer,
-		Logger:        logger,
-		KafkaProducer: producer,
-		ProblemConn:   problemConn,
-		SandboxConn:   sandboxConn,
+		Config:          cfg,
+		JobConsumer:     jobConsumer,
+		GRPC:            grpcServer,
+		Logger:          logger,
+		KafkaProducer:   producer,
+		ProblemConn:     problemConn,
+		SandboxConn:     sandboxConn,
+		SandboxExecutor: sandboxExecutor,
 	}
 }
 
@@ -127,6 +131,9 @@ func (a *App) Close() error {
 
 	if a.ProblemConn != nil {
 		addCloseErr("problem gRPC connection", a.ProblemConn.Close())
+	}
+	if a.SandboxExecutor != nil {
+		a.SandboxExecutor.Close()
 	}
 
 	if a.SandboxConn != nil {

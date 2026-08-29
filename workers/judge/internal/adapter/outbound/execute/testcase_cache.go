@@ -139,6 +139,10 @@ type sandboxTestcaseCache struct {
 	reconciled         bool
 	reconcileAttempted bool
 	cleanupRunning     bool
+	closed             bool
+	shutdownCtx        context.Context
+	shutdownCancel     context.CancelFunc
+	cleanupWG          sync.WaitGroup
 	nextCleanup        time.Time
 	loads              singleflight.Group
 	list               singleflight.Group
@@ -148,7 +152,8 @@ func newConfiguredSandboxTestcaseCache(client sandboxFileRPC, logger *zap.Logger
 	if logger == nil {
 		logger = zap.NewNop()
 	}
-	cache := &sandboxTestcaseCache{client: client, logger: logger, cfg: cfg, entries: make(map[testcaseCacheKey]*testcaseCacheEntry)}
+	shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
+	cache := &sandboxTestcaseCache{client: client, logger: logger, cfg: cfg, entries: make(map[testcaseCacheKey]*testcaseCacheEntry), shutdownCtx: shutdownCtx, shutdownCancel: shutdownCancel}
 	if !cfg.Enabled {
 		return cache, nil
 	}
@@ -380,21 +385,40 @@ func (c *sandboxTestcaseCache) maybeScheduleCleanup(now time.Time) {
 		return
 	}
 	c.mu.Lock()
-	if c.cleanupRunning || now.Before(c.nextCleanup) {
+	if c.closed || c.cleanupRunning || now.Before(c.nextCleanup) {
 		c.mu.Unlock()
 		return
 	}
 	c.cleanupRunning = true
 	c.nextCleanup = now.Add(c.cfg.CleanupInterval)
+	c.cleanupWG.Add(1)
 	c.mu.Unlock()
 	go func() {
+		defer c.cleanupWG.Done()
 		defer func() {
 			c.mu.Lock()
 			c.cleanupRunning = false
 			c.mu.Unlock()
 		}()
-		c.cleanup(context.Background())
+		c.cleanup(c.shutdownCtx)
 	}()
+}
+
+// Close prevents new cache cleanup work and cancels any in-flight best-effort
+// FileDelete before the owning sandbox ClientConn is closed. It is idempotent.
+func (c *sandboxTestcaseCache) Close() {
+	if c == nil || !c.enabled {
+		return
+	}
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return
+	}
+	c.closed = true
+	c.shutdownCancel()
+	c.mu.Unlock()
+	c.cleanupWG.Wait()
 }
 
 // cleanup is invoked at a bounded cadence after a batch releases its pins. It

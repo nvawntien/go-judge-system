@@ -52,6 +52,14 @@ type GoJudgeClient struct {
 	testcaseCache *sandboxTestcaseCache
 }
 
+// Close stops adapter-owned best-effort cache lifecycle work. Submission work
+// is stopped by the owning application before this method is called.
+func (c *GoJudgeClient) Close() {
+	if c != nil && c.testcaseCache != nil {
+		c.testcaseCache.Close()
+	}
+}
+
 func NewGoJudgeClient(client executorRPC, logger *zap.Logger, testcaseCacheConfigs ...config.TestcaseCacheConfig) *GoJudgeClient {
 	testcaseCacheCfg := config.TestcaseCacheConfig{}
 	if len(testcaseCacheConfigs) > 0 {
