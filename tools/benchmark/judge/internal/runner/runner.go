@@ -742,6 +742,9 @@ func (r *benchmarkRun) finish() (*RunResult, error) {
 	summary := summarize(r.prepared.Config, values, windows, r.loadStart, r.loadEnd, r.drainStart, r.drainEnd, r.quality, r.peakInFlight)
 	if r.prepared.Config.Mode == config.ModeBurst {
 		summary.Burst = burstMetrics(values, r.loadStart, r.burstLaunchCompletion, r.peakLogicalInFlight, r.peakObservers)
+		// summarize runs before burst metrics are derived from actual event
+		// timestamps, so install the canonical pipeline rate here.
+		summary.Pipeline.TerminalThroughputPerSec = summary.Burst.PipelineTerminalThroughputPerSec
 		summary.Burst.Massive = r.prepared.Config.Objective == config.ObjectiveMassiveBurst
 		r.metadata.ClientDiagnostics.GoroutinesBeforeBurst = r.burstGoroutinesBefore
 		r.metadata.ClientDiagnostics.GoroutinesAfterLaunch = r.burstGoroutinesAfterLaunch
@@ -757,7 +760,7 @@ func (r *benchmarkRun) finish() (*RunResult, error) {
 	ended := time.Now().UTC()
 	r.metadata.EndedAt = &ended
 	if r.prepared.Config.Mode != config.ModeBurst {
-		r.metadata.ObservedRates = &model.ObservedRates{AttemptedPerSecond: summary.Rates.LoadAttemptedPerSecond, AcceptedPerSecond: summary.Rates.LoadAcceptedPerSecond, CompletedPerSecond: summary.Rates.LoadTerminalCompletionSecond}
+		r.metadata.ObservedRates = &model.ObservedRates{AttemptedPerSecond: summary.Rates.LoadAttemptedPerSecond, AcceptedPerSecond: summary.Rates.LoadAcceptedPerSecond, CompletedPerSecond: summary.Rates.LoadTerminalCompletionSecond, PipelineTerminalPerSecond: summary.Rates.LoadPipelineTerminalCompletionSecond, TerminalSemantics: summary.Rates.TerminalCompletionSemantics}
 	}
 	if err := r.writer.WriteSubmissions(values); err != nil {
 		return &RunResult{Dir: r.writer.Dir, Summary: summary}, fmt.Errorf("write submissions: %w", err)
@@ -884,7 +887,14 @@ func (r *benchmarkRun) countEligible(at time.Time) int {
 }
 
 func summarize(cfg config.Config, records []model.SubmissionRecord, windows []model.WindowRecord, loadStart, loadEnd, drainStart, drainEnd time.Time, quality map[string]struct{}, peak int) model.RunSummary {
-	summary := model.RunSummary{SchemaVersion: "astracode.judge-benchmark.summary.v1", RunID: cfg.RunID, RunState: model.RunCompleted, Classification: model.ClassificationInconclusive, Verdicts: map[string]int{}, ExternalMetrics: model.ExternalMetrics{}, QualityFlags: sortedFlags(quality)}
+	summary := model.RunSummary{
+		SchemaVersion: "astracode.judge-benchmark.summary.v2",
+		RunID:         cfg.RunID, RunState: model.RunCompleted, Classification: model.ClassificationInconclusive,
+		Verdicts: map[string]int{}, ExternalMetrics: model.ExternalMetrics{}, QualityFlags: sortedFlags(quality),
+		Compile:   model.CompileMetrics{IncludedInJudgeCore: false, Availability: "UNAVAILABLE", Reason: "judge-bench artifacts do not record per-submission compile wall timestamps"},
+		JudgeCore: model.JudgeCoreMetrics{Definition: "compile_success_to_all_required_testcase_execution_batches_completed", Availability: "UNAVAILABLE", Reason: "judge-bench artifacts do not record compile completion and testcase execution completion timestamps"},
+		Pipeline:  model.PipelineMetrics{TerminalThroughputSemantics: "observed terminal completion rate across the submission pipeline; not Judge Core throughput"},
+	}
 	var submit, e2e, delay []float64
 	for _, record := range records {
 		if record.Phase != model.PhaseLoad {
@@ -950,7 +960,9 @@ func summarize(cfg config.Config, records []model.SubmissionRecord, windows []mo
 				completed++
 			}
 		}
-		summary.Rates.LoadTerminalCompletionSecond = float64(completed) / duration
+		summary.Rates.LoadTerminalCompletionSecond = float64(completed) / duration // deprecated compatibility alias
+		summary.Rates.LoadPipelineTerminalCompletionSecond = summary.Rates.LoadTerminalCompletionSecond
+		summary.Rates.TerminalCompletionSemantics = "observed terminal completion rate during the load window across the pipeline; not Judge Core throughput"
 	}
 	completedDuringLoad := 0
 	for _, record := range records {
@@ -990,9 +1002,23 @@ func summarize(cfg config.Config, records []model.SubmissionRecord, windows []mo
 	if summary.Drain.DurationMS > 0 {
 		rate := float64(summary.Drain.Completed) / (float64(summary.Drain.DurationMS) / 1000)
 		summary.Drain.CompletionRatePerSecond = &rate
+		summary.Drain.PipelineTerminalCompletionRatePerSecond = &rate
 	}
 	summary.Outstanding = model.Outstanding{Peak: peak, EndOfLoad: summary.LoadWindow.OutstandingAtEnd, EndOfDrain: summary.Drain.Remaining}
 	summary.Latencies = model.Latencies{SubmitMS: stats.Distribution(submit), EndToEndMS: stats.Distribution(e2e), ScheduleDelayMS: stats.Distribution(delay)}
+	if summary.Counts.Accepted > 0 {
+		coverage := float64(summary.Counts.Terminal) / float64(summary.Counts.Accepted)
+		summary.Pipeline.TerminalObservationCoverage = &coverage
+		summary.Pipeline.RightCensored = summary.Counts.Terminal < summary.Counts.Accepted
+	}
+	summary.Pipeline.TerminalCompleted = summary.Counts.Terminal
+	if cfg.Mode != config.ModeBurst && summary.Rates.LoadPipelineTerminalCompletionSecond > 0 {
+		// The standard summary has a load-window terminal rate and a separate
+		// drain rate. Keep the canonical top-level value aligned with the legacy
+		// load-window field rather than inventing a whole-run terminal rate.
+		rate := summary.Rates.LoadPipelineTerminalCompletionSecond
+		summary.Pipeline.TerminalThroughputPerSec = &rate
+	}
 	return summary
 }
 
@@ -1019,7 +1045,7 @@ func burstMetrics(records []model.SubmissionRecord, origin time.Time, launchComp
 	attemptedInterval, attemptedRate := intakeMetrics(starts)
 	acceptedInterval, acceptedRate := intakeMetrics(accepted)
 	terminalInterval, terminalRate := intakeMetrics(terminal)
-	return &model.BurstMetrics{AttemptedIntervalMS: attemptedInterval, AcceptedIntervalMS: acceptedInterval, TerminalIntervalMS: terminalInterval, AttemptedThroughputPerSec: attemptedRate, AcceptedThroughputPerSec: acceptedRate, TerminalThroughputPerSec: terminalRate, PostStartOffsetMS: stats.Distribution(offsets), LaunchCompletionMS: launchCompletion, PeakLogicalInFlight: peakLogical, PeakActiveObservers: peakObservers}
+	return &model.BurstMetrics{AttemptedIntervalMS: attemptedInterval, AcceptedIntervalMS: acceptedInterval, TerminalIntervalMS: terminalInterval, AttemptedThroughputPerSec: attemptedRate, AcceptedThroughputPerSec: acceptedRate, TerminalThroughputPerSec: terminalRate, PipelineTerminalIntervalMS: terminalInterval, PipelineTerminalThroughputPerSec: terminalRate, TerminalThroughputSemantics: "observed terminal completion rate across the pipeline; not Judge Core throughput", PostStartOffsetMS: stats.Distribution(offsets), LaunchCompletionMS: launchCompletion, PeakLogicalInFlight: peakLogical, PeakActiveObservers: peakObservers}
 }
 
 // intakeMetrics uses the span of observed client timestamps. A single event

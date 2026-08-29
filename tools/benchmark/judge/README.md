@@ -1,5 +1,9 @@
 # Judge benchmark harness
 
+See [benchmark methodology](METHODOLOGY.md) for the strict separation between
+compile overhead, Judge Core, pipeline terminal observations, E2E, and
+contestant CPU diagnostics.
+
 `judge-bench` is a controlled, external HTTP client for evaluating AstraCode's
 submission and Judge capacity. It uses already-issued cookie sessions only. It
 does not register users, automate password login, create accounts, access a

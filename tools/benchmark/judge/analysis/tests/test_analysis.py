@@ -24,7 +24,28 @@ def test_healthy_run_analysis_and_html(tmp_path):
     assert metrics["analytical_assessment"]["state"] == "STABLE"
     assert (analysis/"charts"/"01_latency_distribution.png").stat().st_size > 100
     html=(analysis/"report.html").read_text()
-    assert "healthy-r1" in html and "Latency detail" in html and "test-pool-1" in html and "password-sentinel" not in html
+    assert "healthy-r1" in html and "Pipeline E2E latency detail" in html and "Judge Core throughput" in html and "test-pool-1" in html and "password-sentinel" not in html
+
+
+def test_compile_and_judge_core_are_unavailable_not_inferred_from_pipeline(tmp_path):
+    run = make_run(tmp_path / "phase-absent")
+    metrics, _, _ = calculate(load_run(run))
+    assert metrics["compile"]["included_in_judge_core"] is False
+    assert metrics["judge_core"]["availability"] == "UNAVAILABLE"
+    assert metrics["judge_core"]["throughput_per_sec"] is None
+    assert metrics["judge_core"]["wall_ms"]["count"] == 0
+    assert metrics["pipeline"]["terminal_throughput_per_sec"] == metrics["completion"]["completion_throughput_per_sec"]
+    assert "not Judge Core" in metrics["completion"]["semantics"]
+
+
+def test_right_censoring_and_burst_cardinality_are_explicit(tmp_path):
+    run = make_massive_burst_run(tmp_path / "censored", burst_size=1000, completed=False)
+    metrics, _, _ = calculate(load_run(run))
+    assert metrics["pipeline"]["right_censored"] is True
+    assert metrics["data_quality"]["state"] == "PARTIAL"
+    assert metrics["pipeline"]["terminal_throughput_per_sec"] == metrics["burst"]["terminal"]["throughput_per_sec"]
+    assert metrics["contestant_execution"]["availability"] == "UNAVAILABLE"
+    assert metrics["load"]["intended"] == 1000
 
 
 def test_saturated_and_missing_collectors_are_not_zero(tmp_path):
@@ -167,7 +188,7 @@ def test_unified_reports_one_benchmark_family_as_unavailable(tmp_path):
     unified = tmp_path / "unified"
     assert main(["capacity-report", "--api-comparison", str(api_output / "experiments.json"), "--output", str(unified)]) == 0
     html = (unified / "capacity-report.html").read_text()
-    assert "Judge capacity: unavailable." in html and "API capacity evidence" in html
+    assert "Pipeline evidence: unavailable." in html and "API capacity evidence" in html
 
 
 def test_comparisons_never_copy_arbitrary_system_config_fields(tmp_path):
@@ -191,6 +212,7 @@ def test_massive_burst_uses_actual_intake_not_sustained_rate_and_renders_partial
     assert "ASTRACODE MASSIVE SUBMISSION BURST" in html
     assert "Burst size" in html and "Effective accepted intake" in html
     assert "Requested arrival" in html and "unavailable" in html
+    assert "right-censored" in html
 
 
 def test_massive_burst_comparison_is_cardinality_evidence_not_capacity(tmp_path):

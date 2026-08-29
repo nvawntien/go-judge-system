@@ -305,8 +305,27 @@ func TestBurstMetricsUseActualTimestampIntervals(t *testing.T) {
 	if metrics.AttemptedIntervalMS == nil || *metrics.AttemptedIntervalMS != 20 || metrics.AcceptedIntervalMS == nil || *metrics.AcceptedIntervalMS != 40 || metrics.TerminalIntervalMS == nil || *metrics.TerminalIntervalMS != 2000 || metrics.AttemptedThroughputPerSec == nil || metrics.AcceptedThroughputPerSec == nil || metrics.TerminalThroughputPerSec == nil || metrics.PostStartOffsetMS.P99 == nil || *metrics.PostStartOffsetMS.P99 != 30 {
 		t.Fatalf("metrics=%+v", metrics)
 	}
+	if metrics.PipelineTerminalThroughputPerSec == nil || *metrics.PipelineTerminalThroughputPerSec != *metrics.TerminalThroughputPerSec || !strings.Contains(metrics.TerminalThroughputSemantics, "pipeline") {
+		t.Fatalf("canonical pipeline terminal metrics=%+v", metrics)
+	}
 	if single := burstMetrics([]model.SubmissionRecord{{Phase: model.PhaseLoad, PostStartedAt: &firstStart}}, origin, nil, 1, 0); single.AttemptedIntervalMS != nil || single.AttemptedThroughputPerSec != nil {
 		t.Fatalf("single event fabricated throughput: %+v", single)
+	}
+}
+
+func TestSummaryDoesNotInferJudgeCoreFromPipelineTerminalObservations(t *testing.T) {
+	start := time.Date(2026, 8, 28, 0, 0, 0, 0, time.UTC)
+	accepted, terminal := start.Add(10*time.Millisecond), start.Add(time.Second)
+	records := []model.SubmissionRecord{{Phase: model.PhaseLoad, Accepted: true, PostCompletedAt: &accepted, TerminalObservedAt: &terminal, TerminalStatus: "ACCEPTED"}, {Phase: model.PhaseLoad, Accepted: true, PostCompletedAt: &accepted}}
+	summary := summarize(config.Defaults(config.ModeSustained), records, nil, start, start.Add(time.Second), start, start.Add(2*time.Second), map[string]struct{}{}, 1)
+	if summary.Compile.IncludedInJudgeCore || summary.JudgeCore.Availability != "UNAVAILABLE" || summary.JudgeCore.ThroughputPerSec != nil || summary.JudgeCore.WallMS != nil {
+		t.Fatalf("Judge Core was inferred from pipeline data: %+v", summary)
+	}
+	if summary.Pipeline.TerminalCompleted != 1 || !summary.Pipeline.RightCensored || summary.Pipeline.TerminalObservationCoverage == nil || *summary.Pipeline.TerminalObservationCoverage != 0.5 {
+		t.Fatalf("pipeline coverage=%+v", summary.Pipeline)
+	}
+	if !strings.Contains(summary.Pipeline.TerminalThroughputSemantics, "not Judge Core") {
+		t.Fatalf("pipeline semantics=%q", summary.Pipeline.TerminalThroughputSemantics)
 	}
 }
 

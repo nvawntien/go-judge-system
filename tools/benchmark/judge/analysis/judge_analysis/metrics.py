@@ -102,11 +102,16 @@ def _quality(data: RunData) -> dict:
         reasons.append(f"malformed latency rows: {malformed}")
     if not len(windows):
         reasons.append("no benchmark windows")
+    accepted_count = int(submissions.accepted.astype(bool).sum())
+    right_censored = bool(accepted_count and valid_e2e < accepted_count)
     if reasons:
         state = "INSUFFICIENT_DATA"
-    elif data.kafka is None or data.containers is None:
+    elif data.kafka is None or data.containers is None or right_censored:
         state = "PARTIAL"
-        reasons.append("one or more optional collectors unavailable")
+        if right_censored:
+            reasons.append(f"terminal observation is right-censored: {valid_e2e}/{accepted_count} accepted submissions reached terminal observation")
+        if data.kafka is None or data.containers is None:
+            reasons.append("one or more optional collectors unavailable")
     else:
         state = "COMPLETE"
     def coverage(frame):
@@ -201,15 +206,27 @@ def calculate(data: RunData) -> tuple[dict, pd.DataFrame, pd.DataFrame]:
     accepted_rate = float(len(accepted) / load_duration) if load_duration else None
     if burst is not None:
         accepted_rate = burst["accepted"]["throughput_per_sec"]
-    metrics = {"analysis_schema_version": "judge-analysis/v1", "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+    load_terminal_rate = float(load.completed.sum() / load_duration) if load_duration else None
+    pipeline_terminal_rate = burst["terminal"]["throughput_per_sec"] if burst is not None else load_terminal_rate
+    terminal_coverage = float(len(completed) / len(accepted)) if len(accepted) else None
+    right_censored = bool(len(accepted) and len(completed) < len(accepted))
+    unavailable_reason = "raw harness artifacts do not contain compile completion and testcase-execution completion timestamps"
+    metrics = {"analysis_schema_version": "judge-analysis/v2", "generated_at_utc": datetime.now(timezone.utc).isoformat(),
                "run_id": data.run.get("run_id"), "harness_classification": (data.summary or {}).get("classification"),
                "input_hashes": {name: __import__("hashlib").sha256((data.path / name).read_bytes()).hexdigest() for name in ["run.json", "submissions.csv", "windows.csv"]},
                "statistical_methods": {"percentiles": "numpy linear interpolation", "confidence_intervals": "Student-t across repetitions"},
                "load": {"intended": int(submissions.intended_at.notna().sum()), "attempted": int(submissions.attempted.astype(bool).sum()), "accepted": int(len(accepted)),
                         "accepted_arrival_rate_per_sec": accepted_rate},
-               "completion": {"completed": int(len(completed)), "completion_throughput_per_sec": (float(load.completed.sum() / load_duration) if load_duration else None),
-                              "completion_ratio": (float(len(completed) / len(accepted)) if len(accepted) else None)},
+               "compile": {"included_in_judge_core": False, "availability": "UNAVAILABLE", "reason": "ordinary judge-bench artifacts do not contain per-submission compile wall timestamps"},
+               "judge_core": {"definition": "compile_success_to_all_required_testcase_execution_batches_completed", "availability": "UNAVAILABLE", "reason": unavailable_reason, "completed": None, "throughput_per_sec": None, "wall_ms": distribution([])},
+               "pipeline": {"terminal_completed": int(len(completed)), "terminal_throughput_per_sec": pipeline_terminal_rate, "terminal_observation_coverage": terminal_coverage, "right_censored": right_censored, "terminal_throughput_semantics": "observed terminal completion rate across the submission pipeline; not Judge Core throughput"},
+               # Kept verbatim for old scripts. It is a pipeline terminal rate,
+               # not a Judge Core measurement.
+               "completion": {"completed": int(len(completed)), "completion_throughput_per_sec": load_terminal_rate,
+                              "completion_ratio": terminal_coverage, "deprecated": True,
+                              "semantics": "legacy alias for observed pipeline terminal completion rate; not Judge Core throughput"},
                "latency_ms": {"submit": distribution(submissions.submit_latency_ms), "end_to_end": distribution(submissions.end_to_end_latency_ms), "accepted_to_terminal": distribution(submissions.accepted_to_terminal_ms)},
+               "contestant_execution": {"availability": "UNAVAILABLE", "reason": "judge-bench does not receive per-testcase sandbox CPU-time diagnostics; CPU time is not Judge Core wall time"},
                "system_config": _system_config(data.run),
                "queue": {"max_client_outstanding": int(windows.client_outstanding_peak.max()) if len(windows) else 0,
                          "ending_client_outstanding": int(windows.client_outstanding.iloc[-1]) if len(windows) else 0,

@@ -164,9 +164,11 @@ type PhaseTiming struct {
 }
 
 type ObservedRates struct {
-	AttemptedPerSecond float64 `json:"attempted_per_second"`
-	AcceptedPerSecond  float64 `json:"accepted_per_second"`
-	CompletedPerSecond float64 `json:"completed_per_second"`
+	AttemptedPerSecond        float64 `json:"attempted_per_second"`
+	AcceptedPerSecond         float64 `json:"accepted_per_second"`
+	CompletedPerSecond        float64 `json:"completed_per_second"` // legacy pipeline-terminal alias
+	PipelineTerminalPerSecond float64 `json:"pipeline_terminal_per_second"`
+	TerminalSemantics         string  `json:"terminal_semantics"`
 }
 
 // SystemConfig is an explicit allowlist of reproducibility data supplied by an
@@ -287,38 +289,78 @@ type Distribution struct {
 }
 
 type RunSummary struct {
-	SchemaVersion         string          `json:"schema_version"`
-	RunID                 string          `json:"run_id"`
-	RunState              RunState        `json:"run_state"`
-	Classification        Classification  `json:"classification"`
-	ClassificationReasons []string        `json:"classification_reasons"`
-	QualityFlags          []string        `json:"quality_flags"`
-	Counts                Counts          `json:"counts"`
-	Rates                 Rates           `json:"rates"`
-	LoadWindow            LoadWindow      `json:"load_window"`
-	Drain                 Drain           `json:"drain"`
-	Outstanding           Outstanding     `json:"outstanding"`
-	Latencies             Latencies       `json:"latencies"`
-	Verdicts              map[string]int  `json:"verdicts"`
-	Observer              ObserverTotals  `json:"observer"`
-	ExternalMetrics       ExternalMetrics `json:"external_metrics"`
-	Burst                 *BurstMetrics   `json:"burst,omitempty"`
+	SchemaVersion         string           `json:"schema_version"`
+	RunID                 string           `json:"run_id"`
+	RunState              RunState         `json:"run_state"`
+	Classification        Classification   `json:"classification"`
+	ClassificationReasons []string         `json:"classification_reasons"`
+	QualityFlags          []string         `json:"quality_flags"`
+	Counts                Counts           `json:"counts"`
+	Rates                 Rates            `json:"rates"`
+	LoadWindow            LoadWindow       `json:"load_window"`
+	Drain                 Drain            `json:"drain"`
+	Outstanding           Outstanding      `json:"outstanding"`
+	Latencies             Latencies        `json:"latencies"`
+	Verdicts              map[string]int   `json:"verdicts"`
+	Observer              ObserverTotals   `json:"observer"`
+	ExternalMetrics       ExternalMetrics  `json:"external_metrics"`
+	Burst                 *BurstMetrics    `json:"burst,omitempty"`
+	Compile               CompileMetrics   `json:"compile"`
+	JudgeCore             JudgeCoreMetrics `json:"judge_core"`
+	Pipeline              PipelineMetrics  `json:"pipeline"`
+}
+
+// CompileMetrics is deliberately separate from JudgeCore. The benchmark
+// client does not currently receive per-submission compile timestamps, so an
+// ordinary harness run must report that absence rather than infer a value.
+type CompileMetrics struct {
+	IncludedInJudgeCore bool   `json:"included_in_judge_core"`
+	Availability        string `json:"availability"`
+	Reason              string `json:"reason,omitempty"`
+}
+
+// JudgeCoreMetrics is populated only by a controlled compile-excluded
+// measurement with explicit phase timestamps. Terminal observations from this
+// harness are pipeline observations and cannot be repurposed as Judge Core.
+type JudgeCoreMetrics struct {
+	Definition       string        `json:"definition"`
+	Availability     string        `json:"availability"`
+	Reason           string        `json:"reason,omitempty"`
+	Completed        *int          `json:"completed,omitempty"`
+	ThroughputPerSec *float64      `json:"throughput_per_sec,omitempty"`
+	WallMS           *Distribution `json:"wall_ms,omitempty"`
+}
+
+// PipelineMetrics describes terminal observations across the whole submission
+// pipeline. It includes queueing, compilation, persistence, and observation;
+// it is never a Judge Core metric.
+type PipelineMetrics struct {
+	TerminalCompleted           int      `json:"terminal_completed"`
+	TerminalObservationCoverage *float64 `json:"terminal_observation_coverage,omitempty"`
+	RightCensored               bool     `json:"right_censored"`
+	TerminalThroughputPerSec    *float64 `json:"terminal_throughput_per_sec,omitempty"`
+	TerminalThroughputSemantics string   `json:"terminal_throughput_semantics"`
 }
 
 // BurstMetrics uses actual client timestamps; it deliberately never derives
 // intake throughput from the synthetic scheduler window.
 type BurstMetrics struct {
-	Massive                   bool         `json:"massive"`
-	AttemptedIntervalMS       *int64       `json:"attempted_intake_interval_ms,omitempty"`
-	AcceptedIntervalMS        *int64       `json:"accepted_intake_interval_ms,omitempty"`
-	TerminalIntervalMS        *int64       `json:"terminal_completion_interval_ms,omitempty"`
-	AttemptedThroughputPerSec *float64     `json:"attempted_throughput_per_sec,omitempty"`
-	AcceptedThroughputPerSec  *float64     `json:"accepted_throughput_per_sec,omitempty"`
-	TerminalThroughputPerSec  *float64     `json:"terminal_throughput_per_sec,omitempty"`
-	PostStartOffsetMS         Distribution `json:"post_start_offset_ms"`
-	LaunchCompletionMS        *int64       `json:"launch_completion_ms,omitempty"`
-	PeakLogicalInFlight       int          `json:"peak_logical_in_flight"`
-	PeakActiveObservers       int          `json:"peak_active_observers"`
+	Massive                   bool     `json:"massive"`
+	AttemptedIntervalMS       *int64   `json:"attempted_intake_interval_ms,omitempty"`
+	AcceptedIntervalMS        *int64   `json:"accepted_intake_interval_ms,omitempty"`
+	TerminalIntervalMS        *int64   `json:"terminal_completion_interval_ms,omitempty"`
+	AttemptedThroughputPerSec *float64 `json:"attempted_throughput_per_sec,omitempty"`
+	AcceptedThroughputPerSec  *float64 `json:"accepted_throughput_per_sec,omitempty"`
+	TerminalThroughputPerSec  *float64 `json:"terminal_throughput_per_sec,omitempty"`
+	// PipelineTerminal* are the canonical names. Terminal* is preserved for
+	// existing consumers and has the same pipeline-observation semantics.
+	PipelineTerminalIntervalMS       *int64       `json:"pipeline_terminal_completion_interval_ms,omitempty"`
+	PipelineTerminalThroughputPerSec *float64     `json:"pipeline_terminal_throughput_per_sec,omitempty"`
+	TerminalThroughputSemantics      string       `json:"terminal_throughput_semantics,omitempty"`
+	PostStartOffsetMS                Distribution `json:"post_start_offset_ms"`
+	LaunchCompletionMS               *int64       `json:"launch_completion_ms,omitempty"`
+	PeakLogicalInFlight              int          `json:"peak_logical_in_flight"`
+	PeakActiveObservers              int          `json:"peak_active_observers"`
 }
 
 type Counts struct {
@@ -340,6 +382,10 @@ type Rates struct {
 	LoadAttemptedPerSecond       float64  `json:"load_attempted_per_second"`
 	LoadAcceptedPerSecond        float64  `json:"load_accepted_per_second"`
 	LoadTerminalCompletionSecond float64  `json:"load_terminal_completion_per_second"`
+	// LoadPipelineTerminalCompletionSecond is the canonical replacement for
+	// LoadTerminalCompletionSecond. The legacy field remains for old consumers.
+	LoadPipelineTerminalCompletionSecond float64 `json:"load_pipeline_terminal_completion_per_second"`
+	TerminalCompletionSemantics          string  `json:"terminal_completion_semantics"`
 }
 
 type LoadWindow struct {
@@ -353,12 +399,13 @@ type LoadWindow struct {
 }
 
 type Drain struct {
-	DurationMS              int64    `json:"duration_ms"`
-	OutstandingAtStart      int      `json:"outstanding_at_start"`
-	Completed               int      `json:"completed"`
-	Remaining               int      `json:"remaining"`
-	CompletionRatePerSecond *float64 `json:"completion_rate_per_second,omitempty"`
-	TimedOut                bool     `json:"timed_out"`
+	DurationMS                              int64    `json:"duration_ms"`
+	OutstandingAtStart                      int      `json:"outstanding_at_start"`
+	Completed                               int      `json:"completed"`
+	Remaining                               int      `json:"remaining"`
+	CompletionRatePerSecond                 *float64 `json:"completion_rate_per_second,omitempty"`
+	PipelineTerminalCompletionRatePerSecond *float64 `json:"pipeline_terminal_completion_rate_per_second,omitempty"`
+	TimedOut                                bool     `json:"timed_out"`
 }
 
 type Outstanding struct {
