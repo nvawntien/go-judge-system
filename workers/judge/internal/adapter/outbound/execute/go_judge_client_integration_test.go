@@ -203,6 +203,46 @@ int main(){ for(int i=0;i<(1<<20);i++) std::cout << 'x'; }`, langCfg, limits)
 	}
 }
 
+// TestGoJudgeClientGRPCIntegrationOutputLimit keeps per-command OLE semantics
+// separate from the Worker receive envelope tested above. It is intentionally
+// a real executorserver test: a legal aggregate response may exceed 4 MiB,
+// while one command exceeding its collector cap must remain OLE.
+func TestGoJudgeClientGRPCIntegrationOutputLimit(t *testing.T) {
+	address := os.Getenv("GO_JUDGE_GRPC_INTEGRATION_ADDR")
+	if address == "" {
+		t.Skip("set GO_JUDGE_GRPC_INTEGRATION_ADDR to run against a local go-judge sandbox")
+	}
+	conn, err := sharedgrpc.NewClientConn(address, sharedgrpc.WithInsecureTransport(), sharedgrpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(SandboxGRPCMaxReceiveBytes)))
+	if err != nil {
+		t.Fatalf("create go-judge gRPC connection: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+	client := NewGoJudgeClient(judgepb.NewExecutorClient(conn), zap.NewNop())
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	langCfg, ok := gojudge.GetLanguageConfig("CPP", gojudge.GetSourceFileName("CPP"), gojudge.GetExeFileName("CPP"))
+	if !ok || langCfg.Compile == nil {
+		t.Fatal("CPP compiler configuration unavailable")
+	}
+	const outputLimit = int64(1024)
+	limits := normalizeLimits(outbound.ExecutionLimits{TimeLimitMS: 2_000, MemoryLimitKB: 256 * 1024, OutputLimitBytes: outputLimit})
+	compileResult, executableFileID, err := client.compile(ctx, "CPP", `#include <iostream>
+int main(){ for(int i=0;i<1025;i++) std::cout << 'x'; }`, langCfg, limits)
+	if err != nil || compileResult != nil || executableFileID == "" {
+		t.Fatalf("compile result/fileID/error = %#v/%q/%v", compileResult, executableFileID, err)
+	}
+	defer client.cleanupExecutableFile(executableFileID)
+	testCase := outbound.ExecutionTestCase{Index: 1, ID: "ole", Stdin: "", ExpectedOutput: stringPtr("")}
+	results, err := client.runBatch(ctx, "CPP", "", langCfg, limits, true, executableFileID, nil, []outbound.ExecutionTestCase{testCase}, 0)
+	if err != nil || len(results) != 1 {
+		t.Fatalf("OLE run results/error = %#v/%v", results, err)
+	}
+	mapped := mapTestCaseResult("CPP", testCase, results[0], false)
+	if mapped.Status != "OUTPUT_LIMIT_EXCEEDED" {
+		t.Fatalf("OLE mapping = %#v, want OUTPUT_LIMIT_EXCEEDED", mapped)
+	}
+}
+
 func TestGoJudgeClientGRPCIntegrationTestcaseInputCache(t *testing.T) {
 	address := os.Getenv("GO_JUDGE_GRPC_INTEGRATION_ADDR")
 	if address == "" {

@@ -309,6 +309,10 @@ func (c *GoJudgeClient) newRunBatchRequest(
 		stdin := memoryFile([]byte(testCase.Stdin))
 		inputBytes := int64(len(testCase.Stdin))
 		localPath, hasLocalPath := officialSandboxInputPath(testCase)
+		if inputBytes > sandboxGRPCSafeRequestBytes && !hasLocalPath {
+			c.testcaseCache.release(bindings)
+			return nil, nil, workerdomain.MarkNonRetryable(fmt.Errorf("official testcase input exceeds the safe sandbox gRPC request budget and has no safe LocalFile path"))
+		}
 		if hasLocalPath && inputBytes > sandboxGRPCSafeRequestBytes {
 			// A FileAdd uses the same unary server receive limit as Exec. This is
 			// an intentional normal bypass, rather than a failed cache attempt.
@@ -327,6 +331,10 @@ func (c *GoJudgeClient) newRunBatchRequest(
 			stdin = localFile(localPath)
 			c.logger.Debug("sandbox testcase cache bypassed", zap.String("operation", "testcase_cache"), zap.String("event", "cache_bypass"), zap.String("reason", "transport_size"), zap.Int64("input_size_bytes", inputBytes))
 		} else {
+			if memoryBytes+inputBytes > sandboxGRPCSafeRequestBytes {
+				c.testcaseCache.release(bindings)
+				return nil, nil, workerdomain.MarkNonRetryable(fmt.Errorf("official testcase batch exceeds the safe sandbox gRPC request budget and has no safe LocalFile path"))
+			}
 			memoryBytes += inputBytes
 		}
 		runCmd := &judgepb.Request_CmdType{
@@ -364,12 +372,34 @@ func officialSandboxInputPath(testCase outbound.ExecutionTestCase) (string, bool
 	if testCase.Kind != "official" || strings.TrimSpace(testCase.SandboxInputPath) == "" {
 		return "", false
 	}
-	path := filepath.Clean(testCase.SandboxInputPath)
-	rel, err := filepath.Rel(officialTestcaseRoot, path)
-	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+	return containedLocalFilePath(officialTestcaseRoot, testCase.SandboxInputPath)
+}
+
+// containedLocalFilePath validates both lexical and resolved containment. The
+// first check rejects path traversal before touching the filesystem; the
+// second prevents a path under the shared testcase root from escaping through
+// a symlink. The returned path is the original cleaned path because that is
+// the path namespace mounted read-only into executorserver.
+func containedLocalFilePath(root, candidate string) (string, bool) {
+	root = filepath.Clean(root)
+	path := filepath.Clean(candidate)
+	if !isContainedPath(root, path) {
+		return "", false
+	}
+	resolvedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", false
+	}
+	resolvedPath, err := filepath.EvalSymlinks(path)
+	if err != nil || !isContainedPath(resolvedRoot, resolvedPath) {
 		return "", false
 	}
 	return path, true
+}
+
+func isContainedPath(root, path string) bool {
+	rel, err := filepath.Rel(root, path)
+	return err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
 }
 
 func hasFileErrors(response *judgepb.Response) bool {

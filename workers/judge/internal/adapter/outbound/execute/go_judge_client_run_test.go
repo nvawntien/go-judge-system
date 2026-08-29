@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -81,6 +83,43 @@ func (f *fakeExecutorRPC) deletedFileIDs() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]string(nil), f.deleted...)
+}
+
+func TestContainedLocalFilePathRejectsTraversalAndSymlinkEscapes(t *testing.T) {
+	root := t.TempDir()
+	inside := filepath.Join(root, "problem", "input.txt")
+	if err := os.MkdirAll(filepath.Dir(inside), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(inside, []byte("safe\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(t.TempDir(), "secret.txt")
+	if err := os.WriteFile(outside, []byte("secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	escape := filepath.Join(root, "problem", "escape")
+	if err := os.Symlink(outside, escape); err != nil {
+		t.Fatal(err)
+	}
+
+	if got, ok := containedLocalFilePath(root, inside); !ok || got != inside {
+		t.Fatalf("valid contained path = %q/%t", got, ok)
+	}
+	for _, candidate := range []string{
+		filepath.Join(root, "..", "secret"),
+		filepath.Join(root, "problem", "..", "..", "etc", "passwd"),
+		"/etc/passwd",
+		root + "-evil/input",
+		escape,
+	} {
+		if got, ok := containedLocalFilePath(root, candidate); ok {
+			t.Fatalf("unsafe path %q accepted as %q", candidate, got)
+		}
+	}
+	if got, ok := containedLocalFilePath(root, filepath.Join(root, "problem", ".", "input.txt")); !ok || got != inside {
+		t.Fatalf("normalized contained path = %q/%t", got, ok)
+	}
 }
 
 func TestGoJudgeClientCompileAndRunRequestsUseProtobufSemantics(t *testing.T) {

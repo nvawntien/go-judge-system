@@ -260,9 +260,11 @@ func TestSandboxTestcaseCacheDifferentKeysDoNotSerializePopulation(t *testing.T)
 
 func TestGoJudgeClientTestcaseCacheFileAddFailureFallsBackToMemory(t *testing.T) {
 	testCase := cachedOfficialTestCase(1, "case-1", "input\n", "ok\n")
+	var fileAddCalls atomic.Int32
 	rpc := &fakeExecutorRPC{
 		fileList: emptyFileList,
 		fileAdd: func(context.Context, *judgepb.FileContent) (*judgepb.FileID, error) {
+			fileAddCalls.Add(1)
 			return nil, errors.New("sandbox file store unavailable")
 		},
 		handler: func(_ context.Context, request *judgepb.Request) (*judgepb.Response, error) {
@@ -280,6 +282,94 @@ func TestGoJudgeClientTestcaseCacheFileAddFailureFallsBackToMemory(t *testing.T)
 	})
 	if err != nil || result.Status != "ACCEPTED" {
 		t.Fatalf("result/error = %#v/%v", result, err)
+	}
+	if got := fileAddCalls.Load(); got != 1 {
+		t.Fatalf("FileAdd calls = %d, want exactly one fallback attempt", got)
+	}
+}
+
+func TestGoJudgeClientTestcaseCacheAdmissionDeniedFallsBackWithoutFileAdd(t *testing.T) {
+	testCase := cachedOfficialTestCase(1, "case-1", "input\n", "ok\n")
+	var fileAddCalls atomic.Int32
+	rpc := &fakeExecutorRPC{
+		fileList: emptyFileList,
+		fileAdd: func(context.Context, *judgepb.FileContent) (*judgepb.FileID, error) {
+			fileAddCalls.Add(1)
+			return &judgepb.FileID{FileID: "must-not-be-used"}, nil
+		},
+		handler: func(_ context.Context, request *judgepb.Request) (*judgepb.Response, error) {
+			if isCompileRequest(request) {
+				return compileAccepted("exe"), nil
+			}
+			if got := string(request.GetCmd()[0].GetFiles()[0].GetMemory().GetContent()); got != testCase.Stdin {
+				t.Fatalf("admission-denied fallback stdin = %q, want MemoryFile input", got)
+			}
+			return acceptedResults("ok\n"), nil
+		},
+	}
+	client := NewGoJudgeClient(rpc, zap.NewNop(), config.TestcaseCacheConfig{
+		Enabled: true, MaxBytes: 1, MaxEntries: 1, CleanupInterval: time.Hour,
+	})
+	result, err := client.Execute(context.Background(), outbound.ExecutionRequest{
+		Language: "CPP", SourceCode: "int main(){}", StopOnFirstFailure: true,
+		TestcaseDataset: testDatasetIdentity(3, 2, "a"), TestCases: []outbound.ExecutionTestCase{testCase},
+	})
+	if err != nil || result.Status != "ACCEPTED" {
+		t.Fatalf("result/error = %#v/%v", result, err)
+	}
+	if got := fileAddCalls.Load(); got != 0 {
+		t.Fatalf("FileAdd calls = %d, want none when cache admission is impossible", got)
+	}
+	entries, bytes, unknown := client.testcaseCache.stats()
+	if entries != 0 || bytes != 0 || unknown != 0 {
+		t.Fatalf("admission-denied cache accounting = entries=%d bytes=%d unknown=%d, want zero", entries, bytes, unknown)
+	}
+}
+
+func TestSandboxTestcaseCacheCloseCancelsCleanupAndPreventsNewRPCs(t *testing.T) {
+	deleteStarted := make(chan struct{})
+	deleteCancelled := make(chan struct{})
+	var deleteCalls atomic.Int32
+	cache := lifecycleTestcaseCache(t, &fakeExecutorRPC{
+		fileList: emptyFileList,
+		fileAdd:  sequentialFileAdd(),
+		fileDelete: func(ctx context.Context, _ *judgepb.FileID) (*emptypb.Empty, error) {
+			deleteCalls.Add(1)
+			close(deleteStarted)
+			<-ctx.Done()
+			close(deleteCancelled)
+			return nil, ctx.Err()
+		},
+	}, 1024, 1, 0)
+	identity := testDatasetIdentity(3, 2, "a")
+	binding, cached, err := cache.getOrAdd(context.Background(), identity, cachedOfficialTestCase(1, "case", "input", "ok\n"))
+	if err != nil || !cached {
+		t.Fatalf("getOrAdd = %#v/%t/%v", binding, cached, err)
+	}
+	cache.release([]testcaseCacheBinding{binding})
+	cache.cfg.MaxEntries = 0
+	cache.nextCleanup = time.Time{}
+	cache.maybeScheduleCleanup(time.Now())
+	select {
+	case <-deleteStarted:
+	case <-time.After(time.Second):
+		t.Fatal("cleanup did not begin FileDelete")
+	}
+	done := make(chan struct{})
+	go func() { cache.Close(); close(done) }()
+	select {
+	case <-deleteCancelled:
+	case <-time.After(time.Second):
+		t.Fatal("Close did not cancel in-flight cleanup")
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("Close did not wait for cleanup completion")
+	}
+	cache.maybeScheduleCleanup(time.Now())
+	if got := deleteCalls.Load(); got != 1 {
+		t.Fatalf("FileDelete calls after Close = %d, want no new cleanup RPC", got)
 	}
 }
 

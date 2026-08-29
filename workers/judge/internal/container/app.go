@@ -121,27 +121,31 @@ func (a *App) Close() error {
 		closeErr = errors.Join(closeErr, err)
 	}
 
-	if a.KafkaProducer != nil {
-		addCloseErr("kafka producer", a.KafkaProducer.Close())
+	// Stop public RunCode requests before closing the sandbox dependency they
+	// may use. ConsumerGroup.Close then prevents further Kafka job intake; it
+	// waits for Sarama's active consumption loops before returning.
+	if a.GRPC != nil {
+		a.GRPC.Stop()
 	}
-
 	if a.JobConsumer != nil {
 		addCloseErr("judge job consumer", a.JobConsumer.Close())
+	}
+
+	// The testcase cache owns best-effort FileDelete lifecycle RPCs. It must
+	// finish (or cancel) those before the sandbox ClientConn is closed.
+	if a.SandboxExecutor != nil {
+		a.SandboxExecutor.Close()
+	}
+	if a.SandboxConn != nil {
+		addCloseErr("go-judge sandbox gRPC connection", a.SandboxConn.ClientConn.Close())
 	}
 
 	if a.ProblemConn != nil {
 		addCloseErr("problem gRPC connection", a.ProblemConn.Close())
 	}
-	if a.SandboxExecutor != nil {
-		a.SandboxExecutor.Close()
-	}
 
-	if a.SandboxConn != nil {
-		addCloseErr("go-judge sandbox gRPC connection", a.SandboxConn.ClientConn.Close())
-	}
-
-	if a.GRPC != nil {
-		a.GRPC.Stop()
+	if a.KafkaProducer != nil {
+		addCloseErr("kafka producer", a.KafkaProducer.Close())
 	}
 
 	if a.Logger != nil {
