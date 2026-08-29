@@ -243,6 +243,59 @@ int main(){ for(int i=0;i<1025;i++) std::cout << 'x'; }`, langCfg, limits)
 	}
 }
 
+// TestGoJudgeClientGRPCIntegrationPersistentConnReconnect is externally
+// orchestrated so the test keeps one production-style ClientConn while the
+// temporary sandbox container is replaced. It is skipped unless both marker
+// paths are supplied by the local Docker proof harness.
+func TestGoJudgeClientGRPCIntegrationPersistentConnReconnect(t *testing.T) {
+	address, ready, resume := os.Getenv("GO_JUDGE_GRPC_INTEGRATION_ADDR"), os.Getenv("GO_JUDGE_RECONNECT_READY"), os.Getenv("GO_JUDGE_RECONNECT_RESUME")
+	if address == "" || ready == "" || resume == "" {
+		t.Skip("set GO_JUDGE_GRPC_INTEGRATION_ADDR, GO_JUDGE_RECONNECT_READY, and GO_JUDGE_RECONNECT_RESUME")
+	}
+	conn, err := sharedgrpc.NewClientConn(address, sharedgrpc.WithInsecureTransport())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	client := NewGoJudgeClient(judgepb.NewExecutorClient(conn), zap.NewNop())
+	execOnce := func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		result, err := client.Execute(ctx, outbound.ExecutionRequest{Language: "PYTHON", SourceCode: "print('ok')", TestCases: []outbound.ExecutionTestCase{{Index: 1, ID: "case", ExpectedOutput: stringPtr("ok\n")}}})
+		if err != nil || result.Status != "ACCEPTED" {
+			t.Fatalf("persistent-connection Exec=%#v/%v", result, err)
+		}
+	}
+	execOnce()
+	if err := os.WriteFile(ready, []byte("ready\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		if _, err := os.Stat(resume); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for sandbox replacement")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	// NewClientConn is deliberately not called here. grpc-go reconnects the
+	// original connection through Docker DNS after the replacement is ready.
+	for deadline := time.Now().Add(20 * time.Second); ; {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		result, callErr := client.Execute(ctx, outbound.ExecutionRequest{Language: "PYTHON", SourceCode: "print('ok')", TestCases: []outbound.ExecutionTestCase{{Index: 1, ID: "case", ExpectedOutput: stringPtr("ok\n")}}})
+		cancel()
+		if callErr == nil && result.Status == "ACCEPTED" {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("same ClientConn did not recover: result=%#v err=%v", result, callErr)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
 func TestGoJudgeClientGRPCIntegrationTestcaseInputCache(t *testing.T) {
 	address := os.Getenv("GO_JUDGE_GRPC_INTEGRATION_ADDR")
 	if address == "" {
