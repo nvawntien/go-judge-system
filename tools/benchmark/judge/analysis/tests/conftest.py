@@ -94,3 +94,38 @@ def make_massive_burst_run(path, run_id="burst-r1", burst_size=10, repetition=1,
     summary = {"classification": "N/A", "drain": {"duration_ms": 29750}, "burst": {"massive": True, "attempted_intake_interval_ms": (burst_size - 1) * 10, "accepted_intake_interval_ms": (burst_size - 1) * 10, "attempted_throughput_per_sec": burst_size / ((burst_size - 1) * .01) if burst_size > 1 else None, "accepted_throughput_per_sec": burst_size / ((burst_size - 1) * .01) if burst_size > 1 else None, "peak_logical_in_flight": burst_size, "peak_active_observers": burst_size}}
     (path / "summary.json").write_text(json.dumps(summary))
     return path
+
+
+def make_admission_only_run(path, run_id="admission-r1", burst_size=10):
+    path = make_massive_burst_run(path, run_id=run_id, burst_size=burst_size, completed=False)
+    run = json.loads((path / "run.json").read_text())
+    run["observation_mode"] = "admission-only"
+    (path / "run.json").write_text(json.dumps(run))
+    summary = json.loads((path / "summary.json").read_text())
+    summary["admission"] = {"observation_mode": "admission-only", "system_survival": "CLEAN_SURVIVAL", "client_qualification": "QUALIFIED", "external_survival_evidence": "UNAVAILABLE"}
+    summary["health_probes"] = [{"name":"public_problem", "status":"PASS", "latency_ms":1.0}]
+    (path / "summary.json").write_text(json.dumps(summary))
+    return path
+
+
+def make_realistic_run(path, run_id="realistic-r1", burst_size=10):
+    path = make_massive_burst_run(path, run_id=run_id, burst_size=burst_size, completed=False)
+    run = json.loads((path / "run.json").read_text())
+    run["observation_mode"] = "realistic"
+    (path / "run.json").write_text(json.dumps(run))
+    rows = list(csv.reader((path / "submissions.csv").open()))
+    header = rows[0]
+    additions = ["ticket_started_at", "ticket_completed_at", "ticket_latency_ms", "ticket_attempted", "ticket_succeeded", "sse_started_at", "sse_established_at", "sse_closed_at", "sse_establishment_latency_ms", "sse_attempted", "sse_established", "sse_close_reason", "sse_terminal_during_hold", "sse_survived_full_hold"]
+    header.extend(additions)
+    for index, row in enumerate(rows[1:]):
+        posted = datetime.fromisoformat(row[5].replace("Z", "+00:00"))
+        ticket = posted + timedelta(milliseconds=25)
+        established = ticket + timedelta(milliseconds=15)
+        closed = established + timedelta(seconds=30)
+        row.extend([ticket.isoformat(), (ticket + timedelta(milliseconds=5)).isoformat(), "5", "true", "true", (ticket + timedelta(milliseconds=5)).isoformat(), established.isoformat(), closed.isoformat(), "10", "true", "true", "hold_expired", "false", "true"])
+    with (path / "submissions.csv").open("w", newline="") as file:
+        csv.writer(file).writerows(rows)
+    summary = json.loads((path / "summary.json").read_text())
+    summary["realistic"] = {"observation_mode": "realistic", "submission": {"success_percent": 1.0}, "ticket": {"success_percent": 1.0}, "sse": {"establishment_percent": 1.0, "peak_active_streams": burst_size}, "full_flow_success_percent": 1.0, "system_survival": "DEGRADED_SURVIVAL", "client_qualification": "QUALIFIED", "external_survival_evidence": "UNAVAILABLE"}
+    (path / "summary.json").write_text(json.dumps(summary))
+    return path

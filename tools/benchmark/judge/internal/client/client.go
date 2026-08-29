@@ -10,9 +10,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/nvawntien/go-judge-system/tools/benchmark/judge/internal/credentials"
@@ -21,8 +24,34 @@ import (
 const maxResponseBytes = 1 << 20
 
 type API struct {
-	BaseURL *url.URL
-	Session *credentials.Session
+	BaseURL     *url.URL
+	Session     *credentials.Session
+	Diagnostics *Diagnostics
+}
+
+// Diagnostics is shared by APIs in one benchmark run. It records only local
+// transport behavior, never request bodies, cookies, or target identifiers.
+type Diagnostics struct {
+	newConnections    atomic.Uint64
+	reusedConnections atomic.Uint64
+	http1             atomic.Uint64
+	http2             atomic.Uint64
+	otherProtocol     atomic.Uint64
+}
+
+type DiagnosticsSnapshot struct {
+	NewConnections         uint64
+	ReusedConnections      uint64
+	HTTP1Responses         uint64
+	HTTP2Responses         uint64
+	OtherProtocolResponses uint64
+}
+
+func (d *Diagnostics) Snapshot() DiagnosticsSnapshot {
+	if d == nil {
+		return DiagnosticsSnapshot{}
+	}
+	return DiagnosticsSnapshot{NewConnections: d.newConnections.Load(), ReusedConnections: d.reusedConnections.Load(), HTTP1Responses: d.http1.Load(), HTTP2Responses: d.http2.Load(), OtherProtocolResponses: d.otherProtocol.Load()}
 }
 
 type Envelope struct {
@@ -82,6 +111,7 @@ type SubmitResult struct {
 	Submission *Submission
 	RetryAfter *time.Duration
 	Message    string
+	Protocol   string
 }
 
 // TransportError is ambiguous: the server may have received the POST. Callers
@@ -91,11 +121,41 @@ type TransportError struct{ Err error }
 func (e *TransportError) Error() string { return "ambiguous submission transport failure" }
 func (e *TransportError) Unwrap() error { return e.Err }
 
+// StreamTransportError preserves an inspectable underlying local transport
+// error while keeping its public text free of the one-time ticket URL.
+type StreamTransportError struct{ Err error }
+
+func (e *StreamTransportError) Error() string { return "SSE connection failed" }
+func (e *StreamTransportError) Unwrap() error { return e.Err }
+
+// TransportErrorClass keeps generator-capacity failures distinct from an
+// ambiguous remote POST outcome. It never exposes endpoint/cookie details.
+func TransportErrorClass(err error) string {
+	switch {
+	case errors.Is(err, syscall.EMFILE):
+		return "client_emfile"
+	case errors.Is(err, syscall.ENFILE):
+		return "client_enfile"
+	case errors.Is(err, syscall.EADDRNOTAVAIL):
+		return "client_ephemeral_port_exhaustion"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "transport_deadline"
+	case errors.Is(err, context.Canceled):
+		return "transport_cancelled"
+	default:
+		return "ambiguous_post"
+	}
+}
+
 func New(base *url.URL, session *credentials.Session) (*API, error) {
+	return NewWithDiagnostics(base, session, nil)
+}
+
+func NewWithDiagnostics(base *url.URL, session *credentials.Session, diagnostics *Diagnostics) (*API, error) {
 	if base == nil || session == nil || session.Client == nil {
 		return nil, errors.New("base URL and isolated session are required")
 	}
-	return &API{BaseURL: base, Session: session}, nil
+	return &API{BaseURL: base, Session: session, Diagnostics: diagnostics}, nil
 }
 
 func (a *API) Me(ctx context.Context) (Me, error) {
@@ -131,7 +191,7 @@ func (a *API) Submit(ctx context.Context, request SubmissionRequest) (SubmitResu
 	if err != nil {
 		return SubmitResult{Kind: Submit5xx, HTTPStatus: response.StatusCode}, &TransportError{Err: err}
 	}
-	result := SubmitResult{HTTPStatus: response.StatusCode, APICode: envelope.Code, Message: safeMessage(envelope.Msg)}
+	result := SubmitResult{HTTPStatus: response.StatusCode, APICode: envelope.Code, Message: safeMessage(envelope.Msg), Protocol: response.Proto}
 	switch {
 	case response.StatusCode == http.StatusCreated:
 		var submission Submission
@@ -186,12 +246,23 @@ func (a *API) OpenEvents(ctx context.Context, submissionID int64, ticket string)
 	if err != nil {
 		return nil, err
 	}
+	request.Header.Set("Accept", "text/event-stream")
+	if a.Diagnostics != nil {
+		request = request.WithContext(httptrace.WithClientTrace(request.Context(), &httptrace.ClientTrace{GotConn: func(info httptrace.GotConnInfo) {
+			if info.Reused {
+				a.Diagnostics.reusedConnections.Add(1)
+			} else {
+				a.Diagnostics.newConnections.Add(1)
+			}
+		}}))
+	}
 	response, err := a.Session.Client.Do(request)
 	if err != nil {
 		// The URL embeds a one-time ticket. Never surface a transport error that
 		// might include the full request URL through net/http formatting.
-		return nil, errors.New("SSE connection failed")
+		return nil, &StreamTransportError{Err: err}
 	}
+	a.trackResponse(response)
 	if response.StatusCode != http.StatusOK || !strings.HasPrefix(strings.ToLower(response.Header.Get("Content-Type")), "text/event-stream") {
 		response.Body.Close()
 		return nil, fmt.Errorf("SSE endpoint returned HTTP %d", response.StatusCode)
@@ -229,7 +300,32 @@ func (a *API) request(ctx context.Context, method, path string, body io.Reader, 
 		request.Header.Set("Content-Type", contentType)
 	}
 	request.Header.Set("Accept", "application/json")
-	return a.Session.Client.Do(request)
+	if a.Diagnostics != nil {
+		request = request.WithContext(httptrace.WithClientTrace(request.Context(), &httptrace.ClientTrace{GotConn: func(info httptrace.GotConnInfo) {
+			if info.Reused {
+				a.Diagnostics.reusedConnections.Add(1)
+			} else {
+				a.Diagnostics.newConnections.Add(1)
+			}
+		}}))
+	}
+	response, err := a.Session.Client.Do(request)
+	a.trackResponse(response)
+	return response, err
+}
+
+func (a *API) trackResponse(response *http.Response) {
+	if response == nil || a.Diagnostics == nil {
+		return
+	}
+	switch response.ProtoMajor {
+	case 1:
+		a.Diagnostics.http1.Add(1)
+	case 2:
+		a.Diagnostics.http2.Add(1)
+	default:
+		a.Diagnostics.otherProtocol.Add(1)
+	}
 }
 
 func (a *API) resolve(path string) *url.URL {

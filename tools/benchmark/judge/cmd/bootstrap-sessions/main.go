@@ -90,8 +90,8 @@ func parse(args []string, stderr io.Writer) (options, error) {
 	fs := flag.NewFlagSet("bootstrap-sessions", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.StringVar(&opts.baseURL, "base-url", "", "public AstraCode gateway base URL")
-	fs.IntVar(&opts.start, "start", 1, "first benchmark sequence (1..10000)")
-	fs.IntVar(&opts.count, "count", 50, "number of benchmark users (within 1..10000)")
+	fs.IntVar(&opts.start, "start", 1, "first benchmark sequence (1..100000)")
+	fs.IntVar(&opts.count, "count", 50, "number of benchmark users (within 1..100000)")
 	fs.StringVar(&opts.output, "output", "users.local.json", "local credential output path")
 	fs.BoolVar(&opts.replace, "replace", false, "atomically replace an existing local credential file")
 	fs.BoolVar(&opts.allowRemote, "allow-remote", false, "allow confirmed non-loopback HTTPS target")
@@ -203,7 +203,7 @@ func readPasswordFile(path string) ([]byte, error) {
 func safeError(err error) string {
 	switch {
 	case errors.Is(err, bootstrap.ErrInvalidRange):
-		return "start/count must select benchmark accounts 001 through 10000"
+		return "start/count must select benchmark accounts 001 through 100000"
 	case errors.Is(err, bootstrap.ErrTargetUnsafe):
 		return "target must be loopback HTTP(S), or confirmed HTTPS remote"
 	case errors.Is(err, errInteractiveTTY):

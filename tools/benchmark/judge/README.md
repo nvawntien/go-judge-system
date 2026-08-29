@@ -33,7 +33,7 @@ prepare its pre-issued cookie input through the normal public Login API:
 benchmark password -> bootstrap-sessions -> users.local.json -> judge-bench
 ```
 
-It supports only `benchmark_judge_001` through `benchmark_judge_10000`, uses a
+It supports `benchmark_judge_001` through `benchmark_judge_100000`, uses a
 bounded (default `16`) Login + `/api/v1/me` worker pool, and writes the file
 only if the full requested range succeeds. Output ordering remains canonical.
 `users.local.json` contains
@@ -145,6 +145,118 @@ Each run creates a private directory under `bench-results/` containing:
 
 `client_outstanding` means API-accepted submissions minus client-observed
 terminal submissions. It is **not Kafka consumer lag**.
+
+## 100K realistic primary burst and admission-only diagnostic
+
+`--observation-mode realistic` is the primary KPI #2 mode for a **100,000-user
+near-simultaneous submission burst**. Each identity releases one non-retried
+Submission POST. On HTTP acceptance, that same logical user performs exactly
+one public ticket POST and then exactly one public SSE GET. An SSE success is
+HTTP 200 with `text/event-stream`; established streams are held for
+`--sse-hold-duration` (default `30s`) unless a terminal event or stream close
+arrives first. There is no SSE reconnect, reconciliation GET, or Judge drain.
+This is not a Judge Core, terminal-pipeline, E2E, or sustained-RPS benchmark.
+
+`--observation-mode admission-only` remains a diagnostic that ends at the
+Submission POST response. It intentionally creates no tickets, SSE streams,
+GET reconciliation, or terminal drain. Comparing a healthy admission-only run
+to a degraded realistic run isolates ticket/SSE/connection-handling pressure
+from Submission API admission pressure.
+
+Bootstrap validates all 100K identities through the public login plus `/me`
+workflow before atomically writing the 0600 credential file. To avoid an
+unmeasured second 100K GET storm immediately before the burst, admission-only
+preflight validates the first and last aliases plus a deterministic sample
+(`--admission-preflight-sample`, default 32); full-observation runs preserve
+their existing full-pool preflight. No login or refresh is attempted during
+the measured burst.
+
+Do not run this without an approved operational window: each accepted POST is
+a real submission and can create approximately one real Kafka Judge job. The
+harness never stops Judges, purges topics, changes offsets, removes DB rows, or
+changes production configuration. If the later backlog must be drained, choose
+the approved tiny interpreted-language solution for the benchmark problem; the
+admission result remains valid because the public POST/persistence/outbox path
+is unchanged.
+
+Prepare a tiny Python source only after verifying the selected public problem
+contract and its official input/output shape. This repository intentionally
+does not check a presumed solution into benchmark tooling: an unverified
+“Missing Number” implementation could enqueue 100K incorrect real jobs. Store
+the approved source in the operator's protected local workspace, record only
+its SHA-256 (the harness already does this), and use `--language PYTHON` for
+the eventual intake run when the public problem supports it.
+
+The future operator workflow (do **not** run this from an unapproved client) is:
+
+```bash
+# A. Create/verify benchmark identities through the existing Auth operator CLI.
+cd services/auth
+go run ./cmd/provision-benchmark-users --start 1 --count 100000
+# Review the plan, then use that command's explicit apply confirmation in the approved window.
+
+# B. Bootstrap the complete credential pool; output is 0600 and ignored.
+cd ../../tools/benchmark/judge
+go run ./cmd/bootstrap-sessions --base-url https://<public-host> --allow-remote \
+  --confirm-target-host <public-host> --start 1 --count 100000 --concurrency 16 \
+  --output ./users-100k.local.json
+
+# C/D. On the App node, start independent UTC collectors before the burst.
+./scripts/collect-container-stats.sh --node app-1 --interval 1 \
+  --container judge_envoy --container judge_gateway --container judge_submission \
+  --container judge_problem --container judge_auth --container judge_postgres \
+  --container judge_redis --container judge_kafka > /safe/100k-container-stats.csv &
+./scripts/collect-kafka-lag.sh --bootstrap-server <broker> \
+  --consumer-group <judge-group> --topic judge.submission.jobs --interval 1 \
+  > /safe/100k-kafka-lag.csv &
+
+# E. PRIMARY: from a qualified load generator, run exactly the planned cardinality.
+# 262144 is only a starting operator limit; inspect recorded FD/protocol/scheduling evidence.
+ulimit -n 262144
+go run . burst --benchmark-objective massive-burst --observation-mode realistic \
+  --base-url https://<public-host> --allow-remote --confirm-target-host <public-host> \
+  --users-file ./users-100k.local.json --user-count 100000 --burst-size 100000 \
+  --max-in-flight 100000 --max-submissions 100000 --submit-error-policy continue \
+  --preflight-concurrency 256 --admission-preflight-sample 32 --sse-hold-duration 30s \
+  --safety-reconcile-interval=0 --problem-id <id> --problem-slug <slug> \
+  --language PYTHON --source-file ./approved-benchmark.py --expected-verdict ACCEPTED \
+  --submit-cooldown 3s --result-root ./bench-results
+
+# F/G/H. Stop collectors manually, then analyze immutable raw artifacts offline.
+cd analysis && python -m judge_analysis analyze --run-dir ../bench-results/<run-id> \
+  --container-stats /safe/100k-container-stats.csv --kafka-lag /safe/100k-kafka-lag.csv
+```
+
+For realistic mode, the qualification estimate is `2 × max-in-flight + 256`
+(200,256 at 100K): one transient stage slot plus one potentially held SSE
+slot. It is deliberately conservative and **not** a claim that every logical
+user consumes two TCP sockets; HTTP/2 may multiplex while HTTP/1.1 may not.
+The report records soft/hard RLIMIT, sampled open FDs, Go CPU/goroutine counts,
+active POST/ticket/SSE peaks, connection reuse/new-connection counters,
+HTTP/1.1 versus HTTP/2 response counts, scheduling spread, and transport error
+classes. `262144` is a reasonable starting operator limit, not a guarantee.
+Admission-only has its separate `max-in-flight + 256` estimate (100,256 at
+100K). Direct local evidence such as `EMFILE`, `ENFILE`, `EADDRNOTAVAIL`, or
+sustained scheduling lag emits the `LOAD_GENERATOR_LIMITED` quality flag; the
+run-level classification is then **CLIENT_LIMITED**, not proof of AstraCode
+saturation. Generic TLS, connection, and deadline failures remain transport
+failures unless corroborated by explicit FD, ephemeral-port, scheduling, or
+other measured load-generator resource saturation. One load generator is
+scientifically defensible only if these qualification fields pass; otherwise use
+multiple qualified generators and report their aggregate actual POST timing.
+
+Diagnostic admission-only command (same source and user set; still no ticket,
+SSE, reconciliation, or terminal drain):
+
+```bash
+go run . burst --benchmark-objective massive-burst --observation-mode admission-only \
+  --base-url https://<public-host> --allow-remote --confirm-target-host <public-host> \
+  --users-file ./users-100k.local.json --user-count 100000 --burst-size 100000 \
+  --max-in-flight 100000 --max-submissions 100000 --submit-error-policy continue \
+  --preflight-concurrency 256 --admission-preflight-sample 32 --safety-reconcile-interval=0 \
+  --problem-id <id> --problem-slug <slug> --language PYTHON --source-file ./approved-benchmark.py \
+  --expected-verdict ACCEPTED --submit-cooldown 3s --result-root ./bench-results
+```
 
 Optional external collectors write UTC RFC3339Nano CSV for correlation only;
 they are not used to compute end-to-end latency:

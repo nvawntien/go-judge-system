@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 import pandas as pd
-from .schemas import REQUIRED_SUBMISSION_COLUMNS, REQUIRED_WINDOW_COLUMNS, CONTAINER_COLUMNS, KAFKA_COLUMNS
+from .schemas import REQUIRED_SUBMISSION_COLUMNS, REQUIRED_WINDOW_COLUMNS, CONTAINER_COLUMNS, KAFKA_COLUMNS, CLIENT_RESOURCE_COLUMNS
 
 
 class DataError(ValueError):
@@ -22,6 +22,7 @@ class RunData:
     summary: dict | None
     containers: pd.DataFrame | None = None
     kafka: pd.DataFrame | None = None
+    client_resources: pd.DataFrame | None = None
     quality: list[str] = field(default_factory=list)
 
 
@@ -102,10 +103,10 @@ def load_run(run_dir: str | Path, container_stats: str | None = None, kafka_lag:
             raise DataError(f"run.json has invalid UTC {name}")
     submissions = _csv(submissions_path, REQUIRED_SUBMISSION_COLUMNS, "submissions")
     windows = _csv(windows_path, REQUIRED_WINDOW_COLUMNS, "windows")
-    _time(submissions, ["intended_at", "post_started_at", "post_completed_at", "terminal_observed_at"], "submissions")
+    _time(submissions, ["intended_at", "post_started_at", "post_completed_at", "terminal_observed_at", "ticket_started_at", "ticket_completed_at", "sse_started_at", "sse_established_at", "sse_closed_at"], "submissions")
     _time(windows, ["window_start", "window_end"], "windows")
-    _boolean(submissions, ["attempted", "accepted", "rate_limited"], "submissions")
-    _number(submissions, ["sequence", "submission_id", "submit_latency_ms", "end_to_end_latency_ms", "accepted_to_terminal_ms"], "submissions")
+    _boolean(submissions, ["attempted", "accepted", "rate_limited", "ticket_attempted", "ticket_succeeded", "sse_attempted", "sse_established", "sse_terminal_during_hold", "sse_survived_full_hold"], "submissions")
+    _number(submissions, ["sequence", "submission_id", "submit_latency_ms", "end_to_end_latency_ms", "accepted_to_terminal_ms", "ticket_latency_ms", "sse_establishment_latency_ms"], "submissions")
     _number(windows, ["window_index", "window_duration_ms", "intended", "attempted", "accepted", "completed", "accepted_cumulative", "completed_cumulative", "client_outstanding", "client_outstanding_peak", "attempted_rate_per_sec", "accepted_rate_per_sec", "completion_rate_per_sec"], "windows")
     if submissions.duplicated(["sequence"], keep=False).any():
         raise DataError("duplicate submission sequence records")
@@ -124,8 +125,11 @@ def load_run(run_dir: str | Path, container_stats: str | None = None, kafka_lag:
     summary = _json(summary_path) if summary_path.exists() else None
     containers = _optional(path, container_stats, "container-stats.csv", CONTAINER_COLUMNS, "container statistics")
     kafka = _optional(path, kafka_lag, "kafka-lag.csv", KAFKA_COLUMNS, "Kafka lag")
+    client_resources = _optional(path, None, "client_resources.csv", CLIENT_RESOURCE_COLUMNS, "client resource")
     if containers is not None:
-        _number(containers, ["cpu_percent", "memory_bytes", "memory_limit_bytes", "memory_percent", "pids"], "container statistics")
+        _number(containers, ["cpu_percent", "memory_bytes", "memory_limit_bytes", "memory_percent", "pids", "restart_count"], "container statistics")
     if kafka is not None:
         _number(kafka, ["partition", "current_offset", "log_end_offset", "lag"], "Kafka lag")
-    return RunData(path, run, submissions, windows, summary, containers, kafka)
+    if client_resources is not None:
+        _number(client_resources, ["open_fds", "goroutines", "active_posts", "active_tickets", "active_sse_streams"], "client resource")
+    return RunData(path, run, submissions, windows, summary, containers, kafka, client_resources)

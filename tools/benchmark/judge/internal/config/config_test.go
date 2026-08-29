@@ -155,7 +155,7 @@ func TestValidateMassiveBurstRequiresDistinctSelectedUsersAndInFlightCapacity(t 
 	}
 	for _, mutate := range []func(*Config){
 		func(c *Config) { c.UserCount = 999 },
-		func(c *Config) { c.UserCount = 10001 },
+		func(c *Config) { c.UserCount = 100001 },
 		func(c *Config) { c.MaxInFlight = 999 },
 		func(c *Config) { c.WarmupCount = 1; c.MaxSubmissions = 1001 },
 		func(c *Config) { c.Jitter = time.Millisecond },
@@ -166,6 +166,46 @@ func TestValidateMassiveBurstRequiresDistinctSelectedUsersAndInFlightCapacity(t 
 		if err := copy.Validate(); err == nil {
 			t.Fatalf("unsafe massive burst accepted: %+v", copy)
 		}
+	}
+}
+
+func TestAdmissionOnlyRequiresMassiveBurstAndSupports100K(t *testing.T) {
+	cfg := valid(t, ModeBurst)
+	cfg.Objective = ObjectiveMassiveBurst
+	cfg.ObservationMode = ObservationAdmissionOnly
+	cfg.BurstSize, cfg.UserCount, cfg.MaxInFlight, cfg.MaxSubmissions = 100000, 100000, 100000, 100000
+	cfg.WarmupCount, cfg.Jitter, cfg.SafetyReconcileInterval, cfg.ErrorPolicy = 0, 0, 0, ErrorPolicyContinue
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	cfg.AdmissionPreflightSample = 100001
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("oversized sampled preflight accepted")
+	}
+	cfg = valid(t, ModeBurst)
+	cfg.ObservationMode = ObservationAdmissionOnly
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("admission-only outside massive burst accepted")
+	}
+}
+
+func TestRealisticObservationRequiresMassiveBurstAndPositiveHold(t *testing.T) {
+	cfg := valid(t, ModeBurst)
+	cfg.Objective, cfg.ObservationMode = ObjectiveMassiveBurst, ObservationRealistic
+	cfg.BurstSize, cfg.UserCount, cfg.MaxInFlight, cfg.MaxSubmissions = 100000, 100000, 100000, 100000
+	cfg.WarmupCount, cfg.Jitter, cfg.SafetyReconcileInterval, cfg.ErrorPolicy = 0, 0, 0, ErrorPolicyContinue
+	cfg.SSEHoldDuration = 30 * time.Second
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	cfg.SSEHoldDuration = 0
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("realistic mode accepted zero hold duration")
+	}
+	cfg = valid(t, ModeBurst)
+	cfg.ObservationMode = ObservationRealistic
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("realistic mode outside massive burst accepted")
 	}
 }
 

@@ -14,7 +14,7 @@ import (
 )
 
 func TestIdentities(t *testing.T) {
-	identities, err := Identities(1, 10000)
+	identities, err := Identities(1, 100000)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,7 +29,7 @@ func TestIdentities(t *testing.T) {
 		{99, "benchmark_judge_100", "benchmark-judge-100@benchmark.invalid", "Benchmark Judge 100"},
 		{998, "benchmark_judge_999", "benchmark-judge-999@benchmark.invalid", "Benchmark Judge 999"},
 		{999, "benchmark_judge_1000", "benchmark-judge-1000@benchmark.invalid", "Benchmark Judge 1000"},
-		{9999, "benchmark_judge_10000", "benchmark-judge-10000@benchmark.invalid", "Benchmark Judge 10000"},
+		{99999, "benchmark_judge_100000", "benchmark-judge-100000@benchmark.invalid", "Benchmark Judge 100000"},
 	} {
 		got := identities[want.index]
 		if got.Username != want.user || got.Email != want.mail || got.FullName != want.name {
@@ -39,7 +39,7 @@ func TestIdentities(t *testing.T) {
 }
 
 func TestIdentitiesRejectInvalidRanges(t *testing.T) {
-	for _, input := range [][2]int{{0, 1}, {1, 0}, {10001, 1}, {10000, 2}, {1, 10001}, {1, int(^uint(0) >> 1)}} {
+	for _, input := range [][2]int{{0, 1}, {1, 0}, {100001, 1}, {100000, 2}, {1, 100001}, {1, int(^uint(0) >> 1)}} {
 		if _, err := Identities(input[0], input[1]); !errors.Is(err, ErrInvalidRange) {
 			t.Fatalf("Identities(%d,%d) error=%v", input[0], input[1], err)
 		}

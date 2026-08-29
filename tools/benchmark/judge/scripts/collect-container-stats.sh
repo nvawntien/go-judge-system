@@ -93,28 +93,33 @@ to_bytes() {
 }
 
 sample_container() {
-  local timestamp container stat cpu mem_usage mem_limit mem_percent pids usage_bytes limit_bytes
+  local timestamp container stat cpu mem_usage mem_limit mem_percent pids net_io block_io usage_bytes limit_bytes inspect restart_count state health
   timestamp=$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)
   container=$1
 
-  if ! stat=$(docker stats --no-stream --format '{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}\t{{.PIDs}}' "$container" 2>/dev/null); then
+  if ! stat=$(docker stats --no-stream --format '{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}\t{{.PIDs}}\t{{.NetIO}}\t{{.BlockIO}}' "$container" 2>/dev/null); then
     echo "unable to sample container: $container" >&2
     return 0
   fi
 
-  IFS=$'\t' read -r cpu mem_usage mem_percent pids <<<"$stat"
+  IFS=$'\t' read -r cpu mem_usage mem_percent pids net_io block_io <<<"$stat"
+  if ! inspect=$(docker inspect --format '{{.RestartCount}}\t{{.State.Status}}\t{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container" 2>/dev/null); then
+    restart_count=unknown; state=unknown; health=unknown
+  else
+    IFS=$'\t' read -r restart_count state health <<<"$inspect"
+  fi
   IFS='/' read -r mem_usage mem_limit <<<"$mem_usage"
   mem_usage=${mem_usage//[[:space:]]/}
   mem_limit=${mem_limit//[[:space:]]/}
   usage_bytes=$(to_bytes "$mem_usage") || { echo "unrecognized Docker memory value: $mem_usage" >&2; return 1; }
   limit_bytes=$(to_bytes "$mem_limit") || { echo "unrecognized Docker memory limit: $mem_limit" >&2; return 1; }
 
-  printf '%s,%s,%s,%s,%s,%s,%s,%s\n' \
+  printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
     "$timestamp" "$node" "$container" \
-    "${cpu%%%}" "$usage_bytes" "$limit_bytes" "${mem_percent%%%}" "$pids"
+    "${cpu%%%}" "$usage_bytes" "$limit_bytes" "${mem_percent%%%}" "$pids" "$net_io" "$block_io" "$restart_count" "$state" "$health"
 }
 
-printf 'timestamp,node,container,cpu_percent,memory_bytes,memory_limit_bytes,memory_percent,pids\n'
+printf 'timestamp,node,container,cpu_percent,memory_bytes,memory_limit_bytes,memory_percent,pids,network_io,block_io,restart_count,state,health\n'
 while :; do
   for container in "${containers[@]}"; do
     sample_container "$container"

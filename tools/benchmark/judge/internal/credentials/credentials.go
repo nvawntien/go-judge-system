@@ -19,6 +19,7 @@ import (
 )
 
 const SchemaVersion = 1
+const MaxCanonicalSequence = 100000
 
 // NewBenchmarkTransport returns the shared, explicitly bounded connection
 // transport used by all isolated cookie-jar clients in one benchmark process.
@@ -135,8 +136,8 @@ func SelectCanonical(file File, count int) (File, error) {
 	if err := Validate(file); err != nil {
 		return File{}, err
 	}
-	if count < 1 || count > 10000 {
-		return File{}, errors.New("canonical benchmark user count must be within 1..10000")
+	if count < 1 || count > MaxCanonicalSequence {
+		return File{}, fmt.Errorf("canonical benchmark user count must be within 1..%d", MaxCanonicalSequence)
 	}
 	bySequence := make(map[int]User, len(file.Users))
 	for _, user := range file.Users {
@@ -145,7 +146,7 @@ func SelectCanonical(file File, count int) (File, error) {
 			return File{}, fmt.Errorf("benchmark session alias %q is not canonical", user.Alias)
 		}
 		sequence, err := strconv.Atoi(match[1])
-		if err != nil || sequence < 1 || sequence > 10000 || user.Alias != fmt.Sprintf("bench-%03d", sequence) {
+		if err != nil || sequence < 1 || sequence > MaxCanonicalSequence || user.Alias != fmt.Sprintf("bench-%03d", sequence) {
 			return File{}, fmt.Errorf("benchmark session alias %q is not canonical", user.Alias)
 		}
 		if _, exists := bySequence[sequence]; exists {

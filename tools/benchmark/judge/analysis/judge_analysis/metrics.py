@@ -19,10 +19,16 @@ def _resource_metrics(containers: pd.DataFrame | None) -> dict:
         return {"available": False, "reason": "container statistics unavailable", "containers": {}}
     result = {}
     for name, group in containers.groupby("container"):
-        result[str(name)] = {"cpu_percent": distribution(group["cpu_percent"]),
+        item = {"cpu_percent": distribution(group["cpu_percent"]),
                              "memory_mib": distribution(group["memory_bytes"] / 1024**2),
                              "pids_max": _float(group["pids"].max()) if "pids" in group else None,
                              "samples": int(len(group))}
+        if "restart_count" in group:
+            restarts = group["restart_count"].dropna()
+            item["restart_count_start"] = _float(restarts.iloc[0]) if len(restarts) else None
+            item["restart_count_end"] = _float(restarts.iloc[-1]) if len(restarts) else None
+            item["restart_count_delta"] = (item["restart_count_end"] - item["restart_count_start"] if item["restart_count_end"] is not None and item["restart_count_start"] is not None else None)
+        result[str(name)] = item
     return {"available": True, "containers": result}
 
 
@@ -103,7 +109,8 @@ def _quality(data: RunData) -> dict:
     if not len(windows):
         reasons.append("no benchmark windows")
     accepted_count = int(submissions.accepted.astype(bool).sum())
-    right_censored = bool(accepted_count and valid_e2e < accepted_count)
+    terminal_expected = data.run.get("observation_mode") not in {"admission-only", "realistic"}
+    right_censored = bool(terminal_expected and accepted_count and valid_e2e < accepted_count)
     if reasons:
         state = "INSUFFICIENT_DATA"
     elif data.kafka is None or data.containers is None or right_censored:
@@ -154,6 +161,30 @@ def _burst_metrics(submissions: pd.DataFrame, summary: dict | None) -> dict:
             "peak_logical_in_flight": None, "peak_active_observers": None}
 
 
+def _realistic_metrics(submissions: pd.DataFrame, summary: dict | None) -> dict | None:
+    raw = (summary or {}).get("realistic")
+    if not isinstance(raw, dict) or raw.get("observation_mode") != "realistic":
+        return None
+    measured = submissions[submissions.phase.eq("load")]
+    def truth(column):
+        return measured[column].astype(bool) if column in measured else pd.Series(False, index=measured.index)
+    tickets = truth("ticket_attempted")
+    ticket_success = truth("ticket_succeeded")
+    sse_attempted = truth("sse_attempted")
+    sse_established = truth("sse_established")
+    ticket_latency = measured["ticket_latency_ms"] if "ticket_latency_ms" in measured else []
+    sse_latency = measured["sse_establishment_latency_ms"] if "sse_establishment_latency_ms" in measured else []
+    ticket_start = measured.loc[tickets, "ticket_started_at"] if "ticket_started_at" in measured else pd.Series(dtype="datetime64[ns, UTC]")
+    sse_start = measured.loc[sse_attempted, "sse_started_at"] if "sse_started_at" in measured else pd.Series(dtype="datetime64[ns, UTC]")
+    sse_established_at = measured.loc[sse_established, "sse_established_at"] if "sse_established_at" in measured else pd.Series(dtype="datetime64[ns, UTC]")
+    close_reasons = dict(measured.get("sse_close_reason", pd.Series(dtype=str)).dropna().value_counts())
+    return {"observation_mode": "realistic",
+            "submission": {"attempted": int(measured.attempted.astype(bool).sum()), "successful": int(measured.accepted.astype(bool).sum()), "success_percent": _float(raw.get("submission", {}).get("success_percent")), "throughput_per_sec": _intake(measured.loc[measured.accepted.astype(bool), "post_completed_at"])["throughput_per_sec"], "latency_ms": distribution(measured.submit_latency_ms)},
+            "ticket": {"attempted": int(tickets.sum()), "successful": int(ticket_success.sum()), "success_percent": _float(raw.get("ticket", {}).get("success_percent")), "throughput_per_sec": _intake(ticket_start)["throughput_per_sec"], "latency_ms": distribution(ticket_latency)},
+            "sse": {"attempted": int(sse_attempted.sum()), "established": int(sse_established.sum()), "failed": int(sse_attempted.sum() - sse_established.sum()), "establishment_percent": _float(raw.get("sse", {}).get("establishment_percent")), "establishment_rate_per_sec": _intake(sse_established_at)["throughput_per_sec"], "establishment_latency_ms": distribution(sse_latency), "peak_active_streams": raw.get("sse", {}).get("peak_active_streams"), "survived_full_hold": int(truth("sse_survived_full_hold").sum()), "closed_early": int((sse_established & ~truth("sse_survived_full_hold") & ~truth("sse_terminal_during_hold")).sum()), "terminal_during_hold": int(truth("sse_terminal_during_hold").sum()), "close_reasons": close_reasons, "start_spread_ms": _intake(sse_start)["interval_ms"]},
+            "full_flow_success_percent": _float(raw.get("full_flow_success_percent")), "client_qualification": raw.get("client_qualification"), "system_survival": raw.get("system_survival"), "external_survival_evidence": raw.get("external_survival_evidence"), "health_probes": (summary or {}).get("health_probes", [])}
+
+
 def analytical_assessment(data: RunData, metrics: dict) -> dict:
     """Conservative analysis-only heuristic; harness classification remains canonical."""
     if data.run.get("mode") != "sustained":
@@ -192,7 +223,7 @@ def calculate(data: RunData) -> tuple[dict, pd.DataFrame, pd.DataFrame]:
     timeseries["elapsed_seconds"] = ((timeseries.window_start - start).dt.total_seconds() if not pd.isna(start) else np.nan)
     errors = {"rate_limited": int(submissions.rate_limited.astype(bool).sum()),
               "server_errors": int((submissions.outcome == "server_error").sum()),
-              "transport_failures": int(submissions.error_class.fillna("").str.contains("transport", case=False).sum()),
+              "transport_failures": int((submissions.outcome == "ambiguous_post").sum()),
               "completion_timeouts": int((submissions.outcome == "completion_timeout").sum()),
               "http_errors": int(((submissions.http_status.notna()) & ~submissions.http_status.isin([200, 201])).sum())}
     load_duration = float(load.window_duration_ms.sum() / 1000) if len(load) else 0.0
@@ -209,8 +240,26 @@ def calculate(data: RunData) -> tuple[dict, pd.DataFrame, pd.DataFrame]:
     load_terminal_rate = float(load.completed.sum() / load_duration) if load_duration else None
     pipeline_terminal_rate = burst["terminal"]["throughput_per_sec"] if burst is not None else load_terminal_rate
     terminal_coverage = float(len(completed) / len(accepted)) if len(accepted) else None
-    right_censored = bool(len(accepted) and len(completed) < len(accepted))
+    terminal_expected = data.run.get("observation_mode") not in {"admission-only", "realistic"}
+    right_censored = bool(terminal_expected and len(accepted) and len(completed) < len(accepted))
     unavailable_reason = "raw harness artifacts do not contain compile completion and testcase-execution completion timestamps"
+    admission_raw = (data.summary or {}).get("admission")
+    admission = None
+    if isinstance(admission_raw, dict) and admission_raw.get("observation_mode") == "admission-only":
+        admission = {"observation_mode": "admission-only",
+                     "effective_accepted_intake_per_sec": (burst or {}).get("accepted", {}).get("throughput_per_sec"),
+                     "post_start_spread_ms": ((burst or {}).get("raw") or {}).get("post_start_offset_ms", {}).get("max"),
+                     "system_survival": admission_raw.get("system_survival"),
+                     "client_qualification": admission_raw.get("client_qualification"),
+                     "external_survival_evidence": admission_raw.get("external_survival_evidence"),
+                     "health_probes": (data.summary or {}).get("health_probes", [])}
+    realistic = _realistic_metrics(submissions, data.summary)
+    client_resources = align_to_run(data.client_resources, data.run)
+    client_resource_metrics = {"available": False, "reason": "client resource samples unavailable"}
+    if client_resources is not None:
+        client_resource_metrics = {"available": True, "samples": int(len(client_resources)),
+                                   "open_fds": distribution(client_resources.open_fds), "goroutines": distribution(client_resources.goroutines),
+                                   "active_posts": distribution(client_resources.active_posts), "active_tickets": distribution(client_resources.active_tickets), "active_sse_streams": distribution(client_resources.active_sse_streams)}
     metrics = {"analysis_schema_version": "judge-analysis/v2", "generated_at_utc": datetime.now(timezone.utc).isoformat(),
                "run_id": data.run.get("run_id"), "harness_classification": (data.summary or {}).get("classification"),
                "input_hashes": {name: __import__("hashlib").sha256((data.path / name).read_bytes()).hexdigest() for name in ["run.json", "submissions.csv", "windows.csv"]},
@@ -238,6 +287,6 @@ def calculate(data: RunData) -> tuple[dict, pd.DataFrame, pd.DataFrame]:
                "observation": {"sse_completions": int(submissions.completion_source.fillna("").str.startswith("sse_").sum()),
                                "reconciliation_completions": int(submissions.completion_source.fillna("").str.startswith("get_").sum()),
                                "sse_failures": int(submissions.sse_failures.fillna(0).sum())},
-               "kafka": _kafka_metrics(kafka, data.run), "resources": _resource_metrics(containers), "data_quality": _quality(data), "burst": burst}
+               "kafka": _kafka_metrics(kafka, data.run), "resources": _resource_metrics(containers), "client_resources": client_resource_metrics, "data_quality": _quality(data), "burst": burst, "admission": admission, "realistic": realistic}
     metrics["analytical_assessment"] = analytical_assessment(data, metrics)
     return metrics, timeseries, verdicts

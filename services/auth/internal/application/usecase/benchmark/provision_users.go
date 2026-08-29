@@ -17,8 +17,8 @@ const (
 	MinSequence = 1
 	// MaxSequence deliberately bounds this operator-only fixture namespace. The
 	// %03d identity format remains stable for 001..100 and naturally extends to
-	// 1000..10000 without renaming existing users.
-	MaxSequence = 10000
+	// 1000..100000 without renaming existing users.
+	MaxSequence = 100000
 )
 
 var (
