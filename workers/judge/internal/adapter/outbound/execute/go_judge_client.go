@@ -22,7 +22,10 @@ const (
 	expectedOutputHeadroomBytes       = 64 * 1024
 	minCompileLimitMS           int64 = 30_000
 	sandboxRPCTimeout                 = 120 * time.Second
-	executableCleanupRPCTimeout       = 5 * time.Second
+	// Cleanup is best-effort and must not dominate a finished submission when
+	// the private sandbox is unavailable. Normal local Docker RPCs are far
+	// below this; the bound is deliberately independent of job cancellation.
+	executableCleanupRPCTimeout = 500 * time.Millisecond
 )
 
 // executorRPC is deliberately limited to the unary operation used by the

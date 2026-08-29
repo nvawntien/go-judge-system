@@ -134,6 +134,8 @@ type sandboxTestcaseCache struct {
 	entries            map[testcaseCacheKey]*testcaseCacheEntry
 	totalBytes         int64 // Exact only for entries whose names carry a size suffix.
 	unknownEntries     int
+	reservedBytes      int64 // In-flight FileAdd reservations; included in admission.
+	reservedEntries    int
 	reconciled         bool
 	reconcileAttempted bool
 	cleanupRunning     bool
@@ -186,6 +188,10 @@ func (c *sandboxTestcaseCache) getOrAdd(ctx context.Context, identity *outbound.
 			c.release([]testcaseCacheBinding{binding})
 			return binding.fileID, nil
 		}
+		if !c.reserve(inputSize) {
+			return "", errTestcaseCacheAdmissionDenied
+		}
+		defer c.releaseReservation(inputSize)
 		rpcCtx, cancel := context.WithTimeout(context.Background(), testcaseCacheRPCTimeout)
 		defer cancel()
 		started := time.Now()
@@ -213,6 +219,43 @@ func (c *sandboxTestcaseCache) getOrAdd(ctx context.Context, identity *outbound.
 			return binding, true, nil
 		}
 		return testcaseCacheBinding{}, false, nil
+	}
+}
+
+var errTestcaseCacheAdmissionDenied = fmt.Errorf("sandbox testcase cache admission denied")
+
+// reserve creates an accounting-only reservation before FileAdd. It makes the
+// configured byte/entry limits hard even when unrelated cache misses upload in
+// parallel. We intentionally do not evict synchronously here: the sandbox
+// bytes are not free until FileDelete succeeds, and a failed delete must not
+// permit an unsafe upload. A denied admission falls back to MemoryFile.
+func (c *sandboxTestcaseCache) reserve(size int64) bool {
+	if size < 0 || size > c.cfg.MaxBytes {
+		return false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	// A pre-size-suffix entry was created by an older Worker and FileList does
+	// not expose its size. Do not admit new bytes until it is either used (and
+	// therefore accounted for) or safely evicted: treating an unknown entry as
+	// zero would make MaxBytes a fiction after a Worker restart.
+	if c.unknownEntries > 0 || len(c.entries)+c.reservedEntries >= c.cfg.MaxEntries || c.totalBytes+c.reservedBytes+size > c.cfg.MaxBytes {
+		return false
+	}
+	c.reservedBytes += size
+	c.reservedEntries++
+	return true
+}
+
+func (c *sandboxTestcaseCache) releaseReservation(size int64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.reservedBytes -= size
+	c.reservedEntries--
+	if c.reservedBytes < 0 || c.reservedEntries < 0 {
+		// This is an internal accounting invariant; clamp defensively so a
+		// degraded cache cannot become an unbounded cache.
+		c.reservedBytes, c.reservedEntries = 0, 0
 	}
 }
 

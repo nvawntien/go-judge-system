@@ -413,6 +413,38 @@ func TestGoJudgeClientExecutableCleanupSurvivesCancellationAndDeleteFailure(t *t
 	})
 }
 
+func TestGoJudgeClientExecutableCleanupHasTightBoundedLatency(t *testing.T) {
+	rpc := &fakeExecutorRPC{
+		handler: func(_ context.Context, req *judgepb.Request) (*judgepb.Response, error) {
+			if isCompileRequest(req) {
+				return compileAccepted("blocked-cleanup-exe"), nil
+			}
+			return acceptedForRequest(req), nil
+		},
+		fileDelete: func(ctx context.Context, _ *judgepb.FileID) (*emptypb.Empty, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	}
+
+	started := time.Now()
+	result, err := NewGoJudgeClient(rpc, zap.NewNop()).Execute(context.Background(), outbound.ExecutionRequest{
+		Language: "CPP", SourceCode: "int main(){}", TestCases: officialTestCases(1),
+	})
+	elapsed := time.Since(started)
+	if err != nil || result.Status != "ACCEPTED" {
+		t.Fatalf("Execute() result/error = %#v/%v", result, err)
+	}
+	// Leave scheduling headroom while making a regression to the prior 5 s
+	// cleanup timeout unmistakable.
+	if elapsed > 1500*time.Millisecond {
+		t.Fatalf("blocked cleanup delayed Execute for %s, want below 1.5s", elapsed)
+	}
+	if elapsed < executableCleanupRPCTimeout/2 {
+		t.Fatalf("blocked cleanup returned in %s, expected it to honor its bounded context", elapsed)
+	}
+}
+
 func TestGoJudgeClientExecutableCleanupDoesNotDeleteTestcaseCacheFiles(t *testing.T) {
 	identity := testDatasetIdentity(42, 1, "a")
 	testCase := cachedOfficialTestCase(1, "case", "input\n", "ok\n")

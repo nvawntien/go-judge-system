@@ -151,6 +151,70 @@ func TestSandboxTestcaseCacheConcurrentColdMissesCoalescePerKey(t *testing.T) {
 	}
 }
 
+func TestSandboxTestcaseCacheAdmissionIsHardBoundAcrossDifferentConcurrentKeys(t *testing.T) {
+	started := make(chan struct{}, 2)
+	release := make(chan struct{})
+	var adds atomic.Int32
+	cache, err := newConfiguredSandboxTestcaseCache(&fakeExecutorRPC{
+		fileList: emptyFileList,
+		fileAdd: func(ctx context.Context, _ *judgepb.FileContent) (*judgepb.FileID, error) {
+			adds.Add(1)
+			started <- struct{}{}
+			select {
+			case <-release:
+				return &judgepb.FileID{FileID: "cached"}, nil
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		},
+	}, zap.NewNop(), config.TestcaseCacheConfig{Enabled: true, MaxBytes: 8, MaxEntries: 1, CleanupInterval: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity := testDatasetIdentity(3, 2, "a")
+	first := cachedOfficialTestCase(1, "one", "12345678", "")
+	second := cachedOfficialTestCase(2, "two", "abcdefgh", "")
+	results := make(chan bool, 2)
+	go func() { _, cached, _ := cache.getOrAdd(context.Background(), identity, first); results <- cached }()
+	<-started
+	go func() { _, cached, _ := cache.getOrAdd(context.Background(), identity, second); results <- cached }()
+	// The second distinct key must be denied before FileAdd, rather than
+	// oversubscribing the configured 8-byte/one-entry budget.
+	select {
+	case cached := <-results:
+		if cached {
+			t.Fatal("second cache admission unexpectedly succeeded")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("second cache admission did not complete")
+	}
+	if got := adds.Load(); got != 1 {
+		t.Fatalf("FileAdd calls=%d, want one", got)
+	}
+	close(release)
+	if cached := <-results; !cached {
+		t.Fatal("reserved first entry did not complete")
+	}
+	entries, bytes, _ := cache.stats()
+	if entries != 1 || bytes != 8 {
+		t.Fatalf("cache accounting entries=%d bytes=%d", entries, bytes)
+	}
+}
+
+func TestSandboxTestcaseCacheDoesNotTreatLegacyUnknownSizeAsFree(t *testing.T) {
+	cache := lifecycleTestcaseCache(t, &fakeExecutorRPC{fileList: emptyFileList, fileAdd: sequentialFileAdd()}, 8, 2, 0)
+	identity := testDatasetIdentity(3, 2, "a")
+	legacy := cachedOfficialTestCase(1, "legacy", "old", "")
+	key, ok := newTestcaseCacheKey(identity, legacy)
+	if !ok {
+		t.Fatal("newTestcaseCacheKey() failed")
+	}
+	cache.store(key, "legacy-file", 0, false)
+	if cache.reserve(1) {
+		t.Fatal("unknown legacy cache entry was treated as zero bytes during admission")
+	}
+}
+
 func TestSandboxTestcaseCacheDifferentKeysDoNotSerializePopulation(t *testing.T) {
 	started := make(chan struct{}, 2)
 	release := make(chan struct{})
@@ -354,7 +418,7 @@ func TestSandboxTestcaseCacheEvictsOnlyUnpinnedAstraCodeEntriesByByteBudget(t *t
 			deleted = append(deleted, fileID.GetFileID())
 			return &emptypb.Empty{}, nil
 		},
-	}, 4, 10, 0)
+	}, 6, 10, 0)
 	identity := testDatasetIdentity(3, 2, "a")
 	first := cachedOfficialTestCase(1, "one", "abc", "ok\n")
 	second := cachedOfficialTestCase(2, "two", "def", "ok\n")
@@ -369,6 +433,7 @@ func TestSandboxTestcaseCacheEvictsOnlyUnpinnedAstraCodeEntriesByByteBudget(t *t
 		t.Fatalf("second getOrAdd = %#v/%t/%v", secondBinding, cached, err)
 	}
 	cache.release([]testcaseCacheBinding{secondBinding})
+	cache.cfg.MaxBytes = 4 // exercise eviction after a valid prior population.
 	cache.cleanup(context.Background())
 
 	if got, want := fmt.Sprint(deleted), "[file-1]"; got != want {
@@ -398,7 +463,7 @@ func TestSandboxTestcaseCacheNeverEvictsPinnedOrForeignFileIDs(t *testing.T) {
 			deleted = append(deleted, fileID.GetFileID())
 			return &emptypb.Empty{}, nil
 		},
-	}, 1, 1, 0)
+	}, 4, 2, 0)
 	identity := testDatasetIdentity(3, 2, "a")
 	pinnedCase := cachedOfficialTestCase(1, "pinned", "aa", "ok\n")
 	otherCase := cachedOfficialTestCase(2, "other", "bb", "ok\n")
@@ -411,6 +476,7 @@ func TestSandboxTestcaseCacheNeverEvictsPinnedOrForeignFileIDs(t *testing.T) {
 		t.Fatalf("other getOrAdd = %#v/%t/%v", other, cached, err)
 	}
 	cache.release([]testcaseCacheBinding{other})
+	cache.cfg.MaxEntries = 1
 	cache.cleanup(context.Background())
 
 	if got, want := fmt.Sprint(deleted), "[file-2]"; got != want {
@@ -420,6 +486,7 @@ func TestSandboxTestcaseCacheNeverEvictsPinnedOrForeignFileIDs(t *testing.T) {
 		t.Fatalf("unsafe FileDelete target %q", deleted[0])
 	}
 	cache.release([]testcaseCacheBinding{pinned})
+	cache.cfg.MaxEntries = 0
 	cache.cleanup(context.Background())
 	if got, want := fmt.Sprint(deleted), "[file-2 file-1]"; got != want {
 		t.Fatalf("released pinned entry did not later become eligible: %s", got)
@@ -433,7 +500,7 @@ func TestSandboxTestcaseCacheDeleteFailureKeepsEntryAndDoesNotBreakJudging(t *te
 		fileDelete: func(context.Context, *judgepb.FileID) (*emptypb.Empty, error) {
 			return nil, errors.New("sandbox delete unavailable")
 		},
-	}, 1, 1, 0)
+	}, int64(len("too-large")), 1, 0)
 	identity := testDatasetIdentity(3, 2, "a")
 	testCase := cachedOfficialTestCase(1, "case", "too-large", "ok\n")
 	binding, cached, err := cache.getOrAdd(context.Background(), identity, testCase)
@@ -441,6 +508,7 @@ func TestSandboxTestcaseCacheDeleteFailureKeepsEntryAndDoesNotBreakJudging(t *te
 		t.Fatalf("getOrAdd = %#v/%t/%v", binding, cached, err)
 	}
 	cache.release([]testcaseCacheBinding{binding})
+	cache.cfg.MaxEntries = 0
 	cache.cleanup(context.Background())
 	key, _ := newTestcaseCacheKey(identity, testCase)
 	if got, ok := cache.lookup(key); !ok || got != binding.fileID {
@@ -550,7 +618,7 @@ func TestSandboxTestcaseCacheConcurrentPinnedUseAndCleanup(t *testing.T) {
 			deletes.Add(1)
 			return &emptypb.Empty{}, nil
 		},
-	}, 1, 1, 0)
+	}, int64(len("input")), 1, 0)
 	identity := testDatasetIdentity(3, 2, "a")
 	binding, cached, err := cache.getOrAdd(context.Background(), identity, cachedOfficialTestCase(1, "case", "input", "ok\n"))
 	if err != nil || !cached {
@@ -569,6 +637,7 @@ func TestSandboxTestcaseCacheConcurrentPinnedUseAndCleanup(t *testing.T) {
 		t.Fatalf("cleanup deleted pinned testcase file %d times", got)
 	}
 	cache.release([]testcaseCacheBinding{binding})
+	cache.cfg.MaxEntries = 0 // force an explicit cleanup pass after unpinning
 	cache.cleanup(context.Background())
 	if got := deletes.Load(); got != 1 {
 		t.Fatalf("released testcase file deletes = %d, want one", got)
@@ -591,7 +660,7 @@ func TestGoJudgeClientPinsCachedInputUntilBatchExecReturns(t *testing.T) {
 		},
 	}
 	client := NewGoJudgeClient(rpc, zap.NewNop(), config.TestcaseCacheConfig{
-		Enabled: true, MaxBytes: 1, MaxEntries: 1, CleanupInterval: time.Hour,
+		Enabled: true, MaxBytes: int64(len("input")), MaxEntries: 1, CleanupInterval: time.Hour,
 	})
 	client.testcaseCache.nextCleanup = time.Now().Add(time.Hour)
 	done := make(chan error, 1)
@@ -615,6 +684,7 @@ func TestGoJudgeClientPinsCachedInputUntilBatchExecReturns(t *testing.T) {
 	if got := rpc.deletedFileIDs(); fmt.Sprint(got) != "[exe]" {
 		t.Fatalf("post-execution cleanup = %v, want only the submission executable", got)
 	}
+	client.testcaseCache.cfg.MaxEntries = 0
 	client.testcaseCache.cleanup(context.Background())
 	if got := rpc.deletedFileIDs(); len(got) != 2 || got[0] != "exe" || got[1] == "exe" {
 		t.Fatalf("cleanup after Exec returned deleted %v, want executable then testcase cache file", got)

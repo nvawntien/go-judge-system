@@ -196,6 +196,11 @@ int main() { long long a, b; cin >> a >> b; cout << a + b << '\n'; }`
 	if _, found := restartedWorker.testcaseCache.lookup(key); found {
 		t.Fatal("controlled lifecycle eviction retained the testcase FileID")
 	}
+	// Restore the valid configured budget before testing repopulation. The
+	// one-byte value above exists solely to force this controlled eviction.
+	restartedWorker.testcaseCache.mu.Lock()
+	restartedWorker.testcaseCache.cfg.MaxBytes = enabledTestcaseCacheConfig().MaxBytes
+	restartedWorker.testcaseCache.mu.Unlock()
 
 	// Re-execution must repopulate the testcase cache while continuing to use
 	// the original compiled executable FileID successfully.

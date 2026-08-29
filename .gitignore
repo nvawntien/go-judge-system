@@ -12,6 +12,8 @@ api-tests/
 # Local benchmark artifacts and pre-issued session cookies.
 /bench-results/
 /tools/benchmark/judge/users.local.json
+/tools/benchmark/judge/users-10k.local.json
 /tools/benchmark/system-config.json
+/tools/benchmark/system-config.local.json
 /tools/benchmark/api/bench-results/
 tools/benchmark/judge/bench-results/
