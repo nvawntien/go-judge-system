@@ -26,7 +26,7 @@ import (
 
 const (
 	MinSequence        = 1
-	MaxSequence        = 10000
+	MaxSequence        = 100000
 	maxResponseBytes   = 1 << 20
 	defaultConcurrency = 16
 )

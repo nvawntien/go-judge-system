@@ -32,16 +32,22 @@ const (
 type Classification string
 
 const (
-	ClassificationStable       Classification = "STABLE"
-	ClassificationSaturated    Classification = "SATURATED"
-	ClassificationInconclusive Classification = "INCONCLUSIVE"
-	ClassificationNA           Classification = "N/A"
+	ClassificationStable           Classification = "STABLE"
+	ClassificationSaturated        Classification = "SATURATED"
+	ClassificationInconclusive     Classification = "INCONCLUSIVE"
+	ClassificationNA               Classification = "N/A"
+	ClassificationCleanSurvival    Classification = "CLEAN_SURVIVAL"
+	ClassificationDegradedSurvival Classification = "DEGRADED_SURVIVAL"
+	ClassificationClientLimited    Classification = "CLIENT_LIMITED"
+	ClassificationFailed           Classification = "FAILED"
+	ClassificationInvalid          Classification = "INVALID"
 )
 
 type Outcome string
 
 const (
 	OutcomeTerminal          Outcome = "terminal"
+	OutcomeAccepted          Outcome = "accepted"
 	OutcomeRejected429       Outcome = "rejected_429"
 	OutcomeRejected4xx       Outcome = "other_4xx"
 	OutcomeServerError       Outcome = "server_error"
@@ -84,6 +90,8 @@ type RunMetadata struct {
 	ObservedRates      *ObservedRates    `json:"observed_rates,omitempty"`
 	SystemConfig       *SystemConfig     `json:"system_config,omitempty"`
 	BenchmarkObjective string            `json:"benchmark_objective"`
+	ObservationMode    string            `json:"observation_mode"`
+	SessionValidation  SessionValidation `json:"session_validation"`
 	ClientDiagnostics  ClientDiagnostics `json:"client_diagnostics"`
 }
 
@@ -108,15 +116,50 @@ type UserSet struct {
 	OneSubmitPerUser bool `json:"one_submit_per_user"`
 }
 
+// SessionValidation makes the admission-only sampled preflight explicit.
+// Bootstrap has already validated every session before writing credentials.
+type SessionValidation struct {
+	Mode                 string `json:"mode"`
+	Validated            int    `json:"validated"`
+	SampleRequested      int    `json:"sample_requested,omitempty"`
+	FirstAndLastIncluded bool   `json:"first_and_last_included"`
+}
+
 // ClientDiagnostics records only local generator capacity evidence. It has no
 // credentials, identifiers, or host-sensitive data.
 type ClientDiagnostics struct {
-	GoroutinesBeforeBurst int    `json:"goroutines_before_burst,omitempty"`
-	GoroutinesAfterLaunch int    `json:"goroutines_after_burst_launch,omitempty"`
-	PeakLogicalInFlight   int    `json:"peak_logical_in_flight,omitempty"`
-	PeakActiveObservers   int    `json:"peak_active_observers,omitempty"`
-	NoFileSoftLimit       uint64 `json:"nofile_soft_limit,omitempty"`
-	NoFileRequired        uint64 `json:"nofile_required,omitempty"`
+	GoroutinesBeforeBurst           int    `json:"goroutines_before_burst,omitempty"`
+	GoroutinesAfterLaunch           int    `json:"goroutines_after_burst_launch,omitempty"`
+	PeakLogicalInFlight             int    `json:"peak_logical_in_flight,omitempty"`
+	PeakActiveObservers             int    `json:"peak_active_observers,omitempty"`
+	PeakActivePosts                 int    `json:"peak_active_posts,omitempty"`
+	PeakActiveTickets               int    `json:"peak_active_tickets,omitempty"`
+	PeakActiveSSE                   int    `json:"peak_active_sse_streams,omitempty"`
+	PeakOpenFDs                     int    `json:"peak_open_fds,omitempty"`
+	OpenFDSamples                   int    `json:"open_fd_samples,omitempty"`
+	OpenFDStatus                    string `json:"open_fd_status,omitempty"`
+	NoFileSoftLimit                 uint64 `json:"nofile_soft_limit,omitempty"`
+	NoFileHardLimit                 uint64 `json:"nofile_hard_limit,omitempty"`
+	NoFileRequired                  uint64 `json:"nofile_required,omitempty"`
+	NoFileRecommended               uint64 `json:"nofile_recommended,omitempty"`
+	ConnectionsPerLogicalSubmission uint64 `json:"connections_per_logical_submission,omitempty"`
+	RuntimeCPUCount                 int    `json:"runtime_cpu_count,omitempty"`
+	TransportNewConnections         uint64 `json:"transport_new_connections,omitempty"`
+	TransportReusedConnections      uint64 `json:"transport_reused_connections,omitempty"`
+	HTTP1Responses                  uint64 `json:"http1_responses,omitempty"`
+	HTTP2Responses                  uint64 `json:"http2_responses,omitempty"`
+	OtherProtocolResponses          uint64 `json:"other_protocol_responses,omitempty"`
+}
+
+// ClientResourceSample is intentionally small and credential-free. It helps
+// distinguish an overloaded load generator from a server-side failure.
+type ClientResourceSample struct {
+	At               time.Time `json:"at"`
+	OpenFDs          int       `json:"open_fds,omitempty"`
+	Goroutines       int       `json:"goroutines"`
+	ActivePosts      int       `json:"active_posts"`
+	ActiveTickets    int       `json:"active_tickets"`
+	ActiveSSEStreams int       `json:"active_sse_streams"`
 }
 
 type Workload struct {
@@ -144,6 +187,7 @@ type Timeouts struct {
 type ObserverConfig struct {
 	SSEPrimary                bool    `json:"sse_primary"`
 	ConnectMS                 int64   `json:"connect_ms"`
+	HoldMS                    int64   `json:"hold_ms,omitempty"`
 	IdleMS                    int64   `json:"idle_ms"`
 	MaxReconnects             int     `json:"max_reconnects"`
 	BackoffBaseMS             int64   `json:"backoff_base_ms"`
@@ -213,6 +257,7 @@ type SubmissionRecord struct {
 	Attempted             bool             `json:"attempted"`
 	Accepted              bool             `json:"accepted"`
 	HTTPStatus            *int             `json:"http_status,omitempty"`
+	HTTPProtocol          string           `json:"http_protocol,omitempty"`
 	APICode               *int             `json:"api_code,omitempty"`
 	SubmissionID          *int64           `json:"submission_id,omitempty"`
 	InitialStatus         string           `json:"initial_status,omitempty"`
@@ -227,6 +272,20 @@ type SubmissionRecord struct {
 	SSEConnections        int              `json:"sse_connections"`
 	SSEFailures           int              `json:"sse_failures"`
 	GETReconciliations    int              `json:"get_reconciliations"`
+	TicketStartedAt       *time.Time       `json:"ticket_started_at,omitempty"`
+	TicketCompletedAt     *time.Time       `json:"ticket_completed_at,omitempty"`
+	TicketLatencyMS       *float64         `json:"ticket_latency_ms,omitempty"`
+	TicketAttempted       bool             `json:"ticket_attempted"`
+	TicketSucceeded       bool             `json:"ticket_succeeded"`
+	SSEStartedAt          *time.Time       `json:"sse_started_at,omitempty"`
+	SSEEstablishedAt      *time.Time       `json:"sse_established_at,omitempty"`
+	SSEClosedAt           *time.Time       `json:"sse_closed_at,omitempty"`
+	SSEEstablishLatencyMS *float64         `json:"sse_establishment_latency_ms,omitempty"`
+	SSEAttempted          bool             `json:"sse_attempted"`
+	SSEEstablished        bool             `json:"sse_established"`
+	SSECloseReason        string           `json:"sse_close_reason,omitempty"`
+	SSETerminalDuringHold bool             `json:"sse_terminal_during_hold"`
+	SSESurvivedFullHold   bool             `json:"sse_survived_full_hold"`
 	RateLimited           bool             `json:"rate_limited"`
 	RetryAfterMS          *int64           `json:"retry_after_ms,omitempty"`
 	Outcome               Outcome          `json:"outcome"`
@@ -289,25 +348,85 @@ type Distribution struct {
 }
 
 type RunSummary struct {
-	SchemaVersion         string           `json:"schema_version"`
-	RunID                 string           `json:"run_id"`
-	RunState              RunState         `json:"run_state"`
-	Classification        Classification   `json:"classification"`
-	ClassificationReasons []string         `json:"classification_reasons"`
-	QualityFlags          []string         `json:"quality_flags"`
-	Counts                Counts           `json:"counts"`
-	Rates                 Rates            `json:"rates"`
-	LoadWindow            LoadWindow       `json:"load_window"`
-	Drain                 Drain            `json:"drain"`
-	Outstanding           Outstanding      `json:"outstanding"`
-	Latencies             Latencies        `json:"latencies"`
-	Verdicts              map[string]int   `json:"verdicts"`
-	Observer              ObserverTotals   `json:"observer"`
-	ExternalMetrics       ExternalMetrics  `json:"external_metrics"`
-	Burst                 *BurstMetrics    `json:"burst,omitempty"`
-	Compile               CompileMetrics   `json:"compile"`
-	JudgeCore             JudgeCoreMetrics `json:"judge_core"`
-	Pipeline              PipelineMetrics  `json:"pipeline"`
+	SchemaVersion         string            `json:"schema_version"`
+	RunID                 string            `json:"run_id"`
+	RunState              RunState          `json:"run_state"`
+	Classification        Classification    `json:"classification"`
+	ClassificationReasons []string          `json:"classification_reasons"`
+	QualityFlags          []string          `json:"quality_flags"`
+	Counts                Counts            `json:"counts"`
+	Rates                 Rates             `json:"rates"`
+	LoadWindow            LoadWindow        `json:"load_window"`
+	Drain                 Drain             `json:"drain"`
+	Outstanding           Outstanding       `json:"outstanding"`
+	Latencies             Latencies         `json:"latencies"`
+	Verdicts              map[string]int    `json:"verdicts"`
+	Observer              ObserverTotals    `json:"observer"`
+	ExternalMetrics       ExternalMetrics   `json:"external_metrics"`
+	ClientDiagnostics     ClientDiagnostics `json:"client_diagnostics"`
+	Burst                 *BurstMetrics     `json:"burst,omitempty"`
+	Admission             *AdmissionMetrics `json:"admission,omitempty"`
+	Realistic             *RealisticMetrics `json:"realistic,omitempty"`
+	HealthProbes          []HealthProbe     `json:"health_probes,omitempty"`
+	Compile               CompileMetrics    `json:"compile"`
+	JudgeCore             JudgeCoreMetrics  `json:"judge_core"`
+	Pipeline              PipelineMetrics   `json:"pipeline"`
+}
+
+// AdmissionMetrics is intentionally POST-only: it never derives terminal or
+// Judge Core claims from an admission-only run.
+type AdmissionMetrics struct {
+	ObservationMode               string   `json:"observation_mode"`
+	EffectiveAcceptedIntakePerSec *float64 `json:"effective_accepted_intake_per_sec,omitempty"`
+	PostStartSpreadMS             *int64   `json:"post_start_spread_ms,omitempty"`
+	ClientQualification           string   `json:"client_qualification"`
+	SystemSurvival                string   `json:"system_survival"`
+	ExternalSurvivalEvidence      string   `json:"external_survival_evidence"`
+}
+
+// RealisticMetrics records the public browser-like flow separately per stage.
+// A held SSE stream is an observation exercise, not a terminal-drain metric.
+type RealisticMetrics struct {
+	ObservationMode          string       `json:"observation_mode"`
+	Submission               StageMetrics `json:"submission"`
+	Ticket                   StageMetrics `json:"ticket"`
+	SSE                      SSEMetrics   `json:"sse"`
+	FullFlowSuccessPercent   *float64     `json:"full_flow_success_percent,omitempty"`
+	ClientQualification      string       `json:"client_qualification"`
+	SystemSurvival           string       `json:"system_survival"`
+	ExternalSurvivalEvidence string       `json:"external_survival_evidence"`
+}
+
+type StageMetrics struct {
+	Attempted        int          `json:"attempted"`
+	Successful       int          `json:"successful"`
+	SuccessPercent   *float64     `json:"success_percent,omitempty"`
+	ThroughputPerSec *float64     `json:"throughput_per_sec,omitempty"`
+	LatencyMS        Distribution `json:"latency_ms"`
+}
+
+type SSEMetrics struct {
+	Attempted               int            `json:"attempted"`
+	Established             int            `json:"established"`
+	Failed                  int            `json:"failed"`
+	EstablishmentPercent    *float64       `json:"establishment_percent,omitempty"`
+	EstablishmentRatePerSec *float64       `json:"establishment_rate_per_sec,omitempty"`
+	EstablishmentLatencyMS  Distribution   `json:"establishment_latency_ms"`
+	PeakActiveStreams       int            `json:"peak_active_streams"`
+	SurvivedFullHold        int            `json:"survived_full_hold"`
+	ClosedEarly             int            `json:"closed_early"`
+	TerminalDuringHold      int            `json:"terminal_during_hold"`
+	CloseReasons            map[string]int `json:"close_reasons"`
+	StartSpreadMS           *int64         `json:"start_spread_ms,omitempty"`
+}
+
+type HealthProbe struct {
+	Name       string    `json:"name"`
+	At         time.Time `json:"at"`
+	Status     string    `json:"status"`
+	HTTPStatus *int      `json:"http_status,omitempty"`
+	LatencyMS  float64   `json:"latency_ms"`
+	ErrorClass string    `json:"error_class,omitempty"`
 }
 
 // CompileMetrics is deliberately separate from JudgeCore. The benchmark

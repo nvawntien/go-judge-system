@@ -109,14 +109,14 @@ func TestSessionRejectsPOSTRedirectBeforeReplay(t *testing.T) {
 }
 
 func TestSelectCanonicalSupportsMassiveBurstRanges(t *testing.T) {
-	file := canonicalFile(10000)
-	for _, count := range []int{1000, 5000, 10000} {
+	file := canonicalFile(100000)
+	for _, count := range []int{1000, 5000, 10000, 25000, 50000, 100000} {
 		selected, err := SelectCanonical(file, count)
 		if err != nil || len(selected.Users) != count || selected.Users[0].Alias != "bench-001" || selected.Users[count-1].Alias != fmt.Sprintf("bench-%03d", count) {
 			t.Fatalf("count=%d users=%d err=%v", count, len(selected.Users), err)
 		}
 	}
-	if _, err := SelectCanonical(file, 10001); err == nil {
+	if _, err := SelectCanonical(file, 100001); err == nil {
 		t.Fatal("out-of-range canonical selection accepted")
 	}
 	file.Users[1].Alias = "other-user"

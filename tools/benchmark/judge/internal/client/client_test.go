@@ -6,10 +6,23 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/nvawntien/go-judge-system/tools/benchmark/judge/internal/credentials"
 )
+
+func TestTransportErrorClassPreservesClientCapacitySignals(t *testing.T) {
+	if got := TransportErrorClass(&TransportError{Err: syscall.EMFILE}); got != "client_emfile" {
+		t.Fatalf("class=%q", got)
+	}
+	if got := TransportErrorClass(&TransportError{Err: syscall.EADDRNOTAVAIL}); got != "client_ephemeral_port_exhaustion" {
+		t.Fatalf("class=%q", got)
+	}
+	if got := TransportErrorClass(&TransportError{Err: context.DeadlineExceeded}); got != "transport_deadline" {
+		t.Fatalf("class=%q, want ambiguous transport deadline", got)
+	}
+}
 
 func testAPI(t *testing.T, handler http.Handler) *API {
 	t.Helper()
@@ -97,6 +110,53 @@ func TestSubmitRateLimitWithoutRetryAfterDoesNotFabricateValue(t *testing.T) {
 	got, err := api.Submit(context.Background(), SubmissionRequest{ProblemID: 1, Language: "GO", SourceCode: "x"})
 	if err != nil || got.Kind != SubmitRateLimit || got.RetryAfter != nil {
 		t.Fatalf("result=%+v err=%v", got, err)
+	}
+}
+
+func TestOpenEventsValidatesStreamResponseWithoutLeakingTicket(t *testing.T) {
+	const ticket = "sse-ticket-must-not-leak"
+	for _, test := range []struct {
+		name        string
+		status      int
+		contentType string
+		wantErr     bool
+	}{
+		{name: "non-200", status: http.StatusServiceUnavailable, contentType: "text/event-stream", wantErr: true},
+		{name: "wrong content type", status: http.StatusOK, contentType: "application/json", wantErr: true},
+		{name: "valid stream", status: http.StatusOK, contentType: "text/event-stream; charset=utf-8"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			api := testAPI(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet || r.URL.Path != "/events/submissions/42" {
+					t.Fatalf("unexpected SSE request %s %s", r.Method, r.URL.Path)
+				}
+				if got := r.URL.Query().Get("ticket"); got != ticket {
+					t.Fatalf("ticket=%q", got)
+				}
+				w.Header().Set("Content-Type", test.contentType)
+				w.WriteHeader(test.status)
+			}))
+
+			response, err := api.OpenEvents(context.Background(), 42, ticket)
+			if test.wantErr {
+				if err == nil {
+					t.Fatal("OpenEvents succeeded, want validation error")
+				}
+				if strings.Contains(err.Error(), ticket) || strings.Contains(err.Error(), "?ticket=") {
+					t.Fatalf("SSE error leaked ticket or request URL: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("OpenEvents error: %v", err)
+			}
+			if response == nil {
+				t.Fatal("OpenEvents returned nil response")
+			}
+			if err := response.Body.Close(); err != nil {
+				t.Fatalf("close stream response: %v", err)
+			}
+		})
 	}
 }
 

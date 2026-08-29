@@ -21,9 +21,54 @@ def _line(value, label, color):
         plt.axvline(value, label=f"{label}: {value:.1f} ms", color=color, linestyle="--")
 
 
-def single_run(charts: Path, submissions: pd.DataFrame, windows: pd.DataFrame, metrics: dict, containers: pd.DataFrame | None, kafka: pd.DataFrame | None) -> list[str]:
+def single_run(charts: Path, submissions: pd.DataFrame, windows: pd.DataFrame, metrics: dict, containers: pd.DataFrame | None, kafka: pd.DataFrame | None, client_resources: pd.DataFrame | None = None) -> list[str]:
     charts.mkdir(parents=True, exist_ok=True)
     output = []
+    if (metrics.get("realistic") or {}).get("observation_mode") == "realistic":
+        measured = submissions[submissions.phase.eq("load")].copy()
+        def timeline(column, title, name, color="#457b9d"):
+            values = measured.dropna(subset=[column]).sort_values(column)
+            if not len(values): return
+            origin = values[column].iloc[0]
+            plt.figure(figsize=(8, 4.5)); plt.step((values[column]-origin).dt.total_seconds(), np.arange(1, len(values)+1), where="post", color=color)
+            plt.title(title); plt.xlabel("seconds from first event"); plt.ylabel("cumulative users")
+            path=charts/name; _save(path); output.append(path.name)
+        timeline("ticket_completed_at", "Ticket responses over time", "05_ticket_responses_over_time.png", "#2a9d8f")
+        timeline("sse_established_at", "SSE establishments over time", "07_sse_establishments_over_time.png", "#6a5acd")
+        for column, title, name, color in [("ticket_latency_ms", "Ticket latency distribution", "06_ticket_latency_distribution.png", "#2a9d8f"), ("sse_establishment_latency_ms", "SSE establishment latency distribution", "08_sse_establishment_latency_distribution.png", "#6a5acd")]:
+            if column in measured:
+                values=measured[column].dropna().to_numpy(dtype=float)
+                if len(values):
+                    plt.figure(figsize=(8,4.5)); plt.hist(values,bins=min(80,max(10,len(values)//100)),color=color); plt.title(title); plt.xlabel("milliseconds"); plt.ylabel("streams")
+                    path=charts/name; _save(path); output.append(path.name)
+        if "sse_close_reason" in measured:
+            reasons=measured.sse_close_reason.dropna().value_counts()
+            if len(reasons):
+                plt.figure(figsize=(8,4.5)); plt.bar(reasons.index,reasons.values,color="#e76f51"); plt.title("SSE close reasons"); plt.xlabel("reason"); plt.ylabel("streams"); plt.xticks(rotation=20,ha="right")
+                path=charts/"09_sse_close_reasons.png"; _save(path); output.append(path.name)
+        if "sse_established_at" in measured and "sse_closed_at" in measured:
+            established=measured.dropna(subset=["sse_established_at", "sse_closed_at"]).copy()
+            if len(established):
+                events=[]
+                for _, row in established.iterrows(): events.extend([(row.sse_established_at,1),(row.sse_closed_at,-1)])
+                events.sort(key=lambda value:value[0]); origin=events[0][0]; active=0; x=[]; y=[]
+                for at,delta in events: active+=delta; x.append((at-origin).total_seconds()); y.append(active)
+                plt.figure(figsize=(8,4.5)); plt.step(x,y,where="post",color="#264653"); plt.title("Active SSE streams"); plt.xlabel("seconds from first establishment"); plt.ylabel("active streams")
+                path=charts/"10_active_sse_streams.png"; _save(path); output.append(path.name)
+        if client_resources is not None and len(client_resources):
+            origin=client_resources.timestamp.min(); x=(client_resources.timestamp-origin).dt.total_seconds()
+            plt.figure(figsize=(8,4.5)); plt.plot(x,client_resources.open_fds,marker="o",label="open FDs"); plt.plot(x,client_resources.goroutines,marker="o",label="goroutines"); plt.legend(); plt.title("Load-generator FD and goroutine samples"); plt.xlabel("seconds from first sample"); plt.ylabel("count")
+            path=charts/"11_client_fd_goroutines.png"; _save(path); output.append(path.name)
+        # Retain the common POST/status and external-resource evidence.
+        _admission_charts(charts, output, measured, containers, kafka)
+        return output
+    # Admission-only runs have intentionally no terminal/E2E observations.  Use
+    # POST timing and status charts instead of presenting missing pipeline data.
+    if (metrics.get("admission") or {}).get("observation_mode") == "admission-only":
+        measured = submissions[submissions.phase.eq("load")].copy()
+        _admission_charts(charts, output, measured, containers, kafka)
+        return output
+
     latency = submissions.end_to_end_latency_ms.dropna().to_numpy(dtype=float)
     if len(latency):
         plt.figure(figsize=(8, 4.5)); plt.hist(latency, bins=min(30, max(5, len(latency))), color="#6a5acd", alpha=.8)
@@ -52,29 +97,39 @@ def single_run(charts: Path, submissions: pd.DataFrame, windows: pd.DataFrame, m
         total = kafka.groupby("timestamp", as_index=False).lag.sum().sort_values("timestamp"); x = (total.timestamp-total.timestamp.min()).dt.total_seconds()
         plt.figure(figsize=(8, 4.5)); plt.plot(x, total.lag, marker="o", label="total consumer-group lag"); plt.title("Kafka consumer-group lag"); plt.xlabel("seconds from first sample"); plt.ylabel("messages"); plt.legend()
         path = charts / "06_kafka_lag.png"; _save(path); output.append(path.name)
-    if containers is not None and len(containers):
-        for number, metric, label, unit in [("07", "cpu_percent", "Judge CPU", "%"), ("08", "memory_bytes", "Judge memory", "MiB")]:
-            judge = containers[containers.container.isin(["judge_worker", "judge_sandbox"])]
-            if len(judge):
-                plt.figure(figsize=(8, 4.5))
-                for container, group in judge.groupby("container"):
-                    x = (group.timestamp-group.timestamp.min()).dt.total_seconds(); values = group[metric] / 1024**2 if metric == "memory_bytes" else group[metric]
-                    plt.plot(x, values, marker="o", label=container)
-                plt.title(label); plt.xlabel("seconds from first sample"); plt.ylabel(unit); plt.legend()
-                path = charts / f"{number}_judge_{'cpu' if metric == 'cpu_percent' else 'memory'}.png"; _save(path); output.append(path.name)
-        judge = containers[containers.container.isin(["judge_worker", "judge_sandbox"])]
-        if len(judge) and len(windows):
-            window = windows.sort_values("window_start"); cpu = []
-            for _, row in window.iterrows():
-                samples = judge[(judge.timestamp >= row.window_start) & (judge.timestamp < row.window_end)]
-                cpu.append(samples.cpu_percent.mean() if len(samples) else np.nan)
-            plt.figure(figsize=(8, 4.5)); plt.scatter(cpu, window.completion_rate_per_sec, label="window mean CPU"); plt.title("Pipeline terminal rate vs Judge CPU (correlation only)"); plt.xlabel("Judge CPU %"); plt.ylabel("terminal observed / second"); plt.legend()
-            path = charts / "09_resource_overlay.png"; _save(path); output.append(path.name)
-    verdicts = submissions[submissions.terminal_status.fillna("").ne("")].terminal_status.value_counts()
-    if len(verdicts):
-        plt.figure(figsize=(8, 4.5)); plt.bar(verdicts.index, verdicts.values, color="#457b9d"); plt.title("Terminal verdict distribution"); plt.xlabel("verdict"); plt.ylabel("submissions"); plt.xticks(rotation=30, ha="right")
-        path = charts / "10_verdict_distribution.png"; _save(path); output.append(path.name)
     return output
+
+
+def _admission_charts(charts: Path, output: list[str], measured: pd.DataFrame, containers: pd.DataFrame | None, kafka: pd.DataFrame | None) -> None:
+    started = measured.dropna(subset=["post_started_at"]).sort_values("post_started_at")
+    if len(started):
+        origin = started.post_started_at.iloc[0]
+        plt.figure(figsize=(8, 4.5)); plt.hist((started.post_started_at-origin).dt.total_seconds() * 1000, bins=min(80, max(10, len(started)//100)), color="#457b9d")
+        plt.title("POST-start distribution (actual client timestamps)"); plt.xlabel("milliseconds from first POST start"); plt.ylabel("submissions")
+        path = charts / "01_post_start_distribution.png"; _save(path); output.append(path.name)
+    latency = measured.submit_latency_ms.dropna().to_numpy(dtype=float)
+    if len(latency):
+        plt.figure(figsize=(8, 4.5)); plt.hist(latency, bins=min(80, max(10, len(latency)//100)), color="#2a9d8f")
+        plt.title("Submission API POST latency distribution"); plt.xlabel("milliseconds"); plt.ylabel("submissions")
+        path = charts / "02_submit_latency_distribution.png"; _save(path); output.append(path.name)
+    completed = measured.dropna(subset=["post_completed_at"]).sort_values("post_completed_at")
+    if len(completed):
+        origin = completed.post_completed_at.iloc[0]
+        elapsed = (completed.post_completed_at-origin).dt.total_seconds()
+        plt.figure(figsize=(8, 4.5)); plt.step(elapsed, np.arange(1, len(completed)+1), where="post", label="HTTP responses"); plt.step(elapsed, completed.accepted.astype(int).cumsum(), where="post", label="accepted"); plt.legend(); plt.title("POST responses over time"); plt.xlabel("seconds from first response"); plt.ylabel("cumulative submissions")
+        path = charts / "03_accepted_responses_over_time.png"; _save(path); output.append(path.name)
+    statuses = measured.http_status.fillna(0).astype(int).astype(str).value_counts()
+    if len(statuses):
+        plt.figure(figsize=(8, 4.5)); plt.bar(statuses.index, statuses.values, color="#e76f51"); plt.title("HTTP status counts"); plt.xlabel("status"); plt.ylabel("submissions")
+        path = charts / "04_http_status_counts.png"; _save(path); output.append(path.name)
+    if kafka is not None and len(kafka):
+        total = kafka.groupby("timestamp", as_index=False).lag.sum().sort_values("timestamp"); x = (total.timestamp-total.timestamp.min()).dt.total_seconds(); plt.figure(figsize=(8,4.5)); plt.plot(x,total.lag,marker="o"); plt.title("Kafka consumer-group lag"); plt.xlabel("seconds from first sample"); plt.ylabel("messages"); path=charts/"07_kafka_lag.png"; _save(path); output.append(path.name)
+    if containers is not None and len(containers):
+        for number, metric, label, unit in [("05", "cpu_percent", "App container CPU", "%"), ("06", "memory_bytes", "App container memory", "MiB")]:
+            plt.figure(figsize=(8,4.5))
+            for container, group in containers.groupby("container"):
+                x=(group.timestamp-group.timestamp.min()).dt.total_seconds(); values=group[metric]/1024**2 if metric=="memory_bytes" else group[metric]; plt.plot(x,values,marker="o",label=container)
+            plt.title(label); plt.xlabel("seconds from first sample"); plt.ylabel(unit); plt.legend(); path=charts/f"{number}_app_{'cpu' if metric=='cpu_percent' else 'memory'}.png"; _save(path); output.append(path.name)
 
 
 def comparison(charts: Path, experiments: pd.DataFrame) -> list[str]:

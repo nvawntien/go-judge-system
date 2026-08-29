@@ -154,8 +154,8 @@ func parseOptions(args []string, stderr io.Writer) (options, error) {
 	flags := flag.NewFlagSet("provision-benchmark-users", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	flags.StringVar(&opts.configDir, "config-dir", "/app/config", "Auth config directory")
-	flags.IntVar(&opts.start, "start", 1, "first benchmark account sequence (1..10000)")
-	flags.IntVar(&opts.count, "count", 50, "number of benchmark accounts (within 1..10000)")
+	flags.IntVar(&opts.start, "start", 1, "first benchmark account sequence (1..100000)")
+	flags.IntVar(&opts.count, "count", 50, "number of benchmark accounts (within 1..100000)")
 	flags.BoolVar(&opts.apply, "apply", false, "create missing accounts after confirmation")
 	flags.StringVar(&opts.confirm, "confirm", "", "exact confirmation phrase printed by dry-run")
 	flags.StringVar(&opts.passwordFile, "password-file", "", "secure file containing one benchmark password")
@@ -391,7 +391,7 @@ func printResult(w io.Writer, apply, rotatePassword bool, target string, identit
 func safeError(err error) string {
 	switch {
 	case errors.Is(err, benchmark.ErrInvalidRange):
-		return "start/count must select benchmark accounts 001 through 10000"
+		return "start/count must select benchmark accounts 001 through 100000"
 	case errors.Is(err, benchmark.ErrConflicts):
 		return "one or more benchmark identities conflict; no new users were created"
 	case errors.Is(err, benchmark.ErrApplyStopped):

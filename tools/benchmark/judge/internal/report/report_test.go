@@ -25,3 +25,34 @@ func TestMassiveBurstReportSeparatesJudgeCoreFromPipelineTerminalRate(t *testing
 		t.Fatalf("ambiguous historical terminology remained:\n%s", text)
 	}
 }
+
+func TestAdmissionOnlyReportUsesAttemptedPostsForAcceptance(t *testing.T) {
+	text := Markdown(model.RunSummary{
+		RunID: "admission-denominator",
+		Counts: model.Counts{
+			Intended:  100,
+			Attempted: 80,
+			Accepted:  72,
+		},
+		Burst:     &model.BurstMetrics{},
+		Admission: &model.AdmissionMetrics{ObservationMode: "admission-only"},
+	})
+	if !strings.Contains(text, "- Acceptance: 90.000%") {
+		t.Fatalf("report did not use accepted/attempted:\n%s", text)
+	}
+	if strings.Contains(text, "- Acceptance: 72.000%") {
+		t.Fatalf("report still used accepted/intended:\n%s", text)
+	}
+}
+
+func TestAdmissionOnlyReportMakesZeroAttemptAcceptanceUnavailable(t *testing.T) {
+	text := Markdown(model.RunSummary{
+		RunID:     "admission-zero-attempts",
+		Counts:    model.Counts{Intended: 100},
+		Burst:     &model.BurstMetrics{},
+		Admission: &model.AdmissionMetrics{ObservationMode: "admission-only"},
+	})
+	if !strings.Contains(text, "- Acceptance: N/A") {
+		t.Fatalf("report did not make zero-attempt acceptance unavailable:\n%s", text)
+	}
+}

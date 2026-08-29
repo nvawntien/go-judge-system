@@ -6,7 +6,8 @@ from judge_analysis.loaders import DataError, load_run
 from judge_analysis.metrics import calculate
 from judge_analysis.statistics import distribution, mean_ci
 from judge_analysis.api import assessment, load_api_run
-from conftest import SYSTEM_CONFIG, make_api_run, make_massive_burst_run, make_run
+from judge_analysis.report import render_run
+from conftest import SYSTEM_CONFIG, make_admission_only_run, make_api_run, make_massive_burst_run, make_realistic_run, make_run
 
 
 def test_known_percentiles_and_ci_are_honest():
@@ -46,6 +47,47 @@ def test_right_censoring_and_burst_cardinality_are_explicit(tmp_path):
     assert metrics["pipeline"]["terminal_throughput_per_sec"] == metrics["burst"]["terminal"]["throughput_per_sec"]
     assert metrics["contestant_execution"]["availability"] == "UNAVAILABLE"
     assert metrics["load"]["intended"] == 1000
+
+
+def test_admission_only_never_relabels_missing_terminal_data_as_judge_core(tmp_path):
+    run = make_admission_only_run(tmp_path / "admission", burst_size=20)
+    assert main(["analyze", "--run-dir", str(run)]) == 0
+    metrics = json.loads((run / "analysis" / "metrics.json").read_text())
+    assert metrics["admission"]["observation_mode"] == "admission-only"
+    assert metrics["judge_core"]["availability"] == "UNAVAILABLE"
+    html = (run / "analysis" / "report.html").read_text()
+    assert "NOT MEASURED" in html and "not a 100K RPS claim" in html
+    assert (run / "analysis" / "charts" / "01_post_start_distribution.png").exists()
+
+
+def test_admission_only_html_uses_accepted_divided_by_attempted_posts(tmp_path):
+    report = tmp_path / "report.html"
+    metrics = {
+        "run_id": "admission-denominator",
+        "admission": {"observation_mode": "admission-only", "effective_accepted_intake_per_sec": None, "post_start_spread_ms": None, "system_survival": "CLEAN_SURVIVAL", "client_qualification": "QUALIFIED", "health_probes": []},
+        "load": {"intended": 100, "attempted": 80, "accepted": 72},
+        "correctness": {"errors": {"rate_limited": 0, "http_errors": 0, "server_errors": 0, "transport_failures": 0}},
+        "burst": {},
+        "latency_ms": {"submit": {"p95": None}},
+        "resources": {"available": False, "reason": "unavailable", "containers": {}},
+    }
+    render_run(report, metrics, [])
+    html = report.read_text()
+    assert "90.0%" in html
+    assert "72.0%" not in html
+
+
+def test_realistic_flow_keeps_ticket_and_sse_metrics_separate_from_judge_core(tmp_path):
+    run = make_realistic_run(tmp_path / "realistic", burst_size=20)
+    assert main(["analyze", "--run-dir", str(run)]) == 0
+    metrics = json.loads((run / "analysis" / "metrics.json").read_text())
+    assert metrics["realistic"]["submission"]["successful"] == 20
+    assert metrics["realistic"]["ticket"]["successful"] == 20
+    assert metrics["realistic"]["sse"]["established"] == 20
+    assert metrics["judge_core"]["availability"] == "UNAVAILABLE"
+    html = (run / "analysis" / "report.html").read_text()
+    assert "POST → ticket → one SSE establishment/hold" in html
+    assert (run / "analysis" / "charts" / "07_sse_establishments_over_time.png").exists()
 
 
 def test_saturated_and_missing_collectors_are_not_zero(tmp_path):

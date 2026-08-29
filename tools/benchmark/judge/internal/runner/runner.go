@@ -3,6 +3,7 @@
 package runner
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -10,7 +11,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
+	"math/rand/v2"
 	"os"
 	"os/exec"
 	"runtime"
@@ -32,16 +35,19 @@ import (
 )
 
 type Prepared struct {
-	Config          config.Config
-	Sessions        []*credentials.Session
-	Clients         map[string]*client.API
-	Source          []byte
-	SourceSHA256    string
-	Subjects        map[string]string // alias -> real ID; memory-only
-	RequiredUsers   int
-	ConfiguredUsers int
-	NoFile          resources.NoFileStatus
-	closeTransport  func()
+	Config               config.Config
+	Sessions             []*credentials.Session
+	Clients              map[string]*client.API
+	Source               []byte
+	SourceText           string
+	SourceSHA256         string
+	Subjects             map[string]string // alias -> real ID; memory-only
+	RequiredUsers        int
+	ConfiguredUsers      int
+	NoFile               resources.NoFileStatus
+	TransportDiagnostics *client.Diagnostics
+	validationIndexes    []int
+	closeTransport       func()
 }
 
 // maxSourceBytes mirrors the public submission contract (256 KiB) without
@@ -73,7 +79,7 @@ func Preflight(ctx context.Context, cfg config.Config) (*Prepared, error) {
 			return nil, err
 		}
 	}
-	noFile, err := resources.CheckNoFile(cfg.MaxInFlight)
+	noFile, err := resources.CheckNoFileForObservation(cfg.MaxInFlight, noFileObservation(cfg.ObservationMode))
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +100,8 @@ func Preflight(ctx context.Context, cfg config.Config) (*Prepared, error) {
 		return nil, fmt.Errorf("read source file: %w", err)
 	}
 	hash := sha256.Sum256(source)
-	prepared := &Prepared{Config: cfg, Sessions: sessions, Clients: make(map[string]*client.API, len(sessions)), Source: source, SourceSHA256: fmt.Sprintf("%x", hash[:]), Subjects: make(map[string]string, len(sessions)), ConfiguredUsers: configuredUsers, NoFile: noFile, closeTransport: transport.CloseIdleConnections}
+	diagnostics := &client.Diagnostics{}
+	prepared := &Prepared{Config: cfg, Sessions: sessions, Clients: make(map[string]*client.API, len(sessions)), Source: source, SourceText: string(source), SourceSHA256: fmt.Sprintf("%x", hash[:]), Subjects: make(map[string]string), ConfiguredUsers: configuredUsers, NoFile: noFile, TransportDiagnostics: diagnostics, closeTransport: transport.CloseIdleConnections}
 	keepTransport := false
 	defer func() {
 		if !keepTransport && prepared.closeTransport != nil {
@@ -102,13 +109,14 @@ func Preflight(ctx context.Context, cfg config.Config) (*Prepared, error) {
 		}
 	}()
 	for _, session := range sessions {
-		api, err := client.New(cfg.BaseURL, session)
+		api, err := client.NewWithDiagnostics(cfg.BaseURL, session, diagnostics)
 		if err != nil {
 			return nil, err
 		}
 		prepared.Clients[session.Alias] = api
 	}
-	subjects, err := validatePreflightSessions(ctx, prepared)
+	prepared.validationIndexes = sessionValidationIndexes(cfg, len(sessions))
+	subjects, err := validatePreflightSessions(ctx, prepared, prepared.validationIndexes)
 	if err != nil {
 		return nil, err
 	}
@@ -154,7 +162,7 @@ func Preflight(ctx context.Context, cfg config.Config) (*Prepared, error) {
 // preflight itself consumed meaningful access-token lifetime.
 func PrepareSessions(ctx context.Context, prepared *Prepared) error {
 	cfg := prepared.Config
-	return parallelSessions(ctx, prepared.Sessions, cfg.PreflightConcurrency, func(index int, session *credentials.Session) error {
+	return parallelSessionIndexes(ctx, prepared.Sessions, prepared.validationIndexes, cfg.PreflightConcurrency, func(index int, session *credentials.Session) error {
 		api := prepared.Clients[session.Alias]
 		if err := prepareAccessSessionFinalFor(ctx, cfg, len(prepared.Sessions), session, api); err != nil {
 			return fmt.Errorf("prepared session %q: %w", session.Alias, err)
@@ -167,9 +175,10 @@ func PrepareSessions(ctx context.Context, prepared *Prepared) error {
 	})
 }
 
-func validatePreflightSessions(ctx context.Context, prepared *Prepared) ([]string, error) {
-	subjects := make([]string, len(prepared.Sessions))
-	err := parallelSessions(ctx, prepared.Sessions, prepared.Config.PreflightConcurrency, func(index int, session *credentials.Session) error {
+func validatePreflightSessions(ctx context.Context, prepared *Prepared, indexes []int) (map[int]string, error) {
+	subjects := make(map[int]string, len(indexes))
+	var subjectsMu sync.Mutex
+	err := parallelSessionIndexes(ctx, prepared.Sessions, indexes, prepared.Config.PreflightConcurrency, func(index int, session *credentials.Session) error {
 		api := prepared.Clients[session.Alias]
 		if err := prepareAccessSessionFor(ctx, prepared.Config, len(prepared.Sessions), session, api); err != nil {
 			return fmt.Errorf("preflight session %q: %w", session.Alias, err)
@@ -181,7 +190,9 @@ func validatePreflightSessions(ctx context.Context, prepared *Prepared) ([]strin
 		if me.ID == "" || !me.IsActive || me.Role != "user" {
 			return fmt.Errorf("benchmark session %q is not an active normal user", session.Alias)
 		}
+		subjectsMu.Lock()
 		subjects[index] = me.ID
+		subjectsMu.Unlock()
 		return nil
 	})
 	if err != nil {
@@ -197,12 +208,59 @@ func validatePreflightSessions(ctx context.Context, prepared *Prepared) ([]strin
 	return subjects, nil
 }
 
+// sessionValidationIndexes keeps existing full-pool validation unchanged.  An
+// Admission-only and realistic 100k bursts verify a deterministic sample plus
+// first/last canonical identities; bootstrap already validated every session
+// while creating the credential file. This avoids an unmeasured second 100k
+// authenticated GET storm immediately before the released burst.
+func sessionValidationIndexes(cfg config.Config, total int) []int {
+	if total == 0 {
+		return nil
+	}
+	if cfg.ObservationMode != config.ObservationAdmissionOnly && cfg.ObservationMode != config.ObservationRealistic {
+		indexes := make([]int, total)
+		for i := range indexes {
+			indexes[i] = i
+		}
+		return indexes
+	}
+	want := cfg.AdmissionPreflightSample
+	if want < 2 {
+		want = 2
+	}
+	if want > total {
+		want = total
+	}
+	chosen := map[int]struct{}{0: {}, total - 1: {}}
+	rng := rand.New(rand.NewPCG(uint64(cfg.Seed), uint64(cfg.Seed)^0x9e3779b97f4a7c15))
+	for len(chosen) < want {
+		chosen[rng.IntN(total)] = struct{}{}
+	}
+	indexes := make([]int, 0, len(chosen))
+	for index := range chosen {
+		indexes = append(indexes, index)
+	}
+	sort.Ints(indexes)
+	return indexes
+}
+
 func parallelSessions(ctx context.Context, sessions []*credentials.Session, concurrency int, work func(int, *credentials.Session) error) error {
+	indexes := make([]int, len(sessions))
+	for i := range indexes {
+		indexes[i] = i
+	}
+	return parallelSessionIndexes(ctx, sessions, indexes, concurrency, work)
+}
+
+func parallelSessionIndexes(ctx context.Context, sessions []*credentials.Session, indexes []int, concurrency int, work func(int, *credentials.Session) error) error {
 	if concurrency < 1 {
 		return errors.New("preflight concurrency must be positive")
 	}
-	if concurrency > len(sessions) {
-		concurrency = len(sessions)
+	if len(indexes) == 0 {
+		return nil
+	}
+	if concurrency > len(indexes) {
+		concurrency = len(indexes)
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -233,7 +291,7 @@ func parallelSessions(ctx context.Context, sessions []*credentials.Session, conc
 			}
 		}()
 	}
-	for index := range sessions {
+	for _, index := range indexes {
 		select {
 		case <-ctx.Done():
 			close(jobs)
@@ -284,8 +342,14 @@ func Run(ctx context.Context, prepared *Prepared) (*RunResult, error) {
 	run.metadata = runMetadata(cfg, prepared.SourceSHA256, int64(len(prepared.Source)))
 	run.metadata.Users = model.UserSet{Configured: prepared.ConfiguredUsers, Selected: len(prepared.Sessions), OneSubmitPerUser: cfg.Objective == config.ObjectiveMassiveBurst}
 	run.metadata.BenchmarkObjective = string(cfg.Objective)
+	run.metadata.ObservationMode = string(cfg.ObservationMode)
+	run.metadata.SessionValidation = model.SessionValidation{Mode: string(cfg.ObservationMode), Validated: len(prepared.validationIndexes), SampleRequested: cfg.AdmissionPreflightSample, FirstAndLastIncluded: len(prepared.validationIndexes) > 0}
 	run.metadata.ClientDiagnostics.NoFileSoftLimit = prepared.NoFile.SoftLimit
+	run.metadata.ClientDiagnostics.NoFileHardLimit = prepared.NoFile.HardLimit
 	run.metadata.ClientDiagnostics.NoFileRequired = prepared.NoFile.Required
+	run.metadata.ClientDiagnostics.NoFileRecommended = prepared.NoFile.Recommended
+	run.metadata.ClientDiagnostics.ConnectionsPerLogicalSubmission = prepared.NoFile.ConnectionsPerLogicalSubmission
+	run.metadata.ClientDiagnostics.RuntimeCPUCount = runtime.NumCPU()
 	if cfg.Mode == config.ModeBurst {
 		burstSize, jitter := cfg.BurstSize, cfg.Jitter.Milliseconds()
 		run.metadata.Workload.BurstSize = &burstSize
@@ -304,6 +368,7 @@ func Run(ctx context.Context, prepared *Prepared) (*RunResult, error) {
 	if err := writer.WriteRun(run.metadata); err != nil {
 		return nil, err
 	}
+	run.startClientSampler()
 	if err := run.warmup(); err != nil {
 		run.abort("WARMUP_FAILED")
 		finished, finishErr := run.finish()
@@ -337,11 +402,19 @@ type benchmarkRun struct {
 	postWG                     sync.WaitGroup
 	observerWG                 sync.WaitGroup
 	activePosts                int
+	activeTickets              int
+	activeSSE                  int
 	outstanding                int
 	peakInFlight               int
 	peakLogicalInFlight        int
 	activeObservers            int
 	peakObservers              int
+	peakPosts                  int
+	peakTickets                int
+	peakSSE                    int
+	clientSamples              []model.ClientResourceSample
+	clientSamplerStop          chan struct{}
+	clientSamplerDone          chan struct{}
 	burstGoroutinesBefore      int
 	burstGoroutinesAfterLaunch int
 	burstLaunchCompletion      *int64
@@ -359,16 +432,87 @@ func newRun(ctx context.Context, prepared *Prepared, writer *result.Writer) *ben
 	}
 	pool, _ := scheduler.NewPool(aliases, uint64(prepared.Config.Seed))
 	runContext, cancel := context.WithCancel(ctx)
-	secrets := []string{string(prepared.Source)}
-	for _, session := range prepared.Sessions {
-		for _, cookie := range session.Jar.Cookies(prepared.Config.BaseURL) {
-			secrets = append(secrets, cookie.Value)
+	secrets := []string{prepared.SourceText}
+	// Admission-only never stores tickets or URLs carrying credentials, so do
+	// not retain 100k cookie copies in the load generator merely for redaction.
+	if prepared.Config.ObservationMode == config.ObservationFull {
+		for _, session := range prepared.Sessions {
+			for _, cookie := range session.Jar.Cookies(prepared.Config.BaseURL) {
+				secrets = append(secrets, cookie.Value)
+			}
 		}
 	}
 	for _, subject := range prepared.Subjects {
 		secrets = append(secrets, subject)
 	}
 	return &benchmarkRun{parentCtx: ctx, ctx: runContext, cancel: cancel, prepared: prepared, writer: writer, pool: pool, limiter: observer.NewReconcileLimiter(prepared.Config.ReconcileMaxQPS), redactor: result.NewRedactor(secrets...), quality: map[string]struct{}{}, acceptedIDs: map[int64]struct{}{}}
+}
+
+func noFileObservation(mode config.ObservationMode) resources.Observation {
+	switch mode {
+	case config.ObservationAdmissionOnly:
+		return resources.ObservationAdmissionOnly
+	case config.ObservationRealistic:
+		return resources.ObservationRealistic
+	default:
+		return resources.ObservationTerminal
+	}
+}
+
+// Client resource sampling is intentionally low frequency. It records local
+// evidence only, and it never changes host limits or reads target state.
+func (r *benchmarkRun) startClientSampler() {
+	if r.prepared.Config.Mode != config.ModeBurst {
+		return
+	}
+	r.clientSamplerStop, r.clientSamplerDone = make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(r.clientSamplerDone)
+		r.captureClientSample()
+		ticker := time.NewTicker(250 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-r.clientSamplerStop:
+				r.captureClientSample()
+				return
+			case <-ticker.C:
+				r.captureClientSample()
+			}
+		}
+	}()
+}
+
+func (r *benchmarkRun) stopClientSampler() {
+	if r.clientSamplerStop == nil {
+		return
+	}
+	close(r.clientSamplerStop)
+	<-r.clientSamplerDone
+	r.clientSamplerStop, r.clientSamplerDone = nil, nil
+}
+
+func (r *benchmarkRun) captureClientSample() {
+	openFDs, status := localOpenFDs()
+	r.mu.Lock()
+	sample := model.ClientResourceSample{At: time.Now().UTC(), OpenFDs: openFDs, Goroutines: runtime.NumGoroutine(), ActivePosts: r.activePosts, ActiveTickets: r.activeTickets, ActiveSSEStreams: r.activeSSE}
+	r.clientSamples = append(r.clientSamples, sample)
+	if openFDs > r.metadata.ClientDiagnostics.PeakOpenFDs {
+		r.metadata.ClientDiagnostics.PeakOpenFDs = openFDs
+	}
+	r.metadata.ClientDiagnostics.OpenFDSamples++
+	if status != "" {
+		r.metadata.ClientDiagnostics.OpenFDStatus = status
+	}
+	r.mu.Unlock()
+}
+
+func localOpenFDs() (int, string) {
+	entries, err := os.ReadDir("/proc/self/fd")
+	if err != nil {
+		return 0, "UNAVAILABLE"
+	}
+	return len(entries), "AVAILABLE"
 }
 
 func (r *benchmarkRun) warmup() error {
@@ -546,6 +690,9 @@ func (r *benchmarkRun) launch(ctx context.Context, phase model.Phase, sequence i
 	record.UserAlias = user.Alias
 	r.records = append(r.records, record)
 	r.activePosts++
+	if r.activePosts > r.peakPosts {
+		r.peakPosts = r.activePosts
+	}
 	r.updatePeakLogicalInFlightLocked()
 	r.postWG.Add(1)
 	r.mu.Unlock()
@@ -554,7 +701,7 @@ func (r *benchmarkRun) launch(ctx context.Context, phase model.Phase, sequence i
 		started := time.Now()
 		r.setStarted(record, started)
 		requestCtx, cancel := context.WithTimeout(ctx, r.prepared.Config.APITimeout)
-		response, err := r.prepared.Clients[user.Alias].Submit(requestCtx, client.SubmissionRequest{ProblemID: r.prepared.Config.ProblemID, Language: r.prepared.Config.Language, SourceCode: string(r.prepared.Source)})
+		response, err := r.prepared.Clients[user.Alias].Submit(requestCtx, client.SubmissionRequest{ProblemID: r.prepared.Config.ProblemID, Language: r.prepared.Config.Language, SourceCode: r.prepared.SourceText})
 		cancel()
 		completed := time.Now()
 		r.setCompleted(record, completed)
@@ -569,7 +716,11 @@ func (r *benchmarkRun) launch(ctx context.Context, phase model.Phase, sequence i
 				r.mu.Unlock()
 			}
 			r.poolQuarantine(user.Alias, completed)
-			r.recordFailure(record, model.OutcomeAmbiguousPost, "ambiguous_post", err.Error())
+			errorClass := client.TransportErrorClass(err)
+			r.recordFailure(record, model.OutcomeAmbiguousPost, errorClass, err.Error())
+			if errorClass == "client_emfile" || errorClass == "client_enfile" || errorClass == "client_ephemeral_port_exhaustion" {
+				r.addQuality("LOAD_GENERATOR_LIMITED")
+			}
 			r.addQuality("AMBIGUOUS_POST")
 			close(done)
 			return
@@ -594,16 +745,25 @@ func (r *benchmarkRun) launch(ctx context.Context, phase model.Phase, sequence i
 			r.acceptedIDs[id] = struct{}{}
 			record.Accepted = true
 			record.HTTPStatus = intPtr(response.HTTPStatus)
+			record.HTTPProtocol = response.Protocol
 			record.APICode = intPtr(response.APICode)
 			record.SubmissionID = &id
 			record.InitialStatus = response.Submission.Status
-			r.outstanding++
-			if r.outstanding > r.peakInFlight {
-				r.peakInFlight = r.outstanding
+			if r.prepared.Config.ObservationMode == config.ObservationFull {
+				r.outstanding++
+				if r.outstanding > r.peakInFlight {
+					r.peakInFlight = r.outstanding
+				}
+				r.updatePeakLogicalInFlightLocked()
+			} else {
+				record.Outcome = model.OutcomeAccepted
 			}
-			r.updatePeakLogicalInFlightLocked()
 			r.mu.Unlock()
 			r.poolAccepted(user.Alias, completed)
+			if r.prepared.Config.ObservationMode == config.ObservationAdmissionOnly {
+				close(done)
+				return
+			}
 			r.observerWG.Add(1)
 			r.mu.Lock()
 			r.activeObservers++
@@ -623,6 +783,14 @@ func (r *benchmarkRun) launch(ctx context.Context, phase model.Phase, sequence i
 				r.mu.Lock()
 				record.ObserverStartedAt = &observerStarted
 				r.mu.Unlock()
+				if r.prepared.Config.ObservationMode == config.ObservationRealistic {
+					r.observeRealistic(ctx, record, id)
+					observerEnded := time.Now()
+					r.mu.Lock()
+					record.ObserverEndedAt = &observerEnded
+					r.mu.Unlock()
+					return
+				}
 				obs := observer.Observe(ctx, r.prepared.Clients[user.Alias], id, observer.Config{ConnectTimeout: r.prepared.Config.SSEConnectTimeout, IdleTimeout: r.prepared.Config.SSEIdleTimeout, SubmissionTimeout: r.prepared.Config.SubmissionTimeout, MaxReconnects: r.prepared.Config.SSEMaxReconnects, BackoffBase: r.prepared.Config.SSEBackoffBase, BackoffMax: r.prepared.Config.SSEBackoffMax, SafetyReconcileInterval: r.prepared.Config.SafetyReconcileInterval}, r.limiter)
 				observerEnded := time.Now()
 				r.mu.Lock()
@@ -657,6 +825,7 @@ func (r *benchmarkRun) launch(ctx context.Context, phase model.Phase, sequence i
 			}()
 		case client.SubmitRateLimit:
 			record.HTTPStatus = intPtr(response.HTTPStatus)
+			record.HTTPProtocol = response.Protocol
 			record.APICode = intPtr(response.APICode)
 			if response.RetryAfter != nil {
 				milliseconds := response.RetryAfter.Milliseconds()
@@ -668,6 +837,7 @@ func (r *benchmarkRun) launch(ctx context.Context, phase model.Phase, sequence i
 			close(done)
 		case client.Submit4xx:
 			record.HTTPStatus = intPtr(response.HTTPStatus)
+			record.HTTPProtocol = response.Protocol
 			record.APICode = intPtr(response.APICode)
 			if response.HTTPStatus == 401 || response.HTTPStatus == 403 {
 				r.poolDisable(user.Alias)
@@ -680,6 +850,7 @@ func (r *benchmarkRun) launch(ctx context.Context, phase model.Phase, sequence i
 			close(done)
 		default:
 			record.HTTPStatus = intPtr(response.HTTPStatus)
+			record.HTTPProtocol = response.Protocol
 			record.APICode = intPtr(response.APICode)
 			r.poolQuarantine(user.Alias, completed)
 			r.recordFailure(record, model.OutcomeServerError, "http_5xx", response.Message)
@@ -688,6 +859,160 @@ func (r *benchmarkRun) launch(ctx context.Context, phase model.Phase, sequence i
 		}
 	}()
 	return record, done
+}
+
+// observeRealistic intentionally performs exactly one ticket request and one
+// SSE establishment attempt. It does not use observer.Observe because that
+// component is intentionally terminal-focused and may reconcile via GET after
+// an SSE failure. The realistic admission KPI must not manufacture polling or
+// wait for Judge drain.
+func (r *benchmarkRun) observeRealistic(parent context.Context, record *model.SubmissionRecord, submissionID int64) {
+	api := r.prepared.Clients[record.UserAlias]
+	ticketStarted := time.Now()
+	r.mu.Lock()
+	record.TicketAttempted, record.TicketStartedAt = true, &ticketStarted
+	r.activeTickets++
+	if r.activeTickets > r.peakTickets {
+		r.peakTickets = r.activeTickets
+	}
+	r.updatePeakLogicalInFlightLocked()
+	r.mu.Unlock()
+	ticketCtx, cancelTicket := context.WithTimeout(parent, r.prepared.Config.APITimeout)
+	ticket, ticketErr := api.IssueTicket(ticketCtx, submissionID)
+	cancelTicket()
+	ticketCompleted := time.Now()
+	r.mu.Lock()
+	r.activeTickets--
+	record.TicketCompletedAt = &ticketCompleted
+	ticketLatency := ticketCompleted.Sub(ticketStarted).Seconds() * 1000
+	record.TicketLatencyMS = &ticketLatency
+	if ticketErr != nil {
+		class := client.TransportErrorClass(ticketErr)
+		if class == "ambiguous_post" {
+			class = "ticket_error"
+		}
+		record.Outcome, record.ErrorClass, record.Error = model.OutcomeObserverFailure, class, r.redactor.Sanitize(ticketErr.Error())
+		if class == "client_emfile" || class == "client_enfile" || class == "client_ephemeral_port_exhaustion" {
+			r.addQualityLocked("LOAD_GENERATOR_LIMITED")
+		}
+		r.addQualityLocked("TICKET_FAILURE")
+		r.mu.Unlock()
+		return
+	}
+	record.TicketSucceeded = true
+	r.mu.Unlock()
+
+	// The request deadline leaves a full hold duration after the configured
+	// connection budget. There is deliberately no reconnect attempt.
+	streamStarted := time.Now()
+	streamCtx, cancelStream := context.WithTimeout(parent, r.prepared.Config.SSEConnectTimeout+r.prepared.Config.SSEHoldDuration)
+	defer cancelStream()
+	r.mu.Lock()
+	record.SSEAttempted, record.SSEStartedAt = true, &streamStarted
+	r.mu.Unlock()
+	response, streamErr := api.OpenEvents(streamCtx, submissionID, ticket.Value)
+	if streamErr != nil {
+		closed := time.Now()
+		r.mu.Lock()
+		record.SSEClosedAt, record.SSECloseReason = &closed, "establishment_failed"
+		class := client.TransportErrorClass(streamErr)
+		if class == "ambiguous_post" {
+			class = "sse_establishment_error"
+		}
+		record.Outcome, record.ErrorClass, record.Error = model.OutcomeObserverFailure, class, r.redactor.Sanitize(streamErr.Error())
+		if class == "client_emfile" || class == "client_enfile" || class == "client_ephemeral_port_exhaustion" {
+			r.addQualityLocked("LOAD_GENERATOR_LIMITED")
+		}
+		r.addQualityLocked("SSE_ESTABLISHMENT_FAILURE")
+		r.mu.Unlock()
+		return
+	}
+	established := time.Now()
+	r.mu.Lock()
+	record.SSEEstablished, record.SSEEstablishedAt = true, &established
+	establishLatency := established.Sub(streamStarted).Seconds() * 1000
+	record.SSEEstablishLatencyMS = &establishLatency
+	r.activeSSE++
+	if r.activeSSE > r.peakSSE {
+		r.peakSSE = r.activeSSE
+	}
+	r.updatePeakLogicalInFlightLocked()
+	r.mu.Unlock()
+
+	terminalStatus, terminal, fullHold, closeReason := holdRealisticSSE(streamCtx, response.Body, r.prepared.Config.SSEHoldDuration)
+	closed := time.Now()
+	r.mu.Lock()
+	r.activeSSE--
+	record.SSEClosedAt, record.SSECloseReason = &closed, closeReason
+	record.SSESurvivedFullHold, record.SSETerminalDuringHold = fullHold, terminal
+	if terminal {
+		record.TerminalStatus = terminalStatus
+		record.TerminalObservedAt = &closed
+		record.CompletionSource = model.CompletionSSEEvent
+	}
+	r.mu.Unlock()
+}
+
+func holdRealisticSSE(ctx context.Context, body io.ReadCloser, hold time.Duration) (status string, terminal, fullHold bool, reason string) {
+	read := make(chan sseReadResult, 1)
+	go func() {
+		value := readSSEUntilTerminal(body)
+		read <- value
+	}()
+	timer := time.NewTimer(hold)
+	defer timer.Stop()
+	select {
+	case value := <-read:
+		_ = body.Close()
+		if value.terminal {
+			return value.status, true, false, "terminal_event"
+		}
+		if value.err != nil {
+			return "", false, false, "stream_error"
+		}
+		return "", false, false, "stream_closed"
+	case <-timer.C:
+		_ = body.Close()
+		<-read
+		return "", false, true, "hold_expired"
+	case <-ctx.Done():
+		_ = body.Close()
+		<-read
+		return "", false, false, "stream_context_done"
+	}
+}
+
+type sseReadResult struct {
+	status   string
+	terminal bool
+	err      error
+}
+
+func readSSEUntilTerminal(body io.Reader) sseReadResult {
+	scanner := bufio.NewScanner(body)
+	scanner.Buffer(make([]byte, 1024), 1<<20)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if len(line) < len("data:") || line[:len("data:")] != "data:" {
+			continue
+		}
+		var event struct {
+			Status string `json:"status"`
+		}
+		if json.Unmarshal(bytes.TrimSpace([]byte(line[len("data:"):])), &event) == nil && terminalSSEStatus(event.Status) {
+			return sseReadResult{status: event.Status, terminal: true}
+		}
+	}
+	return sseReadResult{err: scanner.Err()}
+}
+
+func terminalSSEStatus(status string) bool {
+	switch status {
+	case "PENDING", "JUDGING", "":
+		return false
+	default:
+		return true
+	}
 }
 
 func (r *benchmarkRun) finish() (*RunResult, error) {
@@ -701,22 +1026,41 @@ func (r *benchmarkRun) finish() (*RunResult, error) {
 		r.drainStart = time.Now()
 	}
 	r.metadata.Phases.Drain.StartedAt = r.drainStart.UTC()
-	drainCtx, cancel := context.WithTimeout(r.ctx, r.prepared.Config.DrainTimeout)
-	done := make(chan struct{})
-	go func() { r.observerWG.Wait(); close(done) }()
-	select {
-	case <-done:
-	case <-drainCtx.Done():
-		r.addQuality("DRAIN_TIMEOUT")
-		r.cancel()
-		<-done
+	if r.prepared.Config.ObservationMode == config.ObservationFull {
+		drainCtx, cancel := context.WithTimeout(r.ctx, r.prepared.Config.DrainTimeout)
+		done := make(chan struct{})
+		go func() { r.observerWG.Wait(); close(done) }()
+		select {
+		case <-done:
+		case <-drainCtx.Done():
+			r.addQuality("DRAIN_TIMEOUT")
+			r.cancel()
+			<-done
+		}
+		cancel()
+	} else if r.prepared.Config.ObservationMode == config.ObservationRealistic {
+		// This waits only for the explicitly bounded ticket/SSE-hold lifecycle;
+		// it is not a terminal Judge drain and never issues reconciliation GETs.
+		bound := r.prepared.Config.APITimeout + r.prepared.Config.SSEConnectTimeout + r.prepared.Config.SSEHoldDuration + time.Second
+		waitCtx, cancel := context.WithTimeout(r.ctx, bound)
+		done := make(chan struct{})
+		go func() { r.observerWG.Wait(); close(done) }()
+		select {
+		case <-done:
+		case <-waitCtx.Done():
+			r.addQuality("REALISTIC_SSE_HOLD_TIMEOUT")
+			r.cancel()
+			<-done
+		}
+		cancel()
 	}
-	cancel()
 	r.drainEnd = time.Now()
+	r.stopClientSampler()
 	drainEnd := r.drainEnd.UTC()
 	r.metadata.Phases.Drain.EndedAt = &drainEnd
 	r.mu.Lock()
 	records := append([]*model.SubmissionRecord(nil), r.records...)
+	clientSamples := append([]model.ClientResourceSample(nil), r.clientSamples...)
 	r.mu.Unlock()
 	if r.parentCtx.Err() != nil {
 		r.addQuality("RUN_CANCELLED")
@@ -725,6 +1069,10 @@ func (r *benchmarkRun) finish() (*RunResult, error) {
 	values := make([]model.SubmissionRecord, 0, len(records))
 	for _, record := range records {
 		values = append(values, *record)
+	}
+	var health []model.HealthProbe
+	if (r.prepared.Config.ObservationMode == config.ObservationAdmissionOnly || r.prepared.Config.ObservationMode == config.ObservationRealistic) && r.parentCtx.Err() == nil {
+		health = r.admissionHealthProbes()
 	}
 	var scheduleDelays []float64
 	for _, record := range values {
@@ -750,9 +1098,33 @@ func (r *benchmarkRun) finish() (*RunResult, error) {
 		r.metadata.ClientDiagnostics.GoroutinesAfterLaunch = r.burstGoroutinesAfterLaunch
 		r.metadata.ClientDiagnostics.PeakLogicalInFlight = r.peakLogicalInFlight
 		r.metadata.ClientDiagnostics.PeakActiveObservers = r.peakObservers
+		r.metadata.ClientDiagnostics.PeakActivePosts = r.peakPosts
+		r.metadata.ClientDiagnostics.PeakActiveTickets = r.peakTickets
+		r.metadata.ClientDiagnostics.PeakActiveSSE = r.peakSSE
 	}
-	classification, reasons := stats.Classify(stats.ClassificationInput{Mode: model.Mode(r.prepared.Config.Mode), Objective: r.prepared.Config.Objective, TargetRate: rateFloat(r.prepared.Config.Rate), Windows: loadWindows, Summary: summary})
-	summary.Classification, summary.ClassificationReasons = classification, reasons
+	if r.prepared.Config.ObservationMode == config.ObservationAdmissionOnly {
+		summary.Admission = admissionMetrics(summary, health, r.quality)
+		summary.HealthProbes = health
+		summary.Classification = model.Classification(summary.Admission.SystemSurvival)
+		summary.ClassificationReasons = []string{"POST_ONLY_OBSERVATION", "TERMINAL_PIPELINE_NOT_COLLECTED"}
+	} else if r.prepared.Config.ObservationMode == config.ObservationRealistic {
+		summary.Realistic = realisticMetrics(summary, values, health, r.quality, r.peakSSE)
+		summary.HealthProbes = health
+		summary.Classification = model.Classification(summary.Realistic.SystemSurvival)
+		summary.ClassificationReasons = []string{"SUBMIT_TICKET_SSE_HOLD", "NO_GET_RECONCILIATION", "NO_TERMINAL_DRAIN"}
+	} else {
+		classification, reasons := stats.Classify(stats.ClassificationInput{Mode: model.Mode(r.prepared.Config.Mode), Objective: r.prepared.Config.Objective, TargetRate: rateFloat(r.prepared.Config.Rate), Windows: loadWindows, Summary: summary})
+		summary.Classification, summary.ClassificationReasons = classification, reasons
+	}
+	if r.prepared.TransportDiagnostics != nil {
+		diagnostics := r.prepared.TransportDiagnostics.Snapshot()
+		r.metadata.ClientDiagnostics.TransportNewConnections = diagnostics.NewConnections
+		r.metadata.ClientDiagnostics.TransportReusedConnections = diagnostics.ReusedConnections
+		r.metadata.ClientDiagnostics.HTTP1Responses = diagnostics.HTTP1Responses
+		r.metadata.ClientDiagnostics.HTTP2Responses = diagnostics.HTTP2Responses
+		r.metadata.ClientDiagnostics.OtherProtocolResponses = diagnostics.OtherProtocolResponses
+	}
+	summary.ClientDiagnostics = r.metadata.ClientDiagnostics
 	if r.metadata.State != model.RunAborted && r.metadata.State != model.RunCancelled {
 		r.metadata.State = model.RunCompleted
 	}
@@ -767,6 +1139,9 @@ func (r *benchmarkRun) finish() (*RunResult, error) {
 	}
 	if err := r.writer.WriteWindows(windows); err != nil {
 		return &RunResult{Dir: r.writer.Dir, Summary: summary}, fmt.Errorf("write windows: %w", err)
+	}
+	if err := r.writer.WriteClientResources(clientSamples); err != nil {
+		return &RunResult{Dir: r.writer.Dir, Summary: summary}, fmt.Errorf("write client resources: %w", err)
 	}
 	if err := r.writer.WriteSummary(summary); err != nil {
 		return &RunResult{Dir: r.writer.Dir, Summary: summary}, fmt.Errorf("write summary: %w", err)
@@ -809,7 +1184,7 @@ func (r *benchmarkRun) setStarted(record *model.SubmissionRecord, at time.Time) 
 }
 
 func (r *benchmarkRun) updatePeakLogicalInFlightLocked() {
-	logical := r.activePosts + r.outstanding
+	logical := r.activePosts + r.outstanding + r.activeTickets + r.activeSSE
 	if logical > r.peakLogicalInFlight {
 		r.peakLogicalInFlight = logical
 	}
@@ -1075,7 +1450,7 @@ func intakeMetrics(values []time.Time) (*int64, *float64) {
 func runMetadata(cfg config.Config, sourceSHA string, sourceBytes int64) model.RunMetadata {
 	now := time.Now().UTC()
 	sha, dirty := gitInfo()
-	return model.RunMetadata{SchemaVersion: "astracode.judge-benchmark.run.v1", BenchmarkVersion: model.BenchmarkVersion, RunID: cfg.RunID, Mode: model.Mode(cfg.Mode), Repetition: cfg.Repetition, Seed: cfg.Seed, State: model.RunCompleted, StartedAt: now, Repository: model.Repository{GitSHA: sha, Dirty: dirty}, Target: model.Target{BaseURL: cfg.BaseURL.Scheme + "://" + cfg.BaseURL.Host, ProblemID: cfg.ProblemID, ProblemSlug: cfg.ProblemSlug, Language: cfg.Language, ExpectedVerdict: cfg.ExpectedVerdict, SourceSHA256: sourceSHA, SourceBytes: sourceBytes}, Users: model.UserSet{Configured: 0, Selected: 0}, Workload: model.Workload{WindowMS: cfg.Window.Milliseconds(), WarmupCount: cfg.WarmupCount, SubmitCooldownMS: cfg.SubmitCooldown.Milliseconds(), CooldownGuardMS: cfg.CooldownGuard.Milliseconds(), SubmitLatencyBudgetMS: cfg.SubmitLatencyBudget.Milliseconds(), PoolHeadroomPercent: cfg.PoolHeadroomPercent, MaxSubmissions: cfg.MaxSubmissions, MaxInFlight: cfg.MaxInFlight}, Timeouts: model.Timeouts{APIMS: cfg.APITimeout.Milliseconds(), SubmissionMS: cfg.SubmissionTimeout.Milliseconds(), DrainMS: cfg.DrainTimeout.Milliseconds()}, Observer: model.ObserverConfig{SSEPrimary: true, ConnectMS: cfg.SSEConnectTimeout.Milliseconds(), IdleMS: cfg.SSEIdleTimeout.Milliseconds(), MaxReconnects: cfg.SSEMaxReconnects, BackoffBaseMS: cfg.SSEBackoffBase.Milliseconds(), BackoffMaxMS: cfg.SSEBackoffMax.Milliseconds(), SafetyReconcileIntervalMS: cfg.SafetyReconcileInterval.Milliseconds(), ReconcileMaxQPS: cfg.ReconcileMaxQPS}, SystemConfig: cfg.SystemConfig}
+	return model.RunMetadata{SchemaVersion: "astracode.judge-benchmark.run.v1", BenchmarkVersion: model.BenchmarkVersion, RunID: cfg.RunID, Mode: model.Mode(cfg.Mode), Repetition: cfg.Repetition, Seed: cfg.Seed, State: model.RunCompleted, StartedAt: now, Repository: model.Repository{GitSHA: sha, Dirty: dirty}, Target: model.Target{BaseURL: cfg.BaseURL.Scheme + "://" + cfg.BaseURL.Host, ProblemID: cfg.ProblemID, ProblemSlug: cfg.ProblemSlug, Language: cfg.Language, ExpectedVerdict: cfg.ExpectedVerdict, SourceSHA256: sourceSHA, SourceBytes: sourceBytes}, Users: model.UserSet{Configured: 0, Selected: 0}, Workload: model.Workload{WindowMS: cfg.Window.Milliseconds(), WarmupCount: cfg.WarmupCount, SubmitCooldownMS: cfg.SubmitCooldown.Milliseconds(), CooldownGuardMS: cfg.CooldownGuard.Milliseconds(), SubmitLatencyBudgetMS: cfg.SubmitLatencyBudget.Milliseconds(), PoolHeadroomPercent: cfg.PoolHeadroomPercent, MaxSubmissions: cfg.MaxSubmissions, MaxInFlight: cfg.MaxInFlight}, Timeouts: model.Timeouts{APIMS: cfg.APITimeout.Milliseconds(), SubmissionMS: cfg.SubmissionTimeout.Milliseconds(), DrainMS: cfg.DrainTimeout.Milliseconds()}, Observer: model.ObserverConfig{SSEPrimary: true, ConnectMS: cfg.SSEConnectTimeout.Milliseconds(), HoldMS: cfg.SSEHoldDuration.Milliseconds(), IdleMS: cfg.SSEIdleTimeout.Milliseconds(), MaxReconnects: cfg.SSEMaxReconnects, BackoffBaseMS: cfg.SSEBackoffBase.Milliseconds(), BackoffMaxMS: cfg.SSEBackoffMax.Milliseconds(), SafetyReconcileIntervalMS: cfg.SafetyReconcileInterval.Milliseconds(), ReconcileMaxQPS: cfg.ReconcileMaxQPS}, SystemConfig: cfg.SystemConfig}
 }
 func generatedRunID(cfg config.Config) string {
 	prefix := "B"
@@ -1232,6 +1607,167 @@ func meWithTimeout(ctx context.Context, api *client.API, timeout time.Duration) 
 	request, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	return api.Me(request)
+}
+
+func (r *benchmarkRun) admissionHealthProbes() []model.HealthProbe {
+	if len(r.prepared.validationIndexes) == 0 {
+		return nil
+	}
+	indexes := append([]int(nil), r.prepared.validationIndexes...)
+	if len(indexes) > 4 {
+		indexes = indexes[:4]
+	}
+	probes := make([]model.HealthProbe, 0, len(indexes)+1)
+	start := time.Now()
+	_, err := publicProblemWithTimeout(r.parentCtx, r.prepared.Clients[r.prepared.Sessions[indexes[0]].Alias], r.prepared.Config.APITimeout, r.prepared.Config.ProblemSlug)
+	probes = append(probes, healthProbe("public_problem", start, err))
+	for _, index := range indexes {
+		start = time.Now()
+		me, meErr := meWithTimeout(r.parentCtx, r.prepared.Clients[r.prepared.Sessions[index].Alias], r.prepared.Config.APITimeout)
+		if meErr == nil && (!me.IsActive || me.Role != "user" || me.ID == "") {
+			meErr = errors.New("unexpected authenticated identity state")
+		}
+		probes = append(probes, healthProbe("authenticated_me", start, meErr))
+	}
+	return probes
+}
+
+func healthProbe(name string, start time.Time, err error) model.HealthProbe {
+	probe := model.HealthProbe{Name: name, At: start.UTC(), LatencyMS: float64(time.Since(start)) / float64(time.Millisecond)}
+	if err == nil {
+		probe.Status = "PASS"
+		return probe
+	}
+	probe.Status, probe.ErrorClass = "FAIL", "request_error"
+	return probe
+}
+
+func admissionMetrics(summary model.RunSummary, probes []model.HealthProbe, quality map[string]struct{}) *model.AdmissionMetrics {
+	metrics := &model.AdmissionMetrics{ObservationMode: string(config.ObservationAdmissionOnly), ClientQualification: "QUALIFIED", ExternalSurvivalEvidence: "UNAVAILABLE"}
+	if summary.Burst != nil {
+		metrics.EffectiveAcceptedIntakePerSec = summary.Burst.AcceptedThroughputPerSec
+		metrics.PostStartSpreadMS = summary.LoadWindow.BurstSpreadMS
+	}
+	for _, probe := range probes {
+		if probe.Status != "PASS" {
+			metrics.SystemSurvival = string(model.ClassificationFailed)
+			return metrics
+		}
+	}
+	if containsFlag(quality, "LOAD_GENERATOR_LIMITED") || containsFlag(quality, "MAX_IN_FLIGHT_REACHED") {
+		metrics.ClientQualification = "CLIENT_LIMITED"
+		metrics.SystemSurvival = string(model.ClassificationClientLimited)
+		return metrics
+	}
+	if summary.Counts.Attempted != summary.Counts.Intended || summary.Counts.ServerErrors > 0 || summary.Counts.TransportFailures > 0 || summary.Counts.AmbiguousPosts > 0 {
+		metrics.SystemSurvival = string(model.ClassificationFailed)
+		return metrics
+	}
+	if summary.Counts.Accepted != summary.Counts.Intended || summary.Counts.RateLimited > 0 || summary.Counts.Other4xx > 0 {
+		metrics.SystemSurvival = string(model.ClassificationDegradedSurvival)
+		return metrics
+	}
+	// Container restart/health evidence is collected externally. Do not claim a
+	// clean system-survival result before that evidence has been correlated.
+	metrics.SystemSurvival = string(model.ClassificationDegradedSurvival)
+	return metrics
+}
+
+func realisticMetrics(summary model.RunSummary, records []model.SubmissionRecord, probes []model.HealthProbe, quality map[string]struct{}, peakSSE int) *model.RealisticMetrics {
+	metrics := &model.RealisticMetrics{ObservationMode: string(config.ObservationRealistic), ClientQualification: "QUALIFIED", ExternalSurvivalEvidence: "UNAVAILABLE"}
+	metrics.Submission.Attempted, metrics.Submission.Successful = summary.Counts.Attempted, summary.Counts.Accepted
+	metrics.Submission.SuccessPercent = ratio(metrics.Submission.Successful, metrics.Submission.Attempted)
+	metrics.Submission.LatencyMS = summary.Latencies.SubmitMS
+	if summary.Burst != nil {
+		metrics.Submission.ThroughputPerSec = summary.Burst.AcceptedThroughputPerSec
+	}
+	var ticketLatencies, sseLatencies []float64
+	var ticketStarts, sseEstablished, sseStarts []time.Time
+	metrics.SSE.PeakActiveStreams, metrics.SSE.CloseReasons = peakSSE, map[string]int{}
+	for _, record := range records {
+		if record.Phase != model.PhaseLoad {
+			continue
+		}
+		if record.TicketAttempted {
+			metrics.Ticket.Attempted++
+			if record.TicketStartedAt != nil {
+				ticketStarts = append(ticketStarts, *record.TicketStartedAt)
+			}
+		}
+		if record.TicketSucceeded {
+			metrics.Ticket.Successful++
+		}
+		if record.TicketLatencyMS != nil {
+			ticketLatencies = append(ticketLatencies, *record.TicketLatencyMS)
+		}
+		if record.SSEAttempted {
+			metrics.SSE.Attempted++
+			if record.SSEStartedAt != nil {
+				sseStarts = append(sseStarts, *record.SSEStartedAt)
+			}
+		}
+		if record.SSEEstablished {
+			metrics.SSE.Established++
+			if record.SSEEstablishedAt != nil {
+				sseEstablished = append(sseEstablished, *record.SSEEstablishedAt)
+			}
+		}
+		if record.SSEEstablishLatencyMS != nil {
+			sseLatencies = append(sseLatencies, *record.SSEEstablishLatencyMS)
+		}
+		if record.SSECloseReason != "" {
+			metrics.SSE.CloseReasons[record.SSECloseReason]++
+		}
+		if record.SSESurvivedFullHold {
+			metrics.SSE.SurvivedFullHold++
+		}
+		if record.SSEEstablished && !record.SSESurvivedFullHold && !record.SSETerminalDuringHold {
+			metrics.SSE.ClosedEarly++
+		}
+		if record.SSETerminalDuringHold {
+			metrics.SSE.TerminalDuringHold++
+		}
+	}
+	metrics.Ticket.SuccessPercent = ratio(metrics.Ticket.Successful, metrics.Ticket.Attempted)
+	metrics.Ticket.LatencyMS = stats.Distribution(ticketLatencies)
+	_, metrics.Ticket.ThroughputPerSec = intakeMetrics(ticketStarts)
+	metrics.SSE.Failed = metrics.SSE.Attempted - metrics.SSE.Established
+	metrics.SSE.EstablishmentPercent = ratio(metrics.SSE.Established, metrics.SSE.Attempted)
+	metrics.SSE.EstablishmentLatencyMS = stats.Distribution(sseLatencies)
+	_, metrics.SSE.EstablishmentRatePerSec = intakeMetrics(sseEstablished)
+	metrics.SSE.StartSpreadMS, _ = intakeMetrics(sseStarts)
+	metrics.FullFlowSuccessPercent = ratio(metrics.SSE.Established, summary.Counts.Intended)
+	for _, probe := range probes {
+		if probe.Status != "PASS" {
+			metrics.SystemSurvival = string(model.ClassificationFailed)
+			return metrics
+		}
+	}
+	if containsFlag(quality, "LOAD_GENERATOR_LIMITED") || containsFlag(quality, "MAX_IN_FLIGHT_REACHED") {
+		metrics.ClientQualification = "CLIENT_LIMITED"
+		metrics.SystemSurvival = string(model.ClassificationClientLimited)
+		return metrics
+	}
+	if summary.Counts.Attempted != summary.Counts.Intended || summary.Counts.ServerErrors > 0 || summary.Counts.TransportFailures > 0 || summary.Counts.AmbiguousPosts > 0 || metrics.Ticket.Successful != summary.Counts.Accepted || metrics.SSE.Established != metrics.Ticket.Successful {
+		metrics.SystemSurvival = string(model.ClassificationFailed)
+		return metrics
+	}
+	if summary.Counts.Accepted != summary.Counts.Intended || summary.Counts.RateLimited > 0 || summary.Counts.Other4xx > 0 || metrics.SSE.ClosedEarly > 0 {
+		metrics.SystemSurvival = string(model.ClassificationDegradedSurvival)
+		return metrics
+	}
+	// Container/restart evidence is external. Keep the conservative result
+	// degraded until offline collector correlation can demonstrate clean survival.
+	metrics.SystemSurvival = string(model.ClassificationDegradedSurvival)
+	return metrics
+}
+
+func ratio(numerator, denominator int) *float64 {
+	if denominator == 0 {
+		return nil
+	}
+	value := float64(numerator) / float64(denominator)
+	return &value
 }
 func publicProblemWithTimeout(ctx context.Context, api *client.API, timeout time.Duration, slug string) (client.Problem, error) {
 	request, cancel := context.WithTimeout(ctx, timeout)

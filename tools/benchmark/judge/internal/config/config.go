@@ -46,57 +46,73 @@ const (
 	ObjectiveMassiveBurst     Objective = "massive-burst"
 )
 
+// ObservationMode separates an intake-only burst from the existing
+// SSE/reconciliation based terminal-observation benchmark.  It is deliberately
+// explicit because the two modes measure different systems.
+type ObservationMode string
+
+const (
+	ObservationFull          ObservationMode = "full"
+	ObservationAdmissionOnly ObservationMode = "admission-only"
+	// ObservationRealistic models the browser-facing submit -> ticket -> SSE
+	// sequence without waiting for the Judge pipeline to drain.
+	ObservationRealistic ObservationMode = "realistic"
+)
+
 type Config struct {
-	Mode                    Mode
-	BaseURL                 *url.URL
-	BaseURLRaw              string
-	UsersFile               string
-	ProblemID               int64
-	ProblemSlug             string
-	Language                string
-	SourceFile              string
-	ExpectedVerdict         string
-	ResultRoot              string
-	RunID                   string
-	Repetition              int
-	Seed                    int64
-	WarmupCount             int
-	WarmupTimeout           time.Duration
-	SubmitCooldown          time.Duration
-	CooldownGuard           time.Duration
-	SubmitLatencyBudget     time.Duration
-	PoolHeadroomPercent     float64
-	APITimeout              time.Duration
-	SubmissionTimeout       time.Duration
-	DrainTimeout            time.Duration
-	Window                  time.Duration
-	MaxSubmissions          int
-	MaxInFlight             int
-	UserCount               int
-	PreflightConcurrency    int
-	BurstStartTimeout       time.Duration
-	ErrorPolicy             ErrorPolicy
-	Objective               Objective
-	SSEConnectTimeout       time.Duration
-	SSEIdleTimeout          time.Duration
-	SSEMaxReconnects        int
-	SSEBackoffBase          time.Duration
-	SSEBackoffMax           time.Duration
-	SafetyReconcileInterval time.Duration
-	ReconcileMaxQPS         float64
-	RefreshMode             RefreshMode
-	AuthValidityMargin      time.Duration
-	AllowRemote             bool
-	ConfirmTargetHost       string
-	BurstSize               int
-	Jitter                  time.Duration
-	ScheduleDelayP95Budget  time.Duration
-	Rate                    *big.Rat
-	RateRaw                 string
-	Duration                time.Duration
-	TotalSubmissions        int
-	SystemConfigFile        string
-	SystemConfig            *model.SystemConfig
+	Mode                     Mode
+	BaseURL                  *url.URL
+	BaseURLRaw               string
+	UsersFile                string
+	ProblemID                int64
+	ProblemSlug              string
+	Language                 string
+	SourceFile               string
+	ExpectedVerdict          string
+	ResultRoot               string
+	RunID                    string
+	Repetition               int
+	Seed                     int64
+	WarmupCount              int
+	WarmupTimeout            time.Duration
+	SubmitCooldown           time.Duration
+	CooldownGuard            time.Duration
+	SubmitLatencyBudget      time.Duration
+	PoolHeadroomPercent      float64
+	APITimeout               time.Duration
+	SubmissionTimeout        time.Duration
+	DrainTimeout             time.Duration
+	Window                   time.Duration
+	MaxSubmissions           int
+	MaxInFlight              int
+	UserCount                int
+	PreflightConcurrency     int
+	BurstStartTimeout        time.Duration
+	ErrorPolicy              ErrorPolicy
+	Objective                Objective
+	ObservationMode          ObservationMode
+	AdmissionPreflightSample int
+	SSEHoldDuration          time.Duration
+	SSEConnectTimeout        time.Duration
+	SSEIdleTimeout           time.Duration
+	SSEMaxReconnects         int
+	SSEBackoffBase           time.Duration
+	SSEBackoffMax            time.Duration
+	SafetyReconcileInterval  time.Duration
+	ReconcileMaxQPS          float64
+	RefreshMode              RefreshMode
+	AuthValidityMargin       time.Duration
+	AllowRemote              bool
+	ConfirmTargetHost        string
+	BurstSize                int
+	Jitter                   time.Duration
+	ScheduleDelayP95Budget   time.Duration
+	Rate                     *big.Rat
+	RateRaw                  string
+	Duration                 time.Duration
+	TotalSubmissions         int
+	SystemConfigFile         string
+	SystemConfig             *model.SystemConfig
 }
 
 func Defaults(mode Mode) Config {
@@ -113,22 +129,25 @@ func Defaults(mode Mode) Config {
 		DrainTimeout:        5 * time.Minute,
 		Window:              30 * time.Second,
 		MaxInFlight:         100,
-		// Session validation is bounded, but a 10k pool must complete its
+		// Session validation is bounded, but a 100k pool must complete its
 		// authenticated preflight before short-lived access sessions age out.
-		PreflightConcurrency:    256,
-		BurstStartTimeout:       2 * time.Minute,
-		ErrorPolicy:             ErrorPolicyStop,
-		Objective:               ObjectiveJudgeCapacity,
-		SSEConnectTimeout:       10 * time.Second,
-		SSEIdleTimeout:          45 * time.Second,
-		SSEMaxReconnects:        5,
-		SSEBackoffBase:          time.Second,
-		SSEBackoffMax:           10 * time.Second,
-		SafetyReconcileInterval: 60 * time.Second,
-		ReconcileMaxQPS:         2,
-		RefreshMode:             RefreshAuto,
-		AuthValidityMargin:      time.Minute,
-		ScheduleDelayP95Budget:  25 * time.Millisecond,
+		PreflightConcurrency:     256,
+		BurstStartTimeout:        2 * time.Minute,
+		ErrorPolicy:              ErrorPolicyStop,
+		Objective:                ObjectiveJudgeCapacity,
+		ObservationMode:          ObservationFull,
+		AdmissionPreflightSample: 32,
+		SSEHoldDuration:          30 * time.Second,
+		SSEConnectTimeout:        10 * time.Second,
+		SSEIdleTimeout:           45 * time.Second,
+		SSEMaxReconnects:         5,
+		SSEBackoffBase:           time.Second,
+		SSEBackoffMax:            10 * time.Second,
+		SafetyReconcileInterval:  60 * time.Second,
+		ReconcileMaxQPS:          2,
+		RefreshMode:              RefreshAuto,
+		AuthValidityMargin:       time.Minute,
+		ScheduleDelayP95Budget:   25 * time.Millisecond,
 	}
 }
 
@@ -157,12 +176,15 @@ func Bind(fs *flag.FlagSet, cfg *Config) {
 	fs.DurationVar(&cfg.DrainTimeout, "drain-timeout", cfg.DrainTimeout, "post-load drain deadline")
 	fs.DurationVar(&cfg.Window, "window", cfg.Window, "statistics window duration")
 	fs.IntVar(&cfg.MaxSubmissions, "max-submissions", 0, "hard cap for all submissions including warmup")
-	fs.IntVar(&cfg.MaxInFlight, "max-in-flight", cfg.MaxInFlight, "accepted unresolved submission cap")
+	fs.IntVar(&cfg.MaxInFlight, "max-in-flight", cfg.MaxInFlight, "logical submission cap; unresolved accepted work in full/realistic observation, active POSTs in admission-only")
 	fs.IntVar(&cfg.UserCount, "user-count", 0, "select first N canonical benchmark sessions; required for massive burst")
 	fs.IntVar(&cfg.PreflightConcurrency, "preflight-concurrency", cfg.PreflightConcurrency, "bounded concurrent session validation/refresh work")
 	fs.DurationVar(&cfg.BurstStartTimeout, "burst-start-timeout", cfg.BurstStartTimeout, "burst launch and event-ticket acquisition lifetime horizon")
 	fs.Var(enumValue{get: func() string { return string(cfg.ErrorPolicy) }, set: func(value string) { cfg.ErrorPolicy = ErrorPolicy(value) }}, "submit-error-policy", "stop or continue")
 	fs.Var(enumValue{get: func() string { return string(cfg.Objective) }, set: func(value string) { cfg.Objective = Objective(value) }}, "benchmark-objective", "judge-capacity, admission-control, or massive-burst")
+	fs.Var(enumValue{get: func() string { return string(cfg.ObservationMode) }, set: func(value string) { cfg.ObservationMode = ObservationMode(value) }}, "observation-mode", "full, realistic, or admission-only; realistic uses one ticket and one bounded SSE attempt per accepted POST")
+	fs.IntVar(&cfg.AdmissionPreflightSample, "admission-preflight-sample", cfg.AdmissionPreflightSample, "admission-only deterministic session sample; first and last identities are always checked")
+	fs.DurationVar(&cfg.SSEHoldDuration, "sse-hold-duration", cfg.SSEHoldDuration, "realistic mode: retain an established SSE stream for this duration unless a terminal event arrives")
 	fs.DurationVar(&cfg.SSEConnectTimeout, "sse-connect-timeout", cfg.SSEConnectTimeout, "SSE connection timeout")
 	fs.DurationVar(&cfg.SSEIdleTimeout, "sse-idle-timeout", cfg.SSEIdleTimeout, "SSE idle timeout")
 	fs.IntVar(&cfg.SSEMaxReconnects, "sse-max-reconnects", cfg.SSEMaxReconnects, "bounded SSE reconnects")
@@ -275,6 +297,22 @@ func (c Config) Validate() error {
 			}
 		}
 	}
+	if c.ObservationMode == ObservationAdmissionOnly {
+		if c.Mode != ModeBurst || c.Objective != ObjectiveMassiveBurst {
+			return errors.New("--observation-mode=admission-only requires burst massive-burst mode")
+		}
+		if c.AdmissionPreflightSample < 0 || c.AdmissionPreflightSample > c.UserCount {
+			return errors.New("--admission-preflight-sample must be within 0..--user-count")
+		}
+	}
+	if c.ObservationMode == ObservationRealistic {
+		if c.Mode != ModeBurst || c.Objective != ObjectiveMassiveBurst {
+			return errors.New("--observation-mode=realistic requires burst massive-burst mode")
+		}
+		if c.SSEHoldDuration <= 0 {
+			return errors.New("--sse-hold-duration must be positive for realistic observation")
+		}
+	}
 	if c.Mode == ModeSustained {
 		if c.Rate == nil {
 			return errors.New("sustained mode requires positive --rate")
@@ -317,7 +355,7 @@ func validateRequired(c Config) error {
 	if c.SubmitCooldown <= 0 || c.CooldownGuard < 0 || c.SubmitLatencyBudget < 0 {
 		return errors.New("cooldown values must be non-negative and --submit-cooldown must be positive")
 	}
-	if c.WarmupCount < 0 || c.Repetition <= 0 || c.MaxInFlight <= 0 || c.UserCount < 0 || c.UserCount > 10000 || c.PreflightConcurrency <= 0 || c.PreflightConcurrency > 512 || c.PoolHeadroomPercent < 0 {
+	if c.WarmupCount < 0 || c.Repetition <= 0 || c.MaxInFlight <= 0 || c.UserCount < 0 || c.UserCount > 100000 || c.PreflightConcurrency <= 0 || c.PreflightConcurrency > 512 || c.PoolHeadroomPercent < 0 {
 		return errors.New("counts and pool headroom are invalid")
 	}
 	if c.APITimeout <= 0 || c.SubmissionTimeout <= 0 || c.DrainTimeout <= 0 || c.Window <= 0 || c.WarmupTimeout <= 0 || c.BurstStartTimeout <= 0 {
@@ -334,6 +372,9 @@ func validateRequired(c Config) error {
 	}
 	if c.Objective != ObjectiveJudgeCapacity && c.Objective != ObjectiveAdmissionControl && c.Objective != ObjectiveMassiveBurst {
 		return errors.New("--benchmark-objective must be judge-capacity, admission-control, or massive-burst")
+	}
+	if c.ObservationMode != ObservationFull && c.ObservationMode != ObservationAdmissionOnly && c.ObservationMode != ObservationRealistic {
+		return errors.New("--observation-mode must be full, realistic, or admission-only")
 	}
 	if c.ResultRoot == "" || filepath.IsAbs(c.RunID) {
 		return errors.New("result root/run ID is invalid")

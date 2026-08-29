@@ -201,6 +201,239 @@ func TestRunMakesOnePOSTAndRedactsSource(t *testing.T) {
 	}
 }
 
+func TestAdmissionOnlyMassiveBurstMakesOnePOSTPerUserWithoutSSEOrReconciliation(t *testing.T) {
+	var posts, tickets, events, details atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/v1/me":
+			cookie, _ := r.Cookie("access_token")
+			id := "real-user-1"
+			if cookie != nil && cookie.Value != "" {
+				id = "real-user-" + string(cookie.Value[len(cookie.Value)-1])
+			}
+			_, _ = fmt.Fprintf(w, `{"status":"success","code":20000,"data":{"id":"%s","role":"user","is_active":true}}`, id)
+		case r.URL.Path == "/api/v1/problems/sample":
+			_, _ = w.Write([]byte(`{"status":"success","code":20000,"data":{"id":7}}`))
+		case r.URL.Path == "/api/v1/submissions":
+			id := posts.Add(1)
+			w.WriteHeader(http.StatusCreated)
+			_, _ = fmt.Fprintf(w, `{"status":"success","code":20100,"data":{"id":%d,"status":"PENDING"}}`, id)
+		case strings.HasSuffix(r.URL.Path, "/events/ticket"):
+			tickets.Add(1)
+			t.Fatalf("admission-only requested event ticket")
+		case strings.HasPrefix(r.URL.Path, "/events/"):
+			events.Add(1)
+			t.Fatalf("admission-only opened SSE")
+		case strings.HasPrefix(r.URL.Path, "/api/v1/submissions/"):
+			details.Add(1)
+			t.Fatalf("admission-only reconciled submission")
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	source := filepath.Join(t.TempDir(), "main.go")
+	if err := os.WriteFile(source, []byte("source"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	users := writeCredentialPool(t, []credentials.User{{Alias: "bench-001", Cookies: credentials.Cookies{AccessToken: futureJWT() + "1"}}, {Alias: "bench-002", Cookies: credentials.Cookies{AccessToken: jwtExp(time.Now().Add(2*time.Hour)) + "2"}}})
+	cfg := baseConfig(t, server.URL, users, source)
+	cfg.Objective, cfg.ObservationMode = config.ObjectiveMassiveBurst, config.ObservationAdmissionOnly
+	cfg.BurstSize, cfg.UserCount, cfg.MaxInFlight, cfg.MaxSubmissions = 2, 2, 2, 2
+	cfg.ErrorPolicy, cfg.AdmissionPreflightSample = config.ErrorPolicyContinue, 2
+	prepared, err := Preflight(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := Run(context.Background(), prepared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if posts.Load() != 2 || tickets.Load() != 0 || events.Load() != 0 || details.Load() != 0 {
+		t.Fatalf("posts/tickets/events/details=%d/%d/%d/%d", posts.Load(), tickets.Load(), events.Load(), details.Load())
+	}
+	if run.Summary.Counts.Accepted != 2 || run.Summary.Counts.Terminal != 0 || run.Summary.Admission == nil || run.Summary.Admission.ObservationMode != "admission-only" {
+		t.Fatalf("summary=%+v", run.Summary)
+	}
+	if run.Summary.Observer.SSECompletions != 0 || run.Summary.Observer.GETReconciliations != 0 {
+		t.Fatalf("observation totals=%+v", run.Summary.Observer)
+	}
+}
+
+func TestRealisticMassiveBurstUsesOneTicketAndBoundedSSEWithoutReconciliation(t *testing.T) {
+	var posts, tickets, events, details atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/v1/me":
+			cookie, _ := r.Cookie("access_token")
+			id := "real-user-1"
+			if cookie != nil && cookie.Value != "" {
+				id = "real-user-" + string(cookie.Value[len(cookie.Value)-1])
+			}
+			_, _ = fmt.Fprintf(w, `{"status":"success","code":20000,"data":{"id":"%s","role":"user","is_active":true}}`, id)
+		case r.URL.Path == "/api/v1/problems/sample":
+			_, _ = w.Write([]byte(`{"status":"success","code":20000,"data":{"id":7}}`))
+		case r.URL.Path == "/api/v1/submissions":
+			id := posts.Add(1)
+			w.WriteHeader(http.StatusCreated)
+			_, _ = fmt.Fprintf(w, `{"status":"success","code":20100,"data":{"id":%d,"status":"PENDING"}}`, id)
+		case strings.HasSuffix(r.URL.Path, "/events/ticket"):
+			tickets.Add(1)
+			_, _ = w.Write([]byte(`{"status":"success","code":20000,"data":{"ticket":"ticket-secret"}}`))
+		case strings.HasPrefix(r.URL.Path, "/events/submissions/"):
+			events.Add(1)
+			w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+			w.WriteHeader(http.StatusOK)
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
+			if strings.HasSuffix(r.URL.Path, "/1") {
+				_, _ = fmt.Fprint(w, "event: submission.completed\ndata: {\"status\":\"ACCEPTED\"}\n\n")
+				if flusher, ok := w.(http.Flusher); ok {
+					flusher.Flush()
+				}
+				return
+			}
+			<-r.Context().Done()
+		case strings.HasPrefix(r.URL.Path, "/api/v1/submissions/"):
+			details.Add(1)
+			t.Fatalf("realistic mode must not reconcile submissions")
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	source := filepath.Join(t.TempDir(), "main.go")
+	if err := os.WriteFile(source, []byte("source"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	users := writeCredentialPool(t, []credentials.User{{Alias: "bench-001", Cookies: credentials.Cookies{AccessToken: futureJWT() + "1"}}, {Alias: "bench-002", Cookies: credentials.Cookies{AccessToken: jwtExp(time.Now().Add(2*time.Hour)) + "2"}}})
+	cfg := baseConfig(t, server.URL, users, source)
+	cfg.Objective, cfg.ObservationMode = config.ObjectiveMassiveBurst, config.ObservationRealistic
+	cfg.BurstSize, cfg.UserCount, cfg.MaxInFlight, cfg.MaxSubmissions = 2, 2, 2, 2
+	cfg.ErrorPolicy, cfg.AdmissionPreflightSample, cfg.SSEHoldDuration = config.ErrorPolicyContinue, 2, 20*time.Millisecond
+	prepared, err := Preflight(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := Run(context.Background(), prepared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if posts.Load() != 2 || tickets.Load() != 2 || events.Load() != 2 || details.Load() != 0 {
+		t.Fatalf("posts/tickets/events/details=%d/%d/%d/%d", posts.Load(), tickets.Load(), events.Load(), details.Load())
+	}
+	if run.Summary.Realistic == nil || run.Summary.Realistic.Ticket.Attempted != 2 || run.Summary.Realistic.Ticket.Successful != 2 || run.Summary.Realistic.SSE.Established != 2 || run.Summary.Realistic.SSE.SurvivedFullHold != 1 || run.Summary.Realistic.SSE.TerminalDuringHold != 1 {
+		t.Fatalf("realistic=%+v", run.Summary.Realistic)
+	}
+	for _, name := range []string{"client_resources.csv", "submissions.csv", "summary.json", "report.md"} {
+		data, readErr := os.ReadFile(filepath.Join(run.Dir, name))
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if containsText(string(data), "ticket-secret") {
+			t.Fatalf("ticket leaked to %s", name)
+		}
+	}
+}
+
+func TestRealisticSkipsTicketAfterRejectedPOSTAndSkipsSSEAfterTicketFailure(t *testing.T) {
+	for _, test := range []struct {
+		name                    string
+		postStatus              int
+		ticketStatus            int
+		wantTickets, wantEvents int
+	}{
+		{name: "rejected post", postStatus: http.StatusBadRequest, ticketStatus: http.StatusOK, wantTickets: 0, wantEvents: 0},
+		{name: "ticket failure", postStatus: http.StatusCreated, ticketStatus: http.StatusInternalServerError, wantTickets: 1, wantEvents: 0},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var tickets, events atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case r.URL.Path == "/api/v1/me":
+					_, _ = w.Write([]byte(`{"status":"success","code":20000,"data":{"id":"real-user","role":"user","is_active":true}}`))
+				case r.URL.Path == "/api/v1/problems/sample":
+					_, _ = w.Write([]byte(`{"status":"success","code":20000,"data":{"id":7}}`))
+				case r.URL.Path == "/api/v1/submissions":
+					w.WriteHeader(test.postStatus)
+					if test.postStatus == http.StatusCreated {
+						_, _ = w.Write([]byte(`{"status":"success","code":20100,"data":{"id":1,"status":"PENDING"}}`))
+					} else {
+						_, _ = w.Write([]byte(`{"status":"error","code":40000,"msg":"bad"}`))
+					}
+				case strings.HasSuffix(r.URL.Path, "/events/ticket"):
+					tickets.Add(1)
+					w.WriteHeader(test.ticketStatus)
+					if test.ticketStatus == http.StatusOK {
+						_, _ = w.Write([]byte(`{"status":"success","code":20000,"data":{"ticket":"secret"}}`))
+					} else {
+						_, _ = w.Write([]byte(`{"status":"error","code":50000,"msg":"fail"}`))
+					}
+				case strings.HasPrefix(r.URL.Path, "/events/submissions/"):
+					events.Add(1)
+					t.Fatal("SSE must not start")
+				default:
+					t.Fatalf("unexpected %s", r.URL.Path)
+				}
+			}))
+			defer server.Close()
+			source := filepath.Join(t.TempDir(), "main.go")
+			if err := os.WriteFile(source, []byte("source"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			cfg := baseConfig(t, server.URL, writeCredentialFile(t, futureJWT()), source)
+			cfg.Objective, cfg.ObservationMode = config.ObjectiveMassiveBurst, config.ObservationRealistic
+			cfg.BurstSize, cfg.UserCount, cfg.MaxInFlight, cfg.MaxSubmissions = 1, 1, 1, 1
+			cfg.ErrorPolicy, cfg.AdmissionPreflightSample, cfg.SSEHoldDuration = config.ErrorPolicyContinue, 1, 10*time.Millisecond
+			prepared, err := Preflight(context.Background(), cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Run(context.Background(), prepared); err != nil {
+				t.Fatal(err)
+			}
+			if tickets.Load() != int32(test.wantTickets) || events.Load() != int32(test.wantEvents) {
+				t.Fatalf("tickets/events=%d/%d", tickets.Load(), events.Load())
+			}
+		})
+	}
+}
+
+func TestAdmissionSessionSampleAlwaysIncludesFirstAndLast(t *testing.T) {
+	cfg := config.Defaults(config.ModeBurst)
+	cfg.ObservationMode, cfg.AdmissionPreflightSample, cfg.Seed = config.ObservationAdmissionOnly, 4, 42
+	indexes := sessionValidationIndexes(cfg, 100000)
+	if len(indexes) != 4 || indexes[0] != 0 || indexes[len(indexes)-1] != 99999 {
+		t.Fatalf("indexes=%v", indexes)
+	}
+	for _, index := range indexes {
+		if index < 0 || index >= 100000 {
+			t.Fatalf("invalid index %d", index)
+		}
+	}
+}
+
+func TestAdmissionOnlyHundredKAggregationIsLinearAndTerminalFree(t *testing.T) {
+	origin := time.Now()
+	records := make([]model.SubmissionRecord, 100000)
+	for index := range records {
+		started := origin.Add(time.Duration(index) * time.Microsecond)
+		completed := started.Add(time.Millisecond)
+		records[index] = model.SubmissionRecord{Phase: model.PhaseLoad, Sequence: index, Attempted: true, Accepted: true, Outcome: model.OutcomeAccepted, PostStartedAt: &started, PostCompletedAt: &completed}
+	}
+	metrics := burstMetrics(records, origin, nil, 100000, 0)
+	if metrics.AcceptedThroughputPerSec == nil || metrics.PostStartOffsetMS.Count != 100000 {
+		t.Fatalf("metrics=%+v", metrics)
+	}
+	cfg := config.Defaults(config.ModeBurst)
+	cfg.ObservationMode = config.ObservationAdmissionOnly
+	summary := summarize(cfg, records, nil, origin, origin.Add(200*time.Millisecond), origin, origin, map[string]struct{}{}, 0)
+	if summary.Counts.Attempted != 100000 || summary.Counts.Accepted != 100000 || summary.Counts.Terminal != 0 {
+		t.Fatalf("counts=%+v", summary.Counts)
+	}
+}
+
 func TestExactVolumeRunWritesMeasuredIntentAndExcludesWarmup(t *testing.T) {
 	var posts atomic.Int64
 	firstToken := futureJWT()

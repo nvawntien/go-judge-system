@@ -19,7 +19,7 @@ def analyze(args) -> int:
     if output.exists():
         raise DataError("analysis output already exists; remove it only after preserving any prior analysis")
     output.mkdir(); metrics, timeseries, verdicts = calculate(data)
-    charts = single_run(output / "charts", data.submissions, data.windows, metrics, align_to_run(data.containers, data.run), align_to_run(data.kafka, data.run))
+    charts = single_run(output / "charts", data.submissions, data.windows, metrics, align_to_run(data.containers, data.run), align_to_run(data.kafka, data.run), align_to_run(data.client_resources, data.run))
     (output / "metrics.json").write_text(json.dumps(metrics, indent=2, default=str), encoding="utf-8")
     # Flatten core metrics as rows so spreadsheet use does not need JSON parsing.
     import pandas as pd

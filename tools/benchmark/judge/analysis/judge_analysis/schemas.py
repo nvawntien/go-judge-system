@@ -17,3 +17,4 @@ REQUIRED_WINDOW_COLUMNS = {
 }
 CONTAINER_COLUMNS = {"timestamp", "node", "container", "cpu_percent", "memory_bytes", "pids"}
 KAFKA_COLUMNS = {"timestamp", "consumer_group", "topic", "partition", "current_offset", "log_end_offset", "lag"}
+CLIENT_RESOURCE_COLUMNS = {"timestamp", "open_fds", "goroutines", "active_posts", "active_tickets", "active_sse_streams"}
